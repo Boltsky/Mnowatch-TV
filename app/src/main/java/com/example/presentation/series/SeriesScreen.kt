@@ -59,11 +59,9 @@ data class SeriesUiState(
     val errorMessage: String? = null,
     val isLoadingMore: Boolean = false,
     val canLoadMore: Boolean = true,
-    val selectedYear: String? = null,
     val selectedCategory: String? = null,
     val selectedVj: String? = null,
     val isFilterOpen: Boolean = false,
-    val availableYears: List<String> = listOf("2026", "2025", "2024", "2023", "2022", "2021", "2020", "2019", "2018", "2017", "2016", "2015", "2014"),
     val availableCategories: List<String> = listOf("All Genres", "Action", "Drama", "Comedy", "Horror", "Love Story", "Adventure", "Sci-Fi", "Thriller", "Crime", "Korean", "Animation"),
     val availableVjs: List<String> = listOf("All VJs", "VJ Junior", "VJ ICEP", "VJ Emmy", "VJ Banks", "VJ Shao Khan", "VJ Jingo", "VJ Ulio", "VJ Soul", "VJ Kevo", "VJ Mosco", "VJ Mark")
 )
@@ -101,18 +99,14 @@ class SeriesViewModel(
         _uiState.value = _uiState.value.copy(isFilterOpen = next)
     }
 
-    fun selectYear(year: String?) {
-        val current = _uiState.value.selectedYear
-        val newYear = if (current == year) null else year
-        _uiState.value = _uiState.value.copy(selectedYear = newYear)
-        onFilterChanged()
-    }
-
     fun selectCategory(category: String?) {
         val cleanCat = category?.takeIf { !it.equals("All Genres", ignoreCase = true) && !it.equals("All Categories", ignoreCase = true) }
         val current = _uiState.value.selectedCategory
         val newCat = if (current == cleanCat) null else cleanCat
-        _uiState.value = _uiState.value.copy(selectedCategory = newCat)
+        _uiState.value = _uiState.value.copy(
+            selectedCategory = newCat,
+            isFilterOpen = false // Automatically fold filter menu after selection to create screen space
+        )
         onFilterChanged()
     }
 
@@ -120,13 +114,15 @@ class SeriesViewModel(
         val cleanVj = vj?.takeIf { !it.equals("All VJs", ignoreCase = true) }
         val current = _uiState.value.selectedVj
         val newVj = if (current == cleanVj) null else cleanVj
-        _uiState.value = _uiState.value.copy(selectedVj = newVj)
+        _uiState.value = _uiState.value.copy(
+            selectedVj = newVj,
+            isFilterOpen = false // Automatically fold filter menu after selection to create screen space
+        )
         onFilterChanged()
     }
 
     fun clearAllFilters() {
         _uiState.value = _uiState.value.copy(
-            selectedYear = null,
             selectedCategory = null,
             selectedVj = null,
             isFilterOpen = false
@@ -136,7 +132,7 @@ class SeriesViewModel(
 
     private fun onFilterChanged() {
         val s = _uiState.value
-        val hasAnyFilter = s.selectedYear != null || s.selectedCategory != null || s.selectedVj != null
+        val hasAnyFilter = s.selectedCategory != null || s.selectedVj != null
         if (!hasAnyFilter) {
             loadSeries(forceReload = false)
             return
@@ -146,7 +142,6 @@ class SeriesViewModel(
 
     private fun fetchFilteredSeries(resetPage: Boolean) {
         val s = _uiState.value
-        val year = s.selectedYear
         val category = s.selectedCategory
         val vj = s.selectedVj
 
@@ -166,7 +161,7 @@ class SeriesViewModel(
         filterJob = viewModelScope.launch {
             try {
                 val res = seriesRepository.getFilteredSeries(
-                    year = year,
+                    year = null,
                     category = category,
                     vj = vj,
                     page = pageToFetch,
@@ -289,7 +284,7 @@ class SeriesViewModel(
         val currentState = _uiState.value
         if (currentState.isLoadingMore || currentState.isLoading || !currentState.canLoadMore) return
 
-        val hasActiveFilter = currentState.selectedYear != null || currentState.selectedCategory != null || currentState.selectedVj != null
+        val hasActiveFilter = currentState.selectedCategory != null || currentState.selectedVj != null
         if (hasActiveFilter) {
             fetchFilteredSeries(resetPage = false)
             return
@@ -369,7 +364,7 @@ fun SeriesScreen(
             onNavigate = onNavigate
         )
 
-        val hasAnyFilter = state.selectedYear != null || state.selectedCategory != null || state.selectedVj != null
+        val hasAnyFilter = state.selectedCategory != null || state.selectedVj != null
 
         // Header and Action Controls Row
         Row(
@@ -390,7 +385,6 @@ fun SeriesScreen(
                     if (state.series.isNotEmpty()) {
                         append("${state.series.size} series loaded")
                     }
-                    if (state.selectedYear != null) append(" • Year ${state.selectedYear}")
                     if (state.selectedCategory != null) append(" • ${state.selectedCategory}")
                     if (state.selectedVj != null) append(" • ${state.selectedVj}")
                 }
@@ -432,56 +426,60 @@ fun SeriesScreen(
                 )
 
                 TvButton(
-                    text = if (state.selectedYear != null) "📅 Year: ${state.selectedYear}" else "🔍 Filter / By Year",
+                    text = if (hasAnyFilter) {
+                        "🔍 Filter (${listOfNotNull(state.selectedCategory, state.selectedVj).joinToString(" • ")})"
+                    } else {
+                        "🔍 Filter / By Genre & VJ"
+                    },
                     onClick = { viewModel.toggleFilterOpen() },
                     isPrimary = (hasAnyFilter || state.isFilterOpen)
                 )
             }
         }
 
-        // Expandable Multi-Attribute Filters (Year, Genre, VJ)
-        if (state.isFilterOpen || hasAnyFilter) {
-            // Row 1: SELECT YEAR
+        // Active filter status summary pill when filters menu is folded
+        if (!state.isFilterOpen && hasAnyFilter) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 36.dp, vertical = 2.dp),
+                    .padding(horizontal = 36.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(
-                    text = "SELECT YEAR:",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontSize = 11.sp,
-                    color = MunowatchGreenLight,
-                    fontWeight = FontWeight.Bold
-                )
-
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    contentPadding = PaddingValues(end = 36.dp)
+                androidx.compose.material3.Surface(
+                    color = MunowatchGreen.copy(alpha = 0.15f),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MunowatchGreen.copy(alpha = 0.5f))
                 ) {
-                    item {
-                        TvButton(
-                            text = "All Years",
-                            onClick = { viewModel.selectYear(null) },
-                            isPrimary = (state.selectedYear == null),
-                            isCompact = true
-                        )
-                    }
-                    items(state.availableYears) { year ->
-                        TvButton(
-                            text = year,
-                            onClick = { viewModel.selectYear(year) },
-                            isPrimary = (state.selectedYear == year),
-                            isCompact = true
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "ACTIVE FILTERS: " + listOfNotNull(state.selectedCategory, state.selectedVj).joinToString(" • "),
+                            color = MunowatchGreenLight,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
+                TvButton(
+                    text = "Change",
+                    onClick = { viewModel.toggleFilterOpen() },
+                    isCompact = true
+                )
+                TvButton(
+                    text = "Clear",
+                    onClick = { viewModel.clearAllFilters() },
+                    isCompact = true
+                )
             }
+        }
 
-            // Row 2: FILTER GENRE
+        // Expandable Multi-Attribute Filters (Genre, VJ)
+        if (state.isFilterOpen) {
+            // Row 1: FILTER GENRE
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -521,7 +519,7 @@ fun SeriesScreen(
                 }
             }
 
-            // Row 3: FILTER VJ
+            // Row 2: FILTER VJ
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -571,7 +569,7 @@ fun SeriesScreen(
                 message = state.errorMessage ?: "",
                 onRetry = {
                     if (hasAnyFilter) {
-                        viewModel.selectYear(state.selectedYear)
+                        viewModel.clearAllFilters()
                     } else {
                         viewModel.loadSeries(forceReload = true)
                     }
@@ -580,10 +578,10 @@ fun SeriesScreen(
         } else {
             LazyVerticalGrid(
                 state = gridState,
-                columns = GridCells.Adaptive(minSize = 160.dp),
+                columns = GridCells.Adaptive(minSize = 125.dp),
                 contentPadding = PaddingValues(start = 36.dp, end = 36.dp, bottom = 36.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(

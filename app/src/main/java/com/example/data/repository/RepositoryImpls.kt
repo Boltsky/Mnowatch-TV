@@ -391,25 +391,14 @@ class MovieRepositoryImpl(
         var parsed = emptyList<MediaItem>()
 
         // Priority 1: Direct Twolekede media server VJ catalog (No session cookie needed)
-        // Fetch 6 pages per batch concurrently for a deep, rich VJ catalog
+        // Twolekede categories.php returns the complete catalog for this VJ in a single fast response
         if (vjName.isNotBlank()) {
             val twolekedeVj = mapVjToTwolekedeName(vjName)
-            val pagesPerBatch = 6
-            val startVjPage = (targetPage - 1) * pagesPerBatch + 1
-            val endVjPage = startVjPage + pagesPerBatch - 1
             try {
-                coroutineScope {
-                    val pageJobs = (startVjPage..endVjPage).map { p ->
-                        async {
-                            try {
-                                val catRes = api.getTwolekedeCategoryCatalog(twolekedeVj, page = p)
-                                catRes.getOrNull()?.let { parser.parseMediaCards(it) } ?: emptyList()
-                            } catch (_: Exception) {
-                                emptyList()
-                            }
-                        }
-                    }
-                    parsed = pageJobs.awaitAll().flatten().distinctBy { it.id }
+                val catRes = api.getTwolekedeCategoryCatalog(twolekedeVj, page = 1)
+                val catHtml = catRes.getOrNull()
+                if (!catHtml.isNullOrBlank()) {
+                    parsed = parser.parseMediaCards(catHtml)
                 }
             } catch (_: Exception) {}
         }
@@ -440,8 +429,9 @@ class MovieRepositoryImpl(
         if (parsed.isEmpty() && vjName.isNotBlank()) {
             val searchRes = api.searchTwolekede(vjName, isSeries = false)
             val searchParsed = searchRes.getOrNull()?.let { parser.parseMediaCards(it) } ?: emptyList()
+            // Strictly exclude series from cached movie matches
             val cachedMatches = MediaCache.getAll().filter {
-                it.vj.isNotBlank() && (it.vj.equals(vjName, ignoreCase = true) || it.vj.contains(vjName, ignoreCase = true))
+                !it.isSeries && it.vj.isNotBlank() && (it.vj.equals(vjName, ignoreCase = true) || it.vj.contains(vjName, ignoreCase = true))
             }
             parsed = (searchParsed + cachedMatches).distinctBy { it.id }
         }
@@ -1954,6 +1944,12 @@ class PlaybackRepositoryImpl(
     }
 
     private fun extractMunowatchId(contentId: String, streamPath: String?): String? {
+        // Explicit Twolekede links or IDs are NEVER Munowatch IDs
+        if (contentId.contains("twolekede.com") || contentId.contains("preview.php") ||
+            streamPath?.contains("twolekede.com") == true || streamPath?.contains("preview.php") == true) {
+            return null
+        }
+
         val fromPath = streamPath?.let {
             Regex("""[?&](?:mid|id|v)=([0-9]+)""").find(it)?.groupValues?.get(1)
         }
@@ -2238,25 +2234,9 @@ class PlaybackRepositoryImpl(
             foundSource
         }
 
-        val isMunoRequested = resolvedServer.contains("Munowatch", ignoreCase = true) ||
-            resolvedServer.contains("Server 1", ignoreCase = true) ||
-            resolvedServer.contains("Fast CDN", ignoreCase = true) ||
-            resolvedServer.contains("Server 3", ignoreCase = true) ||
-            resolvedServer.contains("Alternate", ignoreCase = true)
-
-        // PRIORITY A: If Munowatch or Server 3 is requested, try Munowatch native Bunny CDN stream
-        if (isMunoRequested && hasSession) {
-            val munoSource = resolveMunowatchNativeStream()
-            if (munoSource != null) {
-                MediaCache.cachePlaybackSource(contentId, munoSource)
-                android.util.Log.d("MunowatchPlayback", "Priority Munowatch native Bunny CDN stream resolved: ${munoSource.url}")
-                return Result.success(munoSource)
-            }
-        }
-
-        // PRIORITY B: Direct Twolekede Media Server Stream Resolution
-        // Resolve directly from media servers ONLY for explicit Twolekede items (preview/download/details)
-        if (isExplicitTwolekede && (finalId != null || targetCandidate.contains("twolekede"))) {
+        // PRIORITY A: Direct Twolekede Media Server Stream Resolution
+        // Resolve directly from media servers FIRST for explicit Twolekede items (preview/download/details/episodes)
+        if (isExplicitTwolekede && (finalId != null || targetCandidate.contains("twolekede") || targetCandidate.contains("preview.php"))) {
             val queryTarget = finalId ?: targetCandidate
             val resolvedUrl = api.resolveTwolekedeStream(queryTarget, resolvedServer, titleCandidate)
 
@@ -2276,6 +2256,22 @@ class PlaybackRepositoryImpl(
                 MediaCache.cachePlaybackSource(contentId, source)
                 android.util.Log.d("MunowatchPlayback", "Twolekede direct stream resolved: ${source.url}")
                 return Result.success(source)
+            }
+        }
+
+        val isMunoRequested = resolvedServer.contains("Munowatch", ignoreCase = true) ||
+            resolvedServer.contains("Server 1", ignoreCase = true) ||
+            resolvedServer.contains("Fast CDN", ignoreCase = true) ||
+            resolvedServer.contains("Server 3", ignoreCase = true) ||
+            resolvedServer.contains("Alternate", ignoreCase = true)
+
+        // PRIORITY B: If Munowatch or Server 3 is requested, try Munowatch native Bunny CDN stream
+        if (isMunoRequested && hasSession) {
+            val munoSource = resolveMunowatchNativeStream()
+            if (munoSource != null) {
+                MediaCache.cachePlaybackSource(contentId, munoSource)
+                android.util.Log.d("MunowatchPlayback", "Priority Munowatch native Bunny CDN stream resolved: ${munoSource.url}")
+                return Result.success(munoSource)
             }
         }
 

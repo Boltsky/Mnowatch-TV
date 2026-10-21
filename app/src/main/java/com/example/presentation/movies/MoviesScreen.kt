@@ -3313,10 +3313,10 @@ fun MoviesScreen(
         } else {
             LazyVerticalGrid(
                 state = gridState,
-                columns = GridCells.Adaptive(minSize = 160.dp),
+                columns = GridCells.Adaptive(minSize = 125.dp),
                 contentPadding = PaddingValues(start = 36.dp, end = 36.dp, bottom = 36.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(

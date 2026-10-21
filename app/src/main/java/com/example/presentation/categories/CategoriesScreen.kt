@@ -202,7 +202,7 @@ class CategoriesViewModel(
         currentPage = 1
 
         val cachedItems = if (category.type == CategoryType.VJ) {
-            com.example.data.repository.MediaCache.getVjMovies(category.id)
+            com.example.data.repository.MediaCache.getVjMovies(category.id)?.filter { !it.isSeries }
         } else {
             com.example.data.repository.MediaCache.getGenreMovies(category.id)
         }
@@ -234,6 +234,7 @@ class CategoriesViewModel(
             // Fetch initial batch (Page 1) off the main thread
             val firstBatchResult = fetchBatch(category, null, 1)
             val firstBatch = firstBatchResult.getOrDefault(emptyList())
+                .filter { category.type != CategoryType.VJ || !it.isSeries }
                 .distinctBy { it.id.ifBlank { it.streamUrl }.ifBlank { it.title } }
 
             if (firstBatch.isEmpty()) {
@@ -497,56 +498,88 @@ fun CategoriesScreen(
         }
         val activeCategory = state.selectedCategory ?: activeList.firstOrNull()
 
+        var isSidebarExpanded by rememberSaveable { mutableStateOf(false) }
+        var isGenreFilterExpanded by rememberSaveable { mutableStateOf(false) }
+
         // Split Layout: Left Column (Categories List), Right Column (Media Grid)
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 36.dp, vertical = 8.dp)
+                .padding(horizontal = 24.dp, vertical = 6.dp)
         ) {
-            // Left sidebar: Tabs and category list
-            Column(
-                modifier = Modifier
-                    .width(260.dp)
-                    .fillMaxHeight()
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
+            // Left sidebar: Collapsible tabs and category list
+            if (isSidebarExpanded) {
+                Column(
+                    modifier = Modifier
+                        .width(200.dp)
+                        .fillMaxHeight()
                 ) {
-                    TvButton(
-                        text = "Veejays",
-                        onClick = { viewModel.setTab(CategoryType.VJ) },
-                        isPrimary = state.selectedTab == CategoryType.VJ,
-                        modifier = Modifier.weight(1f)
-                    )
-                    TvButton(
-                        text = "Genres",
-                        onClick = { viewModel.setTab(CategoryType.GENRE) },
-                        isPrimary = state.selectedTab == CategoryType.GENRE,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp)
-                ) {
-                    items(activeList, key = { it.id }) { category ->
-                        val isSelected = activeCategory?.id == category.id ||
-                            activeCategory?.name.equals(category.name, ignoreCase = true)
-                        TvCategoryListItem(
-                            category = category,
-                            isSelected = isSelected,
-                            onClick = { viewModel.selectCategory(category) }
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        TvButton(
+                            text = "Veejays",
+                            onClick = { viewModel.setTab(CategoryType.VJ) },
+                            isPrimary = state.selectedTab == CategoryType.VJ,
+                            modifier = Modifier.weight(1f),
+                            isCompact = true
+                        )
+                        TvButton(
+                            text = "Genres",
+                            onClick = { viewModel.setTab(CategoryType.GENRE) },
+                            isPrimary = state.selectedTab == CategoryType.GENRE,
+                            modifier = Modifier.weight(1f),
+                            isCompact = true
                         )
                     }
-                }
-            }
 
-            Spacer(modifier = Modifier.width(24.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
+                        items(activeList, key = { it.id }) { category ->
+                            val isSelected = activeCategory?.id == category.id ||
+                                activeCategory?.name.equals(category.name, ignoreCase = true)
+                            TvCategoryListItem(
+                                category = category,
+                                isSelected = isSelected,
+                                onClick = {
+                                    viewModel.selectCategory(category)
+                                    isSidebarExpanded = false // Fold sidebar after selection to maximize movies space
+                                }
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+            } else {
+                // Compact collapsed mini-rail
+                Column(
+                    modifier = Modifier
+                        .width(48.dp)
+                        .fillMaxHeight(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    TvButton(
+                        text = "☰",
+                        onClick = { isSidebarExpanded = true },
+                        isPrimary = false,
+                        isCompact = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = if (state.selectedTab == CategoryType.VJ) "VJ" else "GEN",
+                        color = MunowatchGreenLight,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+            }
 
             // Right side: Movies for selected category
             Column(
@@ -556,14 +589,9 @@ fun CategoriesScreen(
             ) {
                 activeCategory?.let { cat ->
                     val filterTitle = if (state.selectedGenreFilter != null) {
-                        "${cat.name.uppercase()} • ${state.selectedGenreFilter?.name?.uppercase()} CATALOG"
+                        "${cat.name.uppercase()} • ${state.selectedGenreFilter?.name?.uppercase()}"
                     } else {
                         "${cat.name.uppercase()} CATALOG"
-                    }
-                    val filterSubtitle = if (state.selectedGenreFilter != null) {
-                        "${state.items.size} movies loaded • ${state.selectedGenreFilter?.name} translated by ${cat.name}"
-                    } else {
-                        "${state.items.size} movies loaded${if (state.canLoadMore) " • Scroll down or click below to load more" else " • Complete catalog"}"
                     }
 
                     Row(
@@ -571,20 +599,22 @@ fun CategoriesScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            TvButton(
+                                text = if (isSidebarExpanded) "◀ Fold Menu" else "☰ Category (${activeCategory?.name ?: "All"})",
+                                onClick = { isSidebarExpanded = !isSidebarExpanded },
+                                isPrimary = isSidebarExpanded,
+                                isCompact = true
+                            )
                             Text(
                                 text = filterTitle,
-                                style = MaterialTheme.typography.titleLarge,
+                                style = MaterialTheme.typography.titleMedium,
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold
                             )
-                            if (state.items.isNotEmpty()) {
-                                Text(
-                                    text = filterSubtitle,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MunowatchTextSecondary
-                                )
-                            }
                         }
 
                         if (state.isLoadingMore) {
@@ -605,50 +635,97 @@ fun CategoriesScreen(
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(10.dp))
 
-                    // If Veejays tab is selected, show Genre filter chips directly above the movie grid
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Collapsible Genre filter chips for Veejays tab
                     if (state.selectedTab == CategoryType.VJ) {
-                        val availableGenres = remember(state.genres) {
-                            if (state.genres.isNotEmpty()) state.genres else DEFAULT_GENRE_CATEGORIES
-                        }
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            contentPadding = PaddingValues(vertical = 4.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 10.dp)
-                        ) {
-                            item(key = "all_genres") {
-                                TvGenreFilterChip(
-                                    label = "All Genres",
-                                    isSelected = state.selectedGenreFilter == null,
-                                    onClick = { viewModel.selectGenreFilter(null) }
+                        if (!isGenreFilterExpanded) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Surface(
+                                    color = MunowatchGreen.copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = BorderStroke(1.dp, MunowatchGreen.copy(alpha = 0.5f))
+                                ) {
+                                    Text(
+                                        text = "GENRE: ${state.selectedGenreFilter?.name ?: "All Genres"}",
+                                        color = MunowatchGreenLight,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                                TvButton(
+                                    text = "Filter Genre ▼",
+                                    onClick = { isGenreFilterExpanded = true },
+                                    isCompact = true
+                                )
+                                if (state.selectedGenreFilter != null) {
+                                    TvButton(
+                                        text = "Reset All Genres",
+                                        onClick = { viewModel.selectGenreFilter(null) },
+                                        isCompact = true
+                                    )
+                                }
+                                Text(
+                                    text = "${state.items.size} movies loaded",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MunowatchTextSecondary,
+                                    fontSize = 11.sp
                                 )
                             }
-                            items(availableGenres, key = { it.id }) { genre ->
-                                TvGenreFilterChip(
-                                    label = genre.name,
-                                    isSelected = state.selectedGenreFilter?.id == genre.id,
-                                    onClick = { viewModel.selectGenreFilter(genre) }
+                        } else {
+                            val availableGenres = remember(state.genres) {
+                                if (state.genres.isNotEmpty()) state.genres else DEFAULT_GENRE_CATEGORIES
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    contentPadding = PaddingValues(vertical = 2.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    item(key = "all_genres") {
+                                        TvGenreFilterChip(
+                                            label = "All Genres",
+                                            isSelected = state.selectedGenreFilter == null,
+                                            onClick = {
+                                                viewModel.selectGenreFilter(null)
+                                                isGenreFilterExpanded = false // Fold after selection
+                                            }
+                                        )
+                                    }
+                                    items(availableGenres, key = { it.id }) { genre ->
+                                        TvGenreFilterChip(
+                                            label = genre.name,
+                                            isSelected = state.selectedGenreFilter?.id == genre.id,
+                                            onClick = {
+                                                viewModel.selectGenreFilter(genre)
+                                                isGenreFilterExpanded = false // Fold after selection
+                                            }
+                                        )
+                                    }
+                                }
+                                TvButton(
+                                    text = "Fold ▲",
+                                    onClick = { isGenreFilterExpanded = false },
+                                    isCompact = true
                                 )
                             }
                         }
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "${state.items.size} movies loaded • ${activeCategory?.name ?: "Category"}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MunowatchTextSecondary
-                        )
                     }
                 }
+
+                Spacer(modifier = Modifier.height(4.dp))
 
                 if (state.isContentLoading) {
                     val catName = activeCategory?.name.orEmpty()
@@ -691,9 +768,9 @@ fun CategoriesScreen(
                 } else {
                     LazyVerticalGrid(
                         state = gridState,
-                        columns = GridCells.Adaptive(minSize = 150.dp),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        columns = GridCells.Adaptive(minSize = 125.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                         contentPadding = PaddingValues(bottom = 24.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {

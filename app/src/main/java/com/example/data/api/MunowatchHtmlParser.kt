@@ -151,12 +151,19 @@ class MunowatchHtmlParser {
                 ?: el.parent()?.selectFirst(".genre, span.genre")?.text()
                 ?: ""
 
-            val isSeries = href.contains("serie", ignoreCase = true) ||
-                href.contains("seriesdetails", ignoreCase = true) ||
-                rawTitle.contains("Season", ignoreCase = true) ||
-                rawTitle.contains("Series", ignoreCase = true) ||
-                Regex("""(?i)\b(?:Season|Seasons|Series|S\d+|Episode|EPS|Ep)\b""").containsMatchIn(rawTitle) ||
+            val isExplicitMovie = href.contains("moviedetails.php", ignoreCase = true)
+            val isExplicitSeries = href.contains("seriesdetails.php", ignoreCase = true) ||
+                href.contains("episodes.php", ignoreCase = true)
+
+            val isSeries = if (isExplicitMovie) {
+                false
+            } else if (isExplicitSeries) {
+                true
+            } else {
+                href.contains("serie", ignoreCase = true) ||
+                Regex("""(?i)\b(?:Season\s*\d+|Seasons\s*\d+|S\d+\s*E\d+|Episode\s*\d+|EPS\s*\d+)\b""").containsMatchIn(rawTitle) ||
                 el.parents().any { it.id() == "twolekede-series-search-results" }
+            }
 
             val cardDescription = el.selectFirst(".details-section .description, .description, .movie-details .description, .series-details .description, [id$='-drawer-slot'], .drawer-slot, [id*='drawer-slot'], .desc, .story, .overview, .synopsis, p.text-gray-400, p.text-gray-300, p.text-sm")?.text()?.trim()
                 ?: el.nextElementSibling()?.takeIf { it.id().endsWith("-drawer-slot") || it.hasClass("drawer-slot") }?.text()?.trim()
@@ -179,7 +186,7 @@ class MunowatchHtmlParser {
 
             val cleanEffective = effectiveHref.removePrefix("/")
             val finalStreamUrl = when {
-                cleanEffective.startsWith("seriesdetails.php") || cleanEffective.startsWith("moviedetails.php") -> "https://twolekede.com/$cleanEffective"
+                cleanEffective.startsWith("seriesdetails.php") || cleanEffective.startsWith("moviedetails.php") || cleanEffective.startsWith("episodes.php") -> "https://twolekede.com/$cleanEffective"
                 effectiveHref.startsWith("https://") || effectiveHref.startsWith("http://") -> effectiveHref
                 effectiveHref.contains("v=") -> if (effectiveHref.startsWith("/")) effectiveHref else "/$effectiveHref"
                 extractedId.all { it.isDigit() } && (!effectiveHref.contains("mid=") && !effectiveHref.contains("id=") && !effectiveHref.contains("v=")) -> "/twolekede?mid=$extractedId"
@@ -188,7 +195,11 @@ class MunowatchHtmlParser {
                 extractedId.all { it.isDigit() } -> "/twolekede?mid=$extractedId"
                 else -> effectiveHref
             }
-            val resolvedIsSeries = isSeries || finalStreamUrl.contains("seriesdetails.php")
+            val resolvedIsSeries = if (isExplicitMovie || finalStreamUrl.contains("moviedetails.php", ignoreCase = true)) {
+                false
+            } else {
+                isSeries || finalStreamUrl.contains("seriesdetails.php", ignoreCase = true) || finalStreamUrl.contains("episodes.php", ignoreCase = true)
+            }
 
             items.add(
                 MediaItem(
@@ -229,6 +240,17 @@ class MunowatchHtmlParser {
                 val fallbackYear = Regex("""\b(19\d{2}|20\d{2})\b""").find(alt)?.value
                     ?: ""
 
+                val isFallbackExplicitMovie = href.contains("moviedetails.php", ignoreCase = true)
+                val isFallbackExplicitSeries = href.contains("seriesdetails.php", ignoreCase = true) || href.contains("episodes.php", ignoreCase = true)
+                val isFallbackSeries = if (isFallbackExplicitMovie) {
+                    false
+                } else if (isFallbackExplicitSeries) {
+                    true
+                } else {
+                    href.contains("serie", ignoreCase = true) ||
+                    Regex("""(?i)\b(?:Season\s*\d+|Seasons\s*\d+|S\d+\s*E\d+|Episode\s*\d+|EPS\s*\d+)\b""").containsMatchIn(alt)
+                }
+
                 items.add(
                     MediaItem(
                         id = id,
@@ -236,11 +258,7 @@ class MunowatchHtmlParser {
                         posterUrl = formatUrl(src),
                         backdropUrl = formatUrl(src),
                         year = fallbackYear,
-                        isSeries = alt.contains("Series", ignoreCase = true) ||
-                            alt.contains("Season", ignoreCase = true) ||
-                            href.contains("serie", ignoreCase = true) ||
-                            href.contains("seriesdetails", ignoreCase = true) ||
-                            Regex("""(?i)\b(?:Season|Seasons|Series|S\d+|Episode|EPS|Ep)\b""").containsMatchIn(alt),
+                        isSeries = isFallbackSeries,
                         streamUrl = href
                     )
                 )

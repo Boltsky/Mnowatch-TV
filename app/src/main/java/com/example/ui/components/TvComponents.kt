@@ -94,7 +94,7 @@ fun TvMediaCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     aspectRatio: Float = 2f / 3f,
-    cardWidth: androidx.compose.ui.unit.Dp? = 160.dp
+    cardWidth: androidx.compose.ui.unit.Dp? = 128.dp
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -139,7 +139,7 @@ fun TvMediaCard(
                 val imageRequest = remember(item.posterUrl) {
                     coil.request.ImageRequest.Builder(context)
                         .data(item.posterUrl)
-                        .size(coil.size.Size(240, 360))
+                        .size(coil.size.Size(192, 288))
                         .precision(coil.size.Precision.INEXACT)
                         .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
                         .allowRgb565(true)
@@ -221,13 +221,16 @@ fun TvMediaCard(
             }
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         // Title
         Text(
             text = item.title,
             color = if (isFocused) MunowatchGreenLight else MunowatchTextPrimary,
             style = MaterialTheme.typography.titleSmall,
+            fontSize = 12.sp,
+            lineHeight = 15.sp,
+            fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -241,7 +244,7 @@ fun TvMediaCard(
                 Text(
                     text = item.year,
                     color = MunowatchTextMuted,
-                    fontSize = 11.sp
+                    fontSize = 10.sp
                 )
             }
             if (item.quality.isNotBlank()) {
