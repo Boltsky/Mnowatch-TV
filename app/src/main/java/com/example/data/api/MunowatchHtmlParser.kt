@@ -71,7 +71,7 @@ class MunowatchHtmlParser {
                 continue
             }
 
-            val posterUrl = if (rawImgSrc.isNotBlank()) formatUrl(rawImgSrc) else ""
+            val posterUrl = if (isValidPosterUrl(rawImgSrc)) formatUrl(rawImgSrc) else ""
 
             // Extract real ID
             val extractedId = extractMediaId(el, link, href, containerIds, index)
@@ -398,6 +398,14 @@ class MunowatchHtmlParser {
         }
     }
 
+    fun isValidPosterUrl(src: String?): Boolean {
+        if (src.isNullOrBlank()) return false
+        val clean = src.trim().lowercase()
+        if (clean.endsWith("mv-admin/") || clean.endsWith("mv-admin") || clean == "/" || clean == "#") return false
+        if (clean.contains("logo") || clean.contains("icon") || clean.contains("avatar") || clean.contains("favicon")) return false
+        return clean.contains(".jpg") || clean.contains(".jpeg") || clean.contains(".png") || clean.contains(".webp") || clean.contains("image") || clean.contains("uploads/posters")
+    }
+
     fun extractMoviePosterFromWatchPage(html: String): String? {
         if (html.isBlank()) return null
         try {
@@ -405,15 +413,15 @@ class MunowatchHtmlParser {
 
             // 1. OpenGraph and Twitter Meta Tags (highest quality on Munowatch)
             val ogImage = doc.selectFirst("meta[property='og:image']")?.attr("content")?.trim()
-            if (!ogImage.isNullOrBlank() && !ogImage.contains("logo") && !ogImage.contains("icon") && !ogImage.contains("favicon")) {
+            if (!ogImage.isNullOrBlank() && isValidPosterUrl(ogImage)) {
                 return formatUrl(ogImage)
             }
             val twitterImage = doc.selectFirst("meta[name='twitter:image']")?.attr("content")?.trim()
-            if (!twitterImage.isNullOrBlank() && !twitterImage.contains("logo") && !twitterImage.contains("icon")) {
+            if (!twitterImage.isNullOrBlank() && isValidPosterUrl(twitterImage)) {
                 return formatUrl(twitterImage)
             }
             val linkImage = doc.selectFirst("link[rel='image_src']")?.attr("href")?.trim()
-            if (!linkImage.isNullOrBlank() && !linkImage.contains("logo") && !linkImage.contains("icon")) {
+            if (!linkImage.isNullOrBlank() && isValidPosterUrl(linkImage)) {
                 return formatUrl(linkImage)
             }
 
@@ -424,7 +432,7 @@ class MunowatchHtmlParser {
                 val imgMatch = Regex("""["']image["']\s*:\s*["']([^"']+)["']""").find(json)
                 if (imgMatch != null) {
                     val url = imgMatch.groupValues[1]
-                    if (url.isNotBlank() && !url.contains("logo") && !url.contains("icon")) {
+                    if (url.isNotBlank() && isValidPosterUrl(url)) {
                         return formatUrl(url)
                     }
                 }
@@ -433,7 +441,7 @@ class MunowatchHtmlParser {
             // 3. Document poster / image elements (strictly scoped to main details container, excluding recommendation cards)
             val posterImg = doc.select(
                 ".poster-section img, .series-poster img, .movie-poster img, #poster img, " +
-                "img.movie-poster, img.series-poster, img.cover-img, img.poster, .details-section img"
+                "img.movie-poster, img.series-poster, img.cover-img, img.poster, .details-section img, .poster-container img"
             ).firstOrNull { img ->
                 val isInsideForbidden = img.parents().any { p ->
                     val pid = p.id().lowercase()
@@ -446,15 +454,17 @@ class MunowatchHtmlParser {
                     pid.contains("trending") || pcls.contains("trending") ||
                     pid.contains("grid") || pcls.contains("grid") ||
                     pid.contains("footer") || pcls.contains("footer") ||
-                    pcls.contains("movie-card") || pcls.contains("episode-card") || pcls.contains("content-item")
+                    pcls.contains("movie-card") || pcls.contains("episode-card") || pcls.contains("content-item") ||
+                    pcls.contains("similar-card") || pcls.contains("similar-thumbnail")
                 }
-                !isInsideForbidden
+                val candidateSrc = img.attr("data-src").ifBlank { img.attr("data-original") }.ifBlank { img.attr("data-poster") }.ifBlank { img.attr("src") }
+                !isInsideForbidden && isValidPosterUrl(candidateSrc)
             }
             val rawSrc = posterImg?.attr("data-src")?.takeIf { it.isNotBlank() }
                 ?: posterImg?.attr("data-original")?.takeIf { it.isNotBlank() }
                 ?: posterImg?.attr("data-poster")?.takeIf { it.isNotBlank() }
                 ?: posterImg?.attr("src")?.takeIf { it.isNotBlank() }
-            if (!rawSrc.isNullOrBlank() && !rawSrc.contains("logo") && !rawSrc.contains("icon") && !rawSrc.contains("avatar") && !rawSrc.contains("favicon")) {
+            if (!rawSrc.isNullOrBlank() && isValidPosterUrl(rawSrc)) {
                 return formatUrl(rawSrc)
             }
         } catch (_: Exception) {}
@@ -634,7 +644,12 @@ class MunowatchHtmlParser {
             .replace(Regex("""(?i)\bPart\s*$oldNum\b"""), "Part $newNum")
     }
 
-    fun parseSeriesEpisodes(seriesId: String, html: String, knownSeriesTitle: String? = null): SeriesDetail {
+    fun parseSeriesEpisodes(
+        seriesId: String,
+        html: String,
+        knownSeriesTitle: String? = null,
+        knownPosterUrl: String? = null
+    ): SeriesDetail {
         val doc = Jsoup.parse(html)
         val episodes = mutableListOf<Episode>()
 
@@ -650,8 +665,32 @@ class MunowatchHtmlParser {
         }
         val baseTitle = extractBaseSeriesName(resolvedTitle)
         val cleanSeriesTitle = if (baseTitle.length >= 2) baseTitle else resolvedTitle
-        val seriesPoster = doc.selectFirst(".poster-section img, .series-poster, img[src*='uploads/posters']")?.attr("src")?.let { formatUrl(it) }
-            ?: extractMoviePosterFromWatchPage(html) ?: ""
+
+        // Strictly extract primary series poster from the main header/details section,
+        // specifically excluding similar/recommended series cards at the bottom of the page
+        val primaryPosterEl = doc.select(
+            ".poster-section img, .poster-container img, .series-poster, img.series-poster, #poster img, .details-section img"
+        ).firstOrNull { img ->
+            val isInsideForbidden = img.parents().any { p ->
+                val cls = p.className().lowercase()
+                val id = p.id().lowercase()
+                val tag = p.tagName().lowercase()
+                tag in setOf("header", "nav", "footer", "aside") ||
+                cls.contains("similar") || cls.contains("recommend") || cls.contains("related") ||
+                cls.contains("popular") || cls.contains("trending") ||
+                id.contains("similar") || id.contains("recommend") || id.contains("related") ||
+                cls.contains("episode") || id.contains("episode")
+            }
+            val src = img.attr("data-src").ifBlank { img.attr("src") }
+            !isInsideForbidden && isValidPosterUrl(src)
+        }
+
+        val rawPosterSrc = primaryPosterEl?.let { it.attr("data-src").ifBlank { it.attr("src") } }
+        val seriesPoster = when {
+            !rawPosterSrc.isNullOrBlank() && isValidPosterUrl(rawPosterSrc) -> formatUrl(rawPosterSrc)
+            !knownPosterUrl.isNullOrBlank() && isValidPosterUrl(knownPosterUrl) -> formatUrl(knownPosterUrl)
+            else -> extractMoviePosterFromWatchPage(html)?.takeIf { isValidPosterUrl(it) } ?: (knownPosterUrl?.takeIf { isValidPosterUrl(it) } ?: "")
+        }
 
         // Collect candidate episode links from all possible container types
         val episodeContainers = doc.select(
@@ -1125,9 +1164,11 @@ class MunowatchHtmlParser {
             ?.let { cleanDescription(it) }
             ?.takeIf { it.isNotBlank() }
             ?: extractMovieDescriptionFromWatchPage(html)
-        val poster = doc.selectFirst(".poster-section img, .series-poster, img[src*='uploads/posters']")?.attr("src")?.let { formatUrl(it) }
-            ?: extractMoviePosterFromWatchPage(html) ?: ""
-        val backdrop = doc.selectFirst("img.backdrop, img[src*='backdrop'], img[src*='cover'], .banner img")?.attr("src")?.let { formatUrl(it) } ?: poster
+        val poster = if (seriesPoster.isNotBlank()) seriesPoster else (knownPosterUrl?.takeIf { isValidPosterUrl(it) } ?: "")
+        val backdrop = doc.selectFirst("img.backdrop, img[src*='backdrop'], img[src*='cover'], .banner img")?.let { el ->
+            val src = el.attr("data-src").ifBlank { el.attr("src") }
+            if (isValidPosterUrl(src)) formatUrl(src) else null
+        } ?: poster
         val vjText = doc.selectFirst(".details-section .category-tag, .meta-info .category-tag, .category-tag, .vj, .vj-name, [class*='vj'], strong:contains(VJ), span:contains(VJ)")?.text()?.trim() ?: ""
         val yearText = doc.selectFirst(".details-section .year, .meta-info .year, span.year")?.text()?.trim()
             ?: Regex("""\b(20\d\d|19\d\d)\b""").find(html)?.value ?: ""

@@ -1294,7 +1294,10 @@ class MunowatchApi(
                     if (parser.titlesMatch(urlTitle, baseExpected)) return true
                     val cleanUrlT = parser.cleanForMatching(urlTitle)
                     val cleanExpT = parser.cleanForMatching(expected)
-                    if (cleanUrlT.contains(cleanExpT) || cleanExpT.contains(cleanUrlT)) return true
+                    if (cleanUrlT.length >= 4 && cleanExpT.length >= 4 && (cleanUrlT == cleanExpT || cleanUrlT.replace(" ", "") == cleanExpT.replace(" ", ""))) {
+                        return true
+                    }
+                    return false
                 }
 
                 // Check ?file= or &file= parameter
@@ -1308,24 +1311,16 @@ class MunowatchApi(
                         .replace(Regex("""(?i)\b(?:x264|x265|hevc|1080p|720p|480p|hd|full\s*hd|mp4|mkv)\b"""), " ")
                         .replace(Regex("""(?i)\b(?:vj\s+[a-z0-9_\-\.]*|vj|jr|jingo|ice\s*p|emmy|ks|waza|nelly|lance|kimuli|ivo)\b"""), " ")
                         .replace("_", " ").replace("-", " ").replace(".", " ").trim()
-                    if (fileName.length >= 2) {
+                    if (fileName.length >= 2 && !isGenericTitle(fileName)) {
                         if (parser.titlesMatch(fileName, expected)) return true
                         val baseExpected = parser.extractBaseSeriesName(expected).ifBlank { expected }
                         if (parser.titlesMatch(fileName, baseExpected)) return true
                         val cleanExp = parser.cleanForMatching(expected)
                         val cleanFile = parser.cleanForMatching(fileName)
-                        if (cleanExp.contains(cleanFile) || cleanFile.contains(cleanExp)) {
+                        if (cleanExp.length >= 4 && cleanFile.length >= 4 && (cleanExp == cleanFile || cleanExp.replace(" ", "") == cleanFile.replace(" ", ""))) {
                             return true
                         }
-                        val expWords = parser.cleanTitle(expected).split(" ")
-                            .map { it.lowercase().trim() }
-                            .filter { it.length >= 4 && !it.equals("translated", true) && !it.equals("luganda", true) }
-                        val fileWords = fileName.split(" ")
-                            .map { it.lowercase().trim() }
-                            .filter { it.length >= 4 }
-                        if (expWords.any { ew -> fileWords.any { fw -> fw.contains(ew) || ew.contains(fw) } }) {
-                            return true
-                        }
+                        return false
                     }
                 }
                 return true
@@ -1361,7 +1356,9 @@ class MunowatchApi(
                     if (!srcMatch.isNullOrBlank()) {
                         val clean = cleanStreamUrl(srcMatch)
                         if (clean != null) {
-                            return clean
+                            if (expectedTitle.isNullOrBlank() || urlMatchesExpectedTitle(clean, expectedTitle)) {
+                                return clean
+                            }
                         }
                     }
                 }
@@ -1422,7 +1419,9 @@ class MunowatchApi(
                 if (!directLocation.isNullOrBlank()) {
                     val clean = cleanStreamUrl(directLocation)
                     if (clean != null) {
-                        return clean
+                        if (expectedTitle.isNullOrBlank() || urlMatchesExpectedTitle(clean, expectedTitle)) {
+                            return clean
+                        }
                     }
                 }
                 return null

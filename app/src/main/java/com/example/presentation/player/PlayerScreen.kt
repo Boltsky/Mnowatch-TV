@@ -877,6 +877,7 @@ fun PlayerScreen(
 
     var isPlaying by remember { mutableStateOf(false) }
     var isBuffering by remember { mutableStateOf(false) }
+    var isPlayerLoading by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var savedPlaybackPositionMs by remember { mutableLongStateOf(state.initialResumePositionMs.takeIf { it > 1000L } ?: 0L) }
     var totalDuration by remember { mutableLongStateOf(0L) }
@@ -1206,6 +1207,11 @@ fun PlayerScreen(
                         if (heights.isNotEmpty()) {
                             detectedVideoHeights = (detectedVideoHeights + heights).distinct().sortedDescending()
                         }
+                    }
+
+                    override fun onIsLoadingChanged(loading: Boolean) {
+                        isPlayerLoading = loading
+                        bufferedPosition = this@apply.bufferedPosition.coerceAtLeast(0L)
                     }
 
                     override fun onPlaybackStateChanged(playbackState: Int) {
@@ -1758,8 +1764,9 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Loading spinner while player is loading initial stream or buffering mid-stream
-        if (state.isLoading || isBuffering) {
+        // Loading spinner while player is loading initial stream or buffering mid-stream (including while paused)
+        val isActivelyBuffering = state.isLoading || isBuffering || (isPlayerLoading && (bufferedPosition < currentPosition + 12_000L || currentPosition < 1000L))
+        if (isActivelyBuffering) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1786,7 +1793,8 @@ fun PlayerScreen(
                             }
                         }
                         isBuffering && hasAppliedResumeForCurrentMedia && currentPosition < 1000L -> "Buffering saved position... Please wait a moment"
-                        isBuffering -> "Buffering video stream... Please wait a moment"
+                        !isPlaying && isPlayerLoading -> "Buffering video stream while paused... Please wait a moment"
+                        isBuffering || isActivelyBuffering -> "Buffering video stream... Please wait a moment"
                         else -> null
                     }
                     if (notice != null) {
@@ -1960,12 +1968,42 @@ fun PlayerScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "${formatTime(currentPosition)} / ${formatTime(totalDuration)}",
-                            color = MunowatchTextPrimary,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text(
+                                text = "${formatTime(currentPosition)} / ${formatTime(totalDuration)}",
+                                color = MunowatchTextPrimary,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            if (isActivelyBuffering) {
+                                Surface(
+                                    color = MunowatchGreen.copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(4.dp),
+                                    border = BorderStroke(1.dp, MunowatchGreen.copy(alpha = 0.6f))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        CircularProgressIndicator(
+                                            color = MunowatchGreen,
+                                            strokeWidth = 2.dp,
+                                            modifier = Modifier.size(10.dp)
+                                        )
+                                        Text(
+                                            text = if (!isPlaying && isPlayerLoading) "Buffering while paused..." else "Buffering...",
+                                            color = MunowatchGreenLight,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                            }
+                        }
 
                         // Playback Action Controls
                         Row(
@@ -2015,7 +2053,7 @@ fun PlayerScreen(
                             )
 
                             TvButton(
-                                text = if (isPlaying) "Pause" else "Play",
+                                text = if (isActivelyBuffering && !isPlaying) "Buffering..." else if (isPlaying) "Pause" else "Play",
                                 icon = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                 onClick = {
                                     if (exoPlayer.playWhenReady && exoPlayer.playbackState != Player.STATE_ENDED) {

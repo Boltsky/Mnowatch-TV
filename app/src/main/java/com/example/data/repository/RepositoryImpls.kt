@@ -306,25 +306,34 @@ class MovieRepositoryImpl(
         // Priority 1: Direct Twolekede media server genre catalog (No session cookie needed)
         // Fetch 6 pages per batch concurrently for a deep, rich genre catalog
         if (genreName.isNotBlank()) {
-            val twolekedeGenre = mapGenreToTwolekedeName(genreName)
-            val pagesPerBatch = 6
-            val startGenrePage = (targetPage - 1) * pagesPerBatch + 1
-            val endGenrePage = startGenrePage + pagesPerBatch - 1
-            try {
-                coroutineScope {
-                    val pageJobs = (startGenrePage..endGenrePage).map { p ->
-                        async {
-                            try {
-                                val genreRes = api.getTwolekedeGenreCatalog(twolekedeGenre, page = p)
-                                genreRes.getOrNull()?.let { parser.parseMediaCards(it) } ?: emptyList()
-                            } catch (_: Exception) {
-                                emptyList()
+            if (genreName.equals("Series", ignoreCase = true) || genreName.equals("Serie", ignoreCase = true)) {
+                try {
+                    val sRes = api.getTwolekedeSeriesCatalog(page = targetPage)
+                    if (sRes.isSuccess) {
+                        parsed = parser.parseMediaCards(sRes.getOrDefault("")).map { it.copy(isSeries = true, genre = "Series") }
+                    }
+                } catch (_: Exception) {}
+            } else {
+                val twolekedeGenre = mapGenreToTwolekedeName(genreName)
+                val pagesPerBatch = 6
+                val startGenrePage = (targetPage - 1) * pagesPerBatch + 1
+                val endGenrePage = startGenrePage + pagesPerBatch - 1
+                try {
+                    coroutineScope {
+                        val pageJobs = (startGenrePage..endGenrePage).map { p ->
+                            async {
+                                try {
+                                    val genreRes = api.getTwolekedeGenreCatalog(twolekedeGenre, page = p)
+                                    genreRes.getOrNull()?.let { parser.parseMediaCards(it) } ?: emptyList()
+                                } catch (_: Exception) {
+                                    emptyList()
+                                }
                             }
                         }
+                        parsed = pageJobs.awaitAll().flatten().distinctBy { it.id }
                     }
-                    parsed = pageJobs.awaitAll().flatten().distinctBy { it.id }
-                }
-            } catch (_: Exception) {}
+                } catch (_: Exception) {}
+            }
         }
 
         // Priority 2: Fallback to Munowatch grid-slot if media server catalog is empty
@@ -1205,33 +1214,77 @@ class SeriesRepositoryImpl(
         page: Int,
         perPage: Int
     ): Result<List<MediaItem>> {
-        val catSlug = category?.takeIf {
-            it.isNotBlank() && !it.equals("All Categories", ignoreCase = true) && !it.equals("All Genres", ignoreCase = true)
-        }?.let { toCategorySlug(it) }
+        val hasVj = !vj.isNullOrBlank() && !vj.equals("All VJs", ignoreCase = true)
+        val hasCategory = !category.isNullOrBlank() && !category.equals("All Categories", ignoreCase = true) && !category.equals("All Genres", ignoreCase = true)
 
-        val vjSlug = vj?.takeIf {
-            it.isNotBlank() && !it.equals("All VJs", ignoreCase = true)
-        }?.let { toVjSlug(it) }
+        val seriesList = mutableListOf<MediaItem>()
 
-        val cleanYear = year?.takeIf { it.isNotBlank() }
-
-        val apiRes = api.getFilteredCatalog(
-            year = cleanYear,
-            categorySlug = catSlug,
-            vjSlug = vjSlug,
-            mediaType = 2,
-            page = page,
-            perPage = perPage
-        )
-
-        if (apiRes.isSuccess) {
-            val items = apiRes.getOrDefault(emptyList()).map { it.copy(isSeries = true) }
-            if (items.isNotEmpty()) {
-                MediaCache.putAll(items)
-                return Result.success(items)
+        // 1. If VJ is specified, fetch from Twolekede category catalog (which hosts authentic full series for that VJ)
+        if (hasVj) {
+            val effectiveVj = vj!!.trim()
+            val twolekedeVj = if (effectiveVj.startsWith("VJ ", ignoreCase = true)) effectiveVj else "VJ $effectiveVj"
+            val tkRes = api.getTwolekedeCategoryCatalog(twolekedeVj, page = 1)
+            if (tkRes.isSuccess) {
+                val tkCards = parser.parseMediaCards(tkRes.getOrDefault(""))
+                val tkSeries = tkCards.filter { it.isSeries || it.streamUrl.contains("seriesdetails.php") }
+                val filteredSeries = if (hasCategory) {
+                    tkSeries.filter { it.genre.contains(category!!, ignoreCase = true) || it.title.contains(category!!, ignoreCase = true) }
+                } else {
+                    tkSeries
+                }
+                val distinctSeries = filteredSeries.distinctBy { it.id.ifBlank { it.title.lowercase() } }
+                val paged = distinctSeries.drop((page - 1) * perPage).take(perPage)
+                seriesList.addAll(paged.map { it.copy(isSeries = true, vj = twolekedeVj) })
             }
         }
-        return apiRes
+
+        // 2. If Category/Genre is specified without VJ, fetch series by genre
+        if (seriesList.isEmpty() && hasCategory) {
+            val catRes = api.getTwolekedeGenreCatalog(category!!, page = page)
+            if (catRes.isSuccess) {
+                val catCards = parser.parseMediaCards(catRes.getOrDefault(""))
+                val catSeries = catCards.filter { it.isSeries || it.streamUrl.contains("seriesdetails.php") }
+                seriesList.addAll(catSeries.map { it.copy(isSeries = true) })
+            }
+        }
+
+        // 3. Fallback / supplement with ugawatch filtered catalog
+        if (seriesList.isEmpty()) {
+            val catSlug = if (hasCategory) toCategorySlug(category!!) else null
+            val vjSlug = if (hasVj) toVjSlug(vj!!) else null
+            val cleanYear = year?.takeIf { it.isNotBlank() }
+
+            val apiRes = api.getFilteredCatalog(
+                year = cleanYear,
+                categorySlug = catSlug,
+                vjSlug = vjSlug,
+                mediaType = 2,
+                page = page,
+                perPage = perPage
+            )
+            if (apiRes.isSuccess) {
+                val items = apiRes.getOrDefault(emptyList()).map { it.copy(isSeries = true) }
+                if (items.isNotEmpty()) {
+                    seriesList.addAll(items)
+                }
+            }
+        }
+
+        // 4. Fallback if neither VJ nor category, or other endpoints returned empty: direct live series catalog
+        if (seriesList.isEmpty() && !hasVj && !hasCategory) {
+            val tkRes = api.getTwolekedeSeriesCatalog(page = page)
+            if (tkRes.isSuccess) {
+                val tkCards = parser.parseMediaCards(tkRes.getOrDefault(""))
+                seriesList.addAll(tkCards.map { it.copy(isSeries = true) })
+            }
+        }
+
+        val distinct = seriesList.distinctBy { it.id.ifBlank { it.title.lowercase() } }
+        if (distinct.isNotEmpty()) {
+            MediaCache.putAll(distinct)
+            return Result.success(distinct)
+        }
+        return Result.success(emptyList())
     }
 
     private fun extractBaseSeriesName(title: String): String {
@@ -1447,8 +1500,9 @@ class SeriesRepositoryImpl(
         val baseName = parser.extractBaseSeriesName(rawSeriesTitle)
         val finalTitle = if (baseName.length >= 2) baseName else rawSeriesTitle
 
-        var detail = parser.parseSeriesEpisodes(id, combinedHtml, knownSeriesTitle = finalTitle)
-        var finalPoster = if (!cached?.posterUrl.isNullOrBlank()) cached.posterUrl else detail.posterUrl
+        val cachedPoster = cached?.posterUrl?.takeIf { parser.isValidPosterUrl(it) }
+        var detail = parser.parseSeriesEpisodes(id, combinedHtml, knownSeriesTitle = finalTitle, knownPosterUrl = cachedPoster)
+        var finalPoster = cachedPoster ?: detail.posterUrl.takeIf { parser.isValidPosterUrl(it) } ?: ""
         val finalBackdrop = if (!cached?.backdropUrl.isNullOrBlank()) cached.backdropUrl else (detail.backdropUrl.takeIf { it.isNotBlank() } ?: finalPoster)
         val finalVj = if (!cached?.vj.isNullOrBlank() && cached.vj != "VJ Translated") cached.vj else (detail.vj.takeIf { it.isNotBlank() } ?: "VJ Translated")
         val finalYear = if (!cached?.year.isNullOrBlank()) cached.year else detail.year
@@ -1466,7 +1520,7 @@ class SeriesRepositoryImpl(
                 append("<div id=\"cached-series-episodes\">\n")
                 for (item in cachedMatches) {
                     append("<a href=\"${item.streamUrl}\" title=\"${item.title}\">")
-                    if (item.posterUrl.isNotBlank()) {
+                    if (item.posterUrl.isNotBlank() && parser.isValidPosterUrl(item.posterUrl)) {
                         append("<img src=\"${item.posterUrl}\" alt=\"${item.title}\" />")
                     }
                     append("<span>${item.title}</span></a>\n")
@@ -1474,7 +1528,7 @@ class SeriesRepositoryImpl(
                 append("</div>\n")
             }
             combinedHtml = "$combinedHtml\n$cachedHtml"
-            detail = parser.parseSeriesEpisodes(id, combinedHtml, knownSeriesTitle = finalTitle)
+            detail = parser.parseSeriesEpisodes(id, combinedHtml, knownSeriesTitle = finalTitle, knownPosterUrl = cachedPoster)
         }
 
         // If only 1 episode was detected, search Twolekede and Munowatch to find all episodes and seasons
@@ -1489,7 +1543,7 @@ class SeriesRepositoryImpl(
                 val detailRes = api.getTwolekedeSeriesDetails(canonicalTkUrl, finalVj).getOrNull()
                 if (!detailRes.isNullOrBlank()) {
                     combinedHtml = "$combinedHtml\n<div id=\"twolekede-fallback-episodes\">\n$detailRes\n</div>"
-                    detail = parser.parseSeriesEpisodes(id, combinedHtml, knownSeriesTitle = finalTitle)
+                    detail = parser.parseSeriesEpisodes(id, combinedHtml, knownSeriesTitle = finalTitle, knownPosterUrl = cachedPoster)
                 }
             } catch (_: Exception) {}
 
@@ -1502,13 +1556,13 @@ class SeriesRepositoryImpl(
                         val sDoc = org.jsoup.Jsoup.parse(twolekedeSearchRes)
                         val matchingLink = sDoc.select("a[href*='seriesdetails.php']").firstOrNull { a ->
                             val linkTitle = (a.selectFirst("h3, h4, .title, .content-title")?.text() ?: a.attr("title").ifBlank { a.text() }).trim()
-                            linkTitle.isNotBlank() && (linkTitle.contains(baseName, ignoreCase = true) || baseName.contains(linkTitle, ignoreCase = true))
+                            linkTitle.isNotBlank() && (parser.titlesMatch(linkTitle, baseName) || parser.titlesMatch(linkTitle, finalTitle))
                         }
                         if (matchingLink != null) {
                             val detailRes = api.getTwolekedeSeriesDetails(matchingLink.attr("href"), finalVj).getOrNull()
                             if (!detailRes.isNullOrBlank()) {
                                 combinedHtml = "$combinedHtml\n<div id=\"twolekede-fallback-episodes\">\n$detailRes\n</div>"
-                                detail = parser.parseSeriesEpisodes(id, combinedHtml, knownSeriesTitle = finalTitle)
+                                detail = parser.parseSeriesEpisodes(id, combinedHtml, knownSeriesTitle = finalTitle, knownPosterUrl = cachedPoster)
                             }
                         }
                     }
@@ -1560,9 +1614,9 @@ class SeriesRepositoryImpl(
                         append("</div>\n")
                     }
                     combinedHtml = "$combinedHtml\n$searchHtml"
-                    detail = parser.parseSeriesEpisodes(id, combinedHtml, knownSeriesTitle = finalTitle)
-                    if (finalPoster.isBlank()) {
-                        discoveredItems.firstOrNull { it.posterUrl.isNotBlank() }?.let {
+                    detail = parser.parseSeriesEpisodes(id, combinedHtml, knownSeriesTitle = finalTitle, knownPosterUrl = cachedPoster)
+                    if (finalPoster.isBlank() || !parser.isValidPosterUrl(finalPoster)) {
+                        discoveredItems.firstOrNull { it.posterUrl.isNotBlank() && parser.isValidPosterUrl(it.posterUrl) }?.let {
                             finalPoster = it.posterUrl
                         }
                     }
@@ -1612,28 +1666,29 @@ class SeriesRepositoryImpl(
                 }
             }
             if (foundMissingEpisode) {
-                detail = parser.parseSeriesEpisodes(id, combinedHtml, knownSeriesTitle = finalTitle)
+                detail = parser.parseSeriesEpisodes(id, combinedHtml, knownSeriesTitle = finalTitle, knownPosterUrl = cachedPoster)
             }
         }
 
         // If poster is still blank, extract from combinedHtml or first episode watch page
-        if (finalPoster.isBlank()) {
-            finalPoster = parser.extractMoviePosterFromWatchPage(combinedHtml) ?: ""
+        if (finalPoster.isBlank() || !parser.isValidPosterUrl(finalPoster)) {
+            finalPoster = parser.extractMoviePosterFromWatchPage(combinedHtml)?.takeIf { parser.isValidPosterUrl(it) }
+                ?: detail.posterUrl.takeIf { parser.isValidPosterUrl(it) } ?: ""
         }
-        if (finalPoster.isBlank()) {
+        if (finalPoster.isBlank() || !parser.isValidPosterUrl(finalPoster)) {
             val firstEpStream = detail.seasons.firstOrNull()?.episodes?.firstOrNull()?.streamUrl
             if (!firstEpStream.isNullOrBlank()) {
                 try {
                     val epHtml = api.getWatchPageHtml(firstEpStream).getOrDefault("")
                     if (epHtml.isNotBlank()) {
-                        finalPoster = parser.extractMoviePosterFromWatchPage(epHtml) ?: ""
+                        finalPoster = parser.extractMoviePosterFromWatchPage(epHtml)?.takeIf { parser.isValidPosterUrl(it) } ?: ""
                     }
                 } catch (_: Exception) {}
             }
         }
-        if (finalPoster.isBlank()) {
+        if (finalPoster.isBlank() || !parser.isValidPosterUrl(finalPoster)) {
             val matchWithPoster = MediaCache.getAll().firstOrNull {
-                it.posterUrl.isNotBlank() && !it.posterUrl.contains("1790800093") && isMatchingSeriesItem(it.title, finalTitle, baseName)
+                it.posterUrl.isNotBlank() && parser.isValidPosterUrl(it.posterUrl) && !it.posterUrl.contains("1790800093") && isMatchingSeriesItem(it.title, finalTitle, baseName)
             }
             if (matchWithPoster != null) {
                 finalPoster = matchWithPoster.posterUrl
@@ -2539,16 +2594,28 @@ class PlaybackRepositoryImpl(
                 if (cleanTitle.length >= 2) {
                     val noApostrophe = cleanTitle.replace("'", "").replace("’", "").replace("`", "").trim()
                     val alphanumeric = cleanTitle.replace(Regex("""[^a-zA-Z0-9\s]"""), " ").replace(Regex("""\s+"""), " ").trim()
+                    val baseSeriesName = parser.extractBaseSeriesName(cleanTitle).ifBlank { cleanTitle }
                     val firstWord = cleanTitle.split(" ").firstOrNull { it.isNotBlank() }?.replace(Regex("""[^a-zA-Z0-9]"""), "") ?: ""
-                    val candidateQueries = linkedSetOf(
-                        cleanTitle,
-                        noApostrophe,
-                        alphanumeric,
-                        cleanTitle.replace(" ", ""),
-                        cleanTitle.substringBefore(":").substringBefore("-").trim(),
-                        cleanTitle.removePrefix("The ").removePrefix("the ").trim(),
-                        firstWord
-                    ).filter { it.length >= 2 }
+                    val candidateQueries = if (isSeriesEpisode) {
+                        linkedSetOf(
+                            cleanTitle,
+                            baseSeriesName,
+                            noApostrophe,
+                            alphanumeric,
+                            cleanTitle.substringBefore(":").substringBefore("-").trim(),
+                            cleanTitle.removePrefix("The ").removePrefix("the ").trim()
+                        ).filter { it.length >= 2 }
+                    } else {
+                        linkedSetOf(
+                            cleanTitle,
+                            noApostrophe,
+                            alphanumeric,
+                            cleanTitle.replace(" ", ""),
+                            cleanTitle.substringBefore(":").substringBefore("-").trim(),
+                            cleanTitle.removePrefix("The ").removePrefix("the ").trim(),
+                            if (firstWord.length >= 4) firstWord else ""
+                        ).filter { it.length >= 2 }
+                    }
 
                     for (q in candidateQueries) {
                         if (source != null) break
@@ -2559,17 +2626,17 @@ class PlaybackRepositoryImpl(
                                 if (isSeriesEpisode) {
                                     val seriesMatch = cards.firstOrNull { card ->
                                         val ct = parser.cleanTitle(card.title)
-                                        val matchesTitle = parser.titlesMatch(ct, cleanTitle)
+                                        val matchesTitle = parser.titlesMatch(ct, cleanTitle) || parser.titlesMatch(ct, baseSeriesName)
                                         val matchesVj = targetVj.isBlank() || card.vj.lowercase().contains(targetVj) || targetVj.contains(card.vj.lowercase().trim())
                                         matchesTitle && matchesVj && (card.streamUrl.contains("seriesdetails") || card.isSeries)
                                     } ?: cards.firstOrNull { card ->
                                         val ct = parser.cleanTitle(card.title)
-                                        parser.titlesMatch(ct, cleanTitle) && (card.streamUrl.contains("seriesdetails") || card.isSeries)
+                                        (parser.titlesMatch(ct, cleanTitle) || parser.titlesMatch(ct, baseSeriesName)) && (card.streamUrl.contains("seriesdetails") || card.isSeries)
                                     }
                                     if (seriesMatch != null) {
                                         val seriesDetailHtml = api.getTwolekedeSeriesDetails(seriesMatch.streamUrl).getOrNull()
                                         if (!seriesDetailHtml.isNullOrBlank()) {
-                                            val sDetail = parser.parseSeriesEpisodes(seriesMatch.id, seriesDetailHtml, seriesMatch.title)
+                                            val sDetail = parser.parseSeriesEpisodes(seriesMatch.id, seriesDetailHtml, seriesMatch.title, knownPosterUrl = seriesMatch.posterUrl.takeIf { parser.isValidPosterUrl(it) })
                                             val targetEp = sDetail.seasons.flatMap { it.episodes }.find { it.number == epNum }
                                                 ?: sDetail.seasons.firstOrNull()?.episodes?.firstOrNull()
                                             if (targetEp != null && targetEp.streamUrl.isNotBlank()) {

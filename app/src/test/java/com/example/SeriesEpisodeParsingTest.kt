@@ -474,6 +474,61 @@ class SeriesEpisodeParsingTest {
         assertEquals(1, detail2.seasons[0].number)
         assertEquals(2, detail2.seasons[0].episodes[0].number)
     }
+
+    @Test
+    fun parseSeriesEpisodes_rejectsPlaceholderPosterAndDoesNotStealSimilarSeriesPoster() {
+        val htmlWithSupacellSimilar = """
+            <html>
+            <head><title>Carrie - Twolekede</title></head>
+            <body>
+                <div class="poster-container">
+                    <img src="mv-admin/" class="series-poster" alt="Carrie" />
+                </div>
+                <h1 class="title">Carrie</h1>
+                <div id="list-container">
+                    <div class="episode-box">
+                        <a href="preview.php?id=801" title="Carrie Episode 1">Episode 1</a>
+                    </div>
+                </div>
+                <div class="similar-series">
+                    <h3>Similar Series</h3>
+                    <div class="similar-card">
+                        <a href="seriesdetails.php?title=Supacell&category=VJ+Junior">
+                            <img src="https://twolekede.com/mv-admin/uploads/posters/supacell_1080p.jpg" alt="Supacell" />
+                            <span>Supacell</span>
+                        </a>
+                    </div>
+                </div>
+            </body>
+            </html>
+        """.trimIndent()
+
+        // 1. Without knownPosterUrl: should NOT pick the Supacell poster from similar-card
+        val detailWithoutKnown = parser.parseSeriesEpisodes("series_carrie", htmlWithSupacellSimilar, "Carrie")
+        assertTrue("Poster must not be Supacell", !detailWithoutKnown.posterUrl.contains("supacell", ignoreCase = true))
+        assertTrue("Poster must not be mv-admin/ directory", !detailWithoutKnown.posterUrl.endsWith("mv-admin/"))
+
+        // 2. With authentic knownPosterUrl: should preserve knownPosterUrl
+        val authenticCarriePoster = "https://twolekede.com/mv-admin/uploads/posters/carrie_authentic.jpg"
+        val detailWithKnown = parser.parseSeriesEpisodes("series_carrie", htmlWithSupacellSimilar, "Carrie", knownPosterUrl = authenticCarriePoster)
+        assertEquals(authenticCarriePoster, detailWithKnown.posterUrl)
+    }
+
+    @Test
+    fun titlesMatch_strictlyRejectsUnrelatedSeriesAndDissimilarFranchises() {
+        // Disallow loose single-token false positives
+        org.junit.Assert.assertFalse(parser.titlesMatch("Supernatural", "Supacell"))
+        org.junit.Assert.assertFalse(parser.titlesMatch("Supacell", "Supernatural"))
+        org.junit.Assert.assertFalse(parser.titlesMatch("Wildflower", "Wildfire"))
+        org.junit.Assert.assertFalse(parser.titlesMatch("The Crossing", "Cross"))
+        org.junit.Assert.assertFalse(parser.titlesMatch("Daredevil", "Supacell"))
+
+        // Allow legitimate title matches
+        assertTrue(parser.titlesMatch("Supacell S01", "Supacell"))
+        assertTrue(parser.titlesMatch("Supacell", "Supacell Season 1"))
+        assertTrue(parser.titlesMatch("Wildflower Season 1", "Wildflower"))
+        assertTrue(parser.titlesMatch("The Walking Dead", "Walking Dead"))
+    }
 }
 
 

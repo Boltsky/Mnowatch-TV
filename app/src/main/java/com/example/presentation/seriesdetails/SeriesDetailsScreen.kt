@@ -46,6 +46,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -232,8 +233,10 @@ fun SeriesDetailsScreen(
     ) ?: emptyList()
 
     val playEpisodeFocusRequester = remember { FocusRequester() }
+    val backFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(detail.id) {
+        kotlinx.coroutines.delay(150)
         try {
             playEpisodeFocusRequester.requestFocus()
         } catch (_: Exception) {}
@@ -286,7 +289,12 @@ fun SeriesDetailsScreen(
                         text = "Back",
                         icon = Icons.AutoMirrored.Filled.ArrowBack,
                         onClick = onBack,
-                        isPrimary = false
+                        isPrimary = false,
+                        modifier = Modifier
+                            .focusRequester(backFocusRequester)
+                            .focusProperties {
+                                down = playEpisodeFocusRequester
+                            }
                     )
                     Spacer(modifier = Modifier.width(16.dp))
                     Text(
@@ -496,7 +504,11 @@ fun SeriesDetailsScreen(
                                 TvButton(
                                     text = buttonTitle,
                                     icon = Icons.Default.PlayArrow,
-                                    modifier = Modifier.focusRequester(playEpisodeFocusRequester),
+                                    modifier = Modifier
+                                        .focusRequester(playEpisodeFocusRequester)
+                                        .focusProperties {
+                                            up = backFocusRequester
+                                        },
                                     onClick = {
                                         val target = firstEp.streamUrl.takeIf { it.isNotBlank() && (it.contains("twolekede") || it.contains("mid=") || it.contains("preview.php") || it.contains("download.php")) }
                                             ?: Regex("""[?&]mid=([0-9]+)""").find(firstEp.streamUrl)?.let { "/twolekede?mid=${it.groupValues[1]}" }
