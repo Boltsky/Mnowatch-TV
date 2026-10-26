@@ -304,18 +304,32 @@ class MovieRepositoryImpl(
         var parsed = emptyList<MediaItem>()
 
         // Priority 1: Direct Twolekede media server genre catalog (No session cookie needed)
-        // Fetch 6 pages per batch concurrently for a deep, rich genre catalog
+        // Fetch 12 pages per batch concurrently for a deep, rich genre catalog (240+ movies)
         if (genreName.isNotBlank()) {
             if (genreName.equals("Series", ignoreCase = true) || genreName.equals("Serie", ignoreCase = true)) {
+                val pagesPerBatch = 6
+                val startSeriesPage = (targetPage - 1) * pagesPerBatch + 1
+                val endSeriesPage = startSeriesPage + pagesPerBatch - 1
                 try {
-                    val sRes = api.getTwolekedeSeriesCatalog(page = targetPage)
-                    if (sRes.isSuccess) {
-                        parsed = parser.parseMediaCards(sRes.getOrDefault("")).map { it.copy(isSeries = true, genre = "Series") }
+                    coroutineScope {
+                        val seriesJobs = (startSeriesPage..endSeriesPage).map { p ->
+                            async {
+                                try {
+                                    val sRes = api.getTwolekedeSeriesCatalog(page = p)
+                                    if (sRes.isSuccess) {
+                                        parser.parseMediaCards(sRes.getOrDefault("")).map { it.copy(isSeries = true, genre = "Series") }
+                                    } else emptyList()
+                                } catch (_: Exception) {
+                                    emptyList()
+                                }
+                            }
+                        }
+                        parsed = seriesJobs.awaitAll().flatten().distinctBy { it.id }
                     }
                 } catch (_: Exception) {}
             } else {
                 val twolekedeGenre = mapGenreToTwolekedeName(genreName)
-                val pagesPerBatch = 6
+                val pagesPerBatch = 12
                 val startGenrePage = (targetPage - 1) * pagesPerBatch + 1
                 val endGenrePage = startGenrePage + pagesPerBatch - 1
                 try {
@@ -458,6 +472,13 @@ class MovieRepositoryImpl(
         return Result.success(parsed)
     }
 
+    private fun cleanTitleKey(raw: String): String {
+        if (raw.isBlank()) return ""
+        return parser.cleanTitle(raw)
+            .lowercase()
+            .replace(Regex("""[^a-z0-9]"""), "")
+    }
+
     override suspend fun getMoviesByVjAndGenre(
         vjId: Int,
         genreId: Int,
@@ -484,38 +505,51 @@ class MovieRepositoryImpl(
 
         val twolekedeVj = if (vjName.isNotBlank()) mapVjToTwolekedeName(vjName) else ""
         val twolekedeGenre = if (genreName.isNotBlank()) mapGenreToTwolekedeName(genreName) else ""
-        val pagesPerBatch = 6
+        val pagesPerBatch = 18
         val startBatchPage = (targetPage - 1) * pagesPerBatch + 1
         val endBatchPage = startBatchPage + pagesPerBatch - 1
 
-        // 1. Authoritative Twolekede VJ Category Catalog: 100% movies translated by this VJ
-        if (twolekedeVj.isNotBlank()) {
+        // 1. Authoritative Twolekede VJ Category Catalog: obtain complete VJ catalog
+        var vjMovies = MediaCache.getVjMovies(vjId)
+        if (vjMovies.isNullOrEmpty() && twolekedeVj.isNotBlank()) {
             try {
-                coroutineScope {
-                    val vjPageJobs = (startBatchPage..endBatchPage).map { p ->
-                        async {
-                            try {
-                                val catRes = api.getTwolekedeCategoryCatalog(twolekedeVj, page = p)
-                                catRes.getOrNull()?.let { parser.parseMediaCards(it) } ?: emptyList()
-                            } catch (_: Exception) {
-                                emptyList()
-                            }
-                        }
-                    }
-                    val allVjItems = vjPageJobs.awaitAll().flatten().distinctBy { it.id }
-                    for (item in allVjItems) {
-                        val tagged = item.copy(vj = vjName)
-                        if (genreName.isBlank() || com.example.presentation.movies.MoviesViewModel.matchesCategory(tagged, genreName)) {
-                            val withGenre = if (tagged.genre.isBlank()) tagged.copy(genre = genreName) else tagged
-                            com.example.presentation.movies.MoviesViewModel.recordItemCategory(withGenre.id, genreName)
-                            accumulated.add(withGenre)
-                        }
+                val catRes = api.getTwolekedeCategoryCatalog(twolekedeVj, page = 1)
+                val catHtml = catRes.getOrNull()
+                if (!catHtml.isNullOrBlank()) {
+                    val parsed = parser.parseMediaCards(catHtml)
+                    if (parsed.isNotEmpty()) {
+                        val withVj = parsed.map { if (it.vj.isBlank()) it.copy(vj = vjName) else it }
+                        MediaCache.setVjMovies(vjId, withVj)
+                        vjMovies = withVj
                     }
                 }
             } catch (_: Exception) {}
         }
+        val allVjMovies = vjMovies ?: emptyList()
 
-        // 2. Authoritative Twolekede Genre Catalog: query batch of pages, strictly filter by VJ
+        // Build O(1) correlation sets for ultra-fast lookup (zero UI lag)
+        val vjMovieIdSet = HashSet<String>(allVjMovies.size)
+        val vjMovieStreamUrlSet = HashSet<String>(allVjMovies.size)
+        val vjMovieTitleSet = HashSet<String>(allVjMovies.size)
+        for (m in allVjMovies) {
+            if (m.id.isNotBlank()) vjMovieIdSet.add(m.id)
+            if (m.streamUrl.isNotBlank()) vjMovieStreamUrlSet.add(m.streamUrl)
+            val cleanKey = cleanTitleKey(m.title)
+            if (cleanKey.isNotBlank()) vjMovieTitleSet.add(cleanKey)
+        }
+
+        // On initial page (page 1), include matching movies from VJ's authoritative catalog
+        if (targetPage == 1 && allVjMovies.isNotEmpty()) {
+            for (item in allVjMovies) {
+                if (genreName.isBlank() || com.example.presentation.movies.MoviesViewModel.matchesCategory(item, genreName)) {
+                    val withGenre = if (item.genre.isBlank() && genreName.isNotBlank()) item.copy(genre = genreName) else item
+                    com.example.presentation.movies.MoviesViewModel.recordItemCategory(withGenre.id, genreName)
+                    accumulated.add(withGenre)
+                }
+            }
+        }
+
+        // 2. Authoritative Twolekede Genre Catalog: batch scan across Twolekede genre pages with O(1) VJ correlation
         if (twolekedeGenre.isNotBlank()) {
             try {
                 coroutineScope {
@@ -531,9 +565,21 @@ class MovieRepositoryImpl(
                     }
                     val allGenreItems = genrePageJobs.awaitAll().flatten().distinctBy { it.id }
                     for (item in allGenreItems) {
-                        val tagged = if (item.genre.isBlank()) item.copy(genre = genreName) else item
-                        if (vjName.isBlank() || com.example.presentation.movies.MoviesViewModel.matchesVj(tagged, vjName)) {
-                            val finalTagged = if (tagged.vj.isBlank()) tagged.copy(vj = vjName) else tagged
+                        val cleanKey = cleanTitleKey(item.title)
+                        val isVjMatch = when {
+                            item.vj.isNotBlank() && !com.example.presentation.movies.MoviesViewModel.matchesVj(item, vjName) -> false
+                            vjMovieIdSet.contains(item.id) -> true
+                            item.streamUrl.isNotBlank() && vjMovieStreamUrlSet.contains(item.streamUrl) -> true
+                            cleanKey.isNotBlank() && vjMovieTitleSet.contains(cleanKey) -> true
+                            com.example.presentation.movies.MoviesViewModel.matchesVj(item, vjName) -> true
+                            else -> false
+                        }
+
+                        if (isVjMatch) {
+                            val finalTagged = item.copy(
+                                vj = vjName,
+                                genre = if (item.genre.isBlank() && genreName.isNotBlank()) genreName else item.genre
+                            )
                             com.example.presentation.movies.MoviesViewModel.recordItemCategory(finalTagged.id, genreName)
                             accumulated.add(finalTagged)
                         }
@@ -556,15 +602,16 @@ class MovieRepositoryImpl(
             for (item in munoParsed) {
                 val tagged = if (item.vj.isBlank() && vjName.isNotBlank()) item.copy(vj = vjName) else item
                 if (com.example.presentation.movies.MoviesViewModel.matchesVj(tagged, vjName) &&
-                    com.example.presentation.movies.MoviesViewModel.matchesCategory(tagged, genreName)) {
-                    com.example.presentation.movies.MoviesViewModel.recordItemCategory(tagged.id, genreName)
-                    accumulated.add(tagged)
+                    (genreName.isBlank() || com.example.presentation.movies.MoviesViewModel.matchesCategory(tagged, genreName))) {
+                    val withGenre = if (tagged.genre.isBlank() && genreName.isNotBlank()) tagged.copy(genre = genreName) else tagged
+                    com.example.presentation.movies.MoviesViewModel.recordItemCategory(withGenre.id, genreName)
+                    accumulated.add(withGenre)
                 }
             }
         } catch (_: Exception) {}
 
-        // 4. Targeted Twolekede Search fallback if few items found
-        if (accumulated.size < 15 && vjName.isNotBlank() && genreName.isNotBlank()) {
+        // 4. Targeted Twolekede Search fallback if few items found on initial page
+        if (accumulated.isEmpty() && targetPage == 1 && vjName.isNotBlank() && genreName.isNotBlank()) {
             val cleanVj = vjName.replace("VJ", "", ignoreCase = true).trim()
             try {
                 val searchRes = api.searchTwolekede("$cleanVj $genreName")
@@ -584,6 +631,14 @@ class MovieRepositoryImpl(
             val withVj = if (item.vj.isBlank() && vjName.isNotBlank()) item.copy(vj = vjName) else item
             val withGenre = if (withVj.genre.isBlank() && genreName.isNotBlank()) withVj.copy(genre = genreName) else withVj
             withGenre
+        }
+
+        if (targetPage == 1) {
+            MediaCache.setVjGenreMovies(vjId, genreId, distinctList)
+        } else {
+            val existing = MediaCache.getVjGenreMovies(vjId, genreId) ?: emptyList()
+            val merged = (existing + distinctList).distinctBy { it.id.ifBlank { it.streamUrl }.ifBlank { it.title } }
+            MediaCache.setVjGenreMovies(vjId, genreId, merged)
         }
 
         MediaCache.putAll(distinctList)
@@ -1219,6 +1274,7 @@ class SeriesRepositoryImpl(
 
         val seriesList = mutableListOf<MediaItem>()
 
+        var twolekedeHandledVj = false
         // 1. If VJ is specified, fetch from Twolekede category catalog (which hosts authentic full series for that VJ)
         if (hasVj) {
             val effectiveVj = vj!!.trim()
@@ -1226,30 +1282,39 @@ class SeriesRepositoryImpl(
             val tkRes = api.getTwolekedeCategoryCatalog(twolekedeVj, page = 1)
             if (tkRes.isSuccess) {
                 val tkCards = parser.parseMediaCards(tkRes.getOrDefault(""))
-                val tkSeries = tkCards.filter { it.isSeries || it.streamUrl.contains("seriesdetails.php") }
-                val filteredSeries = if (hasCategory) {
-                    tkSeries.filter { it.genre.contains(category!!, ignoreCase = true) || it.title.contains(category!!, ignoreCase = true) }
-                } else {
-                    tkSeries
+                val tkSeries = tkCards.filter {
+                    (it.isSeries || it.streamUrl.contains("seriesdetails.php")) &&
+                    !MunowatchApi.isSingleMovieMisclassifiedAsSeries(it.title)
                 }
-                val distinctSeries = filteredSeries.distinctBy { it.id.ifBlank { it.title.lowercase() } }
-                val paged = distinctSeries.drop((page - 1) * perPage).take(perPage)
-                seriesList.addAll(paged.map { it.copy(isSeries = true, vj = twolekedeVj) })
+                if (tkSeries.isNotEmpty()) {
+                    twolekedeHandledVj = true
+                    val filteredSeries = if (hasCategory) {
+                        tkSeries.filter { it.genre.contains(category!!, ignoreCase = true) || it.title.contains(category!!, ignoreCase = true) }
+                    } else {
+                        tkSeries
+                    }
+                    val distinctSeries = filteredSeries.distinctBy { it.id.ifBlank { it.title.lowercase() } }
+                    val paged = distinctSeries.drop((page - 1) * perPage).take(perPage)
+                    seriesList.addAll(paged.map { it.copy(isSeries = true, vj = twolekedeVj) })
+                }
             }
         }
 
         // 2. If Category/Genre is specified without VJ, fetch series by genre
-        if (seriesList.isEmpty() && hasCategory) {
+        if (seriesList.isEmpty() && hasCategory && !twolekedeHandledVj) {
             val catRes = api.getTwolekedeGenreCatalog(category!!, page = page)
             if (catRes.isSuccess) {
                 val catCards = parser.parseMediaCards(catRes.getOrDefault(""))
-                val catSeries = catCards.filter { it.isSeries || it.streamUrl.contains("seriesdetails.php") }
+                val catSeries = catCards.filter {
+                    (it.isSeries || it.streamUrl.contains("seriesdetails.php")) &&
+                    !MunowatchApi.isSingleMovieMisclassifiedAsSeries(it.title)
+                }
                 seriesList.addAll(catSeries.map { it.copy(isSeries = true) })
             }
         }
 
-        // 3. Fallback / supplement with ugawatch filtered catalog
-        if (seriesList.isEmpty()) {
+        // 3. Fallback / supplement with ugawatch filtered catalog (only if Twolekede did not handle this VJ)
+        if (seriesList.isEmpty() && !twolekedeHandledVj) {
             val catSlug = if (hasCategory) toCategorySlug(category!!) else null
             val vjSlug = if (hasVj) toVjSlug(vj!!) else null
             val cleanYear = year?.takeIf { it.isNotBlank() }
@@ -1263,7 +1328,9 @@ class SeriesRepositoryImpl(
                 perPage = perPage
             )
             if (apiRes.isSuccess) {
-                val items = apiRes.getOrDefault(emptyList()).map { it.copy(isSeries = true) }
+                val items = apiRes.getOrDefault(emptyList())
+                    .filter { !MunowatchApi.isSingleMovieMisclassifiedAsSeries(it.title) }
+                    .map { it.copy(isSeries = true) }
                 if (items.isNotEmpty()) {
                     seriesList.addAll(items)
                 }
@@ -1376,7 +1443,10 @@ class SeriesRepositoryImpl(
 
     override suspend fun getSeriesDetails(id: String): Result<SeriesDetail> {
         val cachedDetail = MediaCache.getSeriesDetail(id)
-        if (cachedDetail != null && cachedDetail.seasons.sumOf { it.episodes.size } > 1) {
+        if (cachedDetail != null &&
+            (cachedDetail.id.equals(id, ignoreCase = true) || cachedDetail.id.removePrefix("series_").equals(id.removePrefix("series_"), ignoreCase = true)) &&
+            cachedDetail.seasons.sumOf { it.episodes.size } > 1
+        ) {
             return Result.success(cachedDetail)
         }
 
@@ -2093,6 +2163,26 @@ class PlaybackRepositoryImpl(
         if (streamPath.isNullOrBlank() && directPlayableUrl != null) {
             streamPath = directPlayableUrl
         }
+
+        // Fast-track: If direct playable CDN URL is already verified and Server 1 is requested, return immediately
+        if (directPlayableUrl != null && (serverName == null || resolvedServer.contains("Server 1", ignoreCase = true))) {
+            val cleanUrl = directPlayableUrl.replace("&amp;", "&").replace("&#38;", "&").trim()
+            val normalizedUrl = NetworkClient.normalizeStreamUrl(cleanUrl)
+            val source = PlaybackSource(
+                url = normalizedUrl,
+                type = if (normalizedUrl.contains(".m3u8")) "application/x-mpegURL" else "video/mp4",
+                quality = cachedItem?.quality ?: "1080p Full HD",
+                serverName = resolvedServer,
+                headers = mapOf(
+                    "Referer" to if (normalizedUrl.contains("twolekede") || normalizedUrl.contains("movviez")) "https://twolekede.com/" else "https://munowatch.com/",
+                    "User-Agent" to NetworkClient.USER_AGENT,
+                    "Accept" to "*/*"
+                )
+            )
+            MediaCache.cachePlaybackSource(contentId, source)
+            android.util.Log.d("MunowatchPlayback", "Fast-track direct CDN stream returned: ${source.url}")
+            return Result.success(source)
+        }
         val titleCandidate = cachedItem?.title ?: MediaCache.getMovieDetail(contentId)?.title ?: MediaCache.getSeriesDetail(contentId)?.title
         val isSeriesEpisode = contentId.contains("_ep_") || contentId.startsWith("ep_") || cachedItem?.isSeries == true
         val epNum = Regex("""_ep_?(\d+)""").find(contentId)?.groupValues?.get(1)?.toIntOrNull()
@@ -2116,7 +2206,6 @@ class PlaybackRepositoryImpl(
             var foundSource: PlaybackSource? = null
             val munoHeaders = mapOf(
                 "Referer" to "https://munowatch.com/",
-                "Cookie" to "PHPSESSID=$cookie",
                 "User-Agent" to NetworkClient.USER_AGENT,
                 "Accept" to "*/*"
             )
@@ -2289,43 +2378,90 @@ class PlaybackRepositoryImpl(
             foundSource
         }
 
-        // PRIORITY A: Direct Twolekede Media Server Stream Resolution
-        // Resolve directly from media servers FIRST for explicit Twolekede items (preview/download/details/episodes)
-        if (isExplicitTwolekede && (finalId != null || targetCandidate.contains("twolekede") || targetCandidate.contains("preview.php"))) {
-            val queryTarget = finalId ?: targetCandidate
-            val resolvedUrl = api.resolveTwolekedeStream(queryTarget, resolvedServer, titleCandidate)
+        val isServer2OrMunowatch = resolvedServer.contains("Munowatch", ignoreCase = true) ||
+            resolvedServer.contains("Server 2", ignoreCase = true)
 
-            if (!resolvedUrl.isNullOrBlank() && MunowatchApi.isValidStreamUrl(resolvedUrl)) {
-                val cleanUrl = resolvedUrl.replace("&amp;", "&").replace("&#38;", "&").trim()
+        // PRIORITY A0: If Munowatch Stream / Server 2 is requested, prioritize independent Munowatch native Bunny CDN stream
+        if (isServer2OrMunowatch && hasSession) {
+            val munoSource = resolveMunowatchNativeStream()
+            if (munoSource != null) {
+                MediaCache.cachePlaybackSource(contentId, munoSource)
+                android.util.Log.d("MunowatchPlayback", "Priority Server 2 Munowatch native Bunny CDN stream resolved: ${munoSource.url}")
+                return Result.success(munoSource)
+            }
+        }
+
+        // Also check if cached/direct stream has an authentic Bunny CDN stream for Server 2
+        if (isServer2OrMunowatch) {
+            val directBcdn = listOfNotNull(
+                streamPath,
+                cachedItem?.streamUrl,
+                MediaCache.getMovieDetail(contentId)?.streamUrl,
+                MediaCache.get(contentId)?.streamUrl
+            ).firstOrNull {
+                MunowatchApi.isValidStreamUrl(it) && it.contains("b-cdn.net") && !it.contains("trailer256.b-cdn.net") && !it.contains("intro_myvj")
+            }
+            if (directBcdn != null) {
+                val cleanUrl = directBcdn.replace("&amp;", "&").replace("&#38;", "&").trim()
                 val source = PlaybackSource(
                     url = cleanUrl,
                     type = if (cleanUrl.contains(".m3u8")) "application/x-mpegURL" else "video/mp4",
-                    quality = "1080p Full HD",
+                    quality = cachedItem?.quality ?: "1080p Full HD",
                     serverName = resolvedServer,
                     headers = mapOf(
-                        "Referer" to "https://twolekede.com/",
+                        "Referer" to "https://munowatch.com/",
                         "User-Agent" to NetworkClient.USER_AGENT,
                         "Accept" to "*/*"
                     )
                 )
                 MediaCache.cachePlaybackSource(contentId, source)
-                android.util.Log.d("MunowatchPlayback", "Twolekede direct stream resolved: ${source.url}")
                 return Result.success(source)
             }
         }
 
-        val isMunoRequested = resolvedServer.contains("Munowatch", ignoreCase = true) ||
+        // PRIORITY A: Direct Twolekede Media Server Stream Resolution
+        // Resolve directly from media servers for explicit Twolekede items (preview/download/details/episodes)
+        // Strictly avoid querying movviez.com if Server 2 is requested and movviez.com is rate-limited
+        if (isExplicitTwolekede && (finalId != null || targetCandidate.contains("twolekede") || targetCandidate.contains("preview.php"))) {
+            if (isServer2OrMunowatch && MunowatchApi.isCdnRateLimited()) {
+                android.util.Log.w("MunowatchPlayback", "Skipping movviez.com resolution for Server 2 because CDN is rate-limited")
+            } else {
+                val queryTarget = finalId ?: targetCandidate
+                val resolvedUrl = api.resolveTwolekedeStream(queryTarget, resolvedServer, titleCandidate)
+
+                if (!resolvedUrl.isNullOrBlank() && MunowatchApi.isValidStreamUrl(resolvedUrl)) {
+                    val cleanUrl = resolvedUrl.replace("&amp;", "&").replace("&#38;", "&").trim()
+                    val normalizedUrl = NetworkClient.normalizeStreamUrl(cleanUrl)
+                    val source = PlaybackSource(
+                        url = normalizedUrl,
+                        type = if (normalizedUrl.contains(".m3u8")) "application/x-mpegURL" else "video/mp4",
+                        quality = "1080p Full HD",
+                        serverName = resolvedServer,
+                        headers = mapOf(
+                            "Referer" to "https://twolekede.com/",
+                            "User-Agent" to NetworkClient.USER_AGENT,
+                            "Accept" to "*/*"
+                        )
+                    )
+                    MediaCache.cachePlaybackSource(contentId, source)
+                    android.util.Log.d("MunowatchPlayback", "Twolekede direct stream resolved: ${source.url}")
+                    return Result.success(source)
+                }
+            }
+        }
+
+        val isMunoRequested = isServer2OrMunowatch ||
             resolvedServer.contains("Server 1", ignoreCase = true) ||
             resolvedServer.contains("Fast CDN", ignoreCase = true) ||
             resolvedServer.contains("Server 3", ignoreCase = true) ||
             resolvedServer.contains("Alternate", ignoreCase = true)
 
-        // PRIORITY B: If Munowatch or Server 3 is requested, try Munowatch native Bunny CDN stream
+        // PRIORITY B: Fallback to Munowatch native Bunny CDN stream
         if (isMunoRequested && hasSession) {
             val munoSource = resolveMunowatchNativeStream()
             if (munoSource != null) {
                 MediaCache.cachePlaybackSource(contentId, munoSource)
-                android.util.Log.d("MunowatchPlayback", "Priority Munowatch native Bunny CDN stream resolved: ${munoSource.url}")
+                android.util.Log.d("MunowatchPlayback", "Fallback Munowatch native Bunny CDN stream resolved: ${munoSource.url}")
                 return Result.success(munoSource)
             }
         }
@@ -2423,24 +2559,29 @@ class PlaybackRepositoryImpl(
                         val matchId = matchCard?.let { extractNumericId(it.streamUrl) ?: extractNumericId(it.id) }
 
                         if (matchId != null) {
-                            val resolvedUrl = api.resolveTwolekedeStream(matchId, resolvedServer, titleCandidate)
-                            if (!resolvedUrl.isNullOrBlank() && MunowatchApi.isValidStreamUrl(resolvedUrl)) {
-                                val cleanUrl = resolvedUrl.replace("&amp;", "&").replace("&#38;", "&").trim()
-                                val source = PlaybackSource(
-                                    url = cleanUrl,
-                                    type = if (cleanUrl.contains(".m3u8")) "application/x-mpegURL" else "video/mp4",
-                                    quality = "1080p Full HD",
-                                    serverName = resolvedServer,
-                                    headers = mapOf(
-                                        "Referer" to "https://twolekede.com/",
-                                        "User-Agent" to NetworkClient.USER_AGENT,
-                                        "Accept" to "*/*"
+                            if (isServer2OrMunowatch && MunowatchApi.isCdnRateLimited()) {
+                                android.util.Log.w("MunowatchPlayback", "Skipping Twolekede search resolution for Server 2 because CDN is rate-limited")
+                            } else {
+                                val resolvedUrl = api.resolveTwolekedeStream(matchId, resolvedServer, titleCandidate)
+                                if (!resolvedUrl.isNullOrBlank() && MunowatchApi.isValidStreamUrl(resolvedUrl)) {
+                                    val cleanUrl = resolvedUrl.replace("&amp;", "&").replace("&#38;", "&").trim()
+                                    val normalizedUrl = NetworkClient.normalizeStreamUrl(cleanUrl)
+                                    val source = PlaybackSource(
+                                        url = normalizedUrl,
+                                        type = if (normalizedUrl.contains(".m3u8")) "application/x-mpegURL" else "video/mp4",
+                                        quality = "1080p Full HD",
+                                        serverName = resolvedServer,
+                                        headers = mapOf(
+                                            "Referer" to "https://twolekede.com/",
+                                            "User-Agent" to NetworkClient.USER_AGENT,
+                                            "Accept" to "*/*"
+                                        )
                                     )
-                                )
-                                MediaCache.putStreamPath(contentId, "https://twolekede.com/preview.php?id=$matchId")
-                                MediaCache.cachePlaybackSource(contentId, source)
-                                android.util.Log.d("MunowatchPlayback", "Twolekede stream resolved via search: ${source.url}")
-                                return Result.success(source)
+                                    MediaCache.putStreamPath(contentId, "https://twolekede.com/preview.php?id=$matchId")
+                                    MediaCache.cachePlaybackSource(contentId, source)
+                                    android.util.Log.d("MunowatchPlayback", "Twolekede stream resolved via search: ${source.url}")
+                                    return Result.success(source)
+                                }
                             }
                         }
                     }
@@ -2640,21 +2781,27 @@ class PlaybackRepositoryImpl(
                                             val targetEp = sDetail.seasons.flatMap { it.episodes }.find { it.number == epNum }
                                                 ?: sDetail.seasons.firstOrNull()?.episodes?.firstOrNull()
                                             if (targetEp != null && targetEp.streamUrl.isNotBlank()) {
-                                                val resolvedFallback = api.resolveTwolekedeStream(targetEp.streamUrl, resolvedServer, cleanTitle)
-                                                    ?: api.resolveTwolekedeStream(targetEp.id, resolvedServer, cleanTitle)
-                                                if (!resolvedFallback.isNullOrBlank() && MunowatchApi.isValidStreamUrl(resolvedFallback)) {
-                                                    val cleanFallback = resolvedFallback.replace("&amp;", "&").replace("&#38;", "&").trim()
-                                                    source = PlaybackSource(
-                                                        url = cleanFallback,
-                                                        type = if (cleanFallback.contains(".m3u8")) "application/x-mpegURL" else "video/mp4",
-                                                        quality = "1080p Full HD",
-                                                        serverName = resolvedServer,
-                                                        headers = mapOf(
-                                                            "Referer" to "https://twolekede.com/",
-                                                            "User-Agent" to NetworkClient.USER_AGENT
+                                                if (isServer2OrMunowatch && MunowatchApi.isCdnRateLimited()) {
+                                                    android.util.Log.w("MunowatchPlayback", "Skipping Twolekede episode stream resolution for Server 2 because CDN is rate-limited")
+                                                } else {
+                                                    val resolvedFallback = api.resolveTwolekedeStream(targetEp.streamUrl, resolvedServer, cleanTitle)
+                                                        ?: api.resolveTwolekedeStream(targetEp.id, resolvedServer, cleanTitle)
+                                                    if (!resolvedFallback.isNullOrBlank() && MunowatchApi.isValidStreamUrl(resolvedFallback)) {
+                                                        val cleanFallback = resolvedFallback.replace("&amp;", "&").replace("&#38;", "&").trim()
+                                                        val normalizedFallback = NetworkClient.normalizeStreamUrl(cleanFallback)
+                                                        source = PlaybackSource(
+                                                            url = normalizedFallback,
+                                                            type = if (normalizedFallback.contains(".m3u8")) "application/x-mpegURL" else "video/mp4",
+                                                            quality = "1080p Full HD",
+                                                            serverName = resolvedServer,
+                                                            headers = mapOf(
+                                                                "Referer" to "https://twolekede.com/",
+                                                                "User-Agent" to NetworkClient.USER_AGENT,
+                                                                "Accept" to "*/*"
+                                                            )
                                                         )
-                                                    )
-                                                    break
+                                                        break
+                                                    }
                                                 }
                                             }
                                         }
@@ -2673,26 +2820,32 @@ class PlaybackRepositoryImpl(
                                             (card.streamUrl.contains("preview.php") || card.streamUrl.contains("moviedetails") || card.id.all { c -> c.isDigit() })
                                     }
                                     if (match != null) {
-                                        val matchId = extractNumericId(match.streamUrl) ?: extractNumericId(match.id)
-                                        val resolvedFallback = (if (matchId != null) api.resolveTwolekedeStream(matchId, resolvedServer, cleanTitle) else null)
-                                            ?: api.resolveTwolekedeStream(match.streamUrl, resolvedServer, cleanTitle)
-                                            ?: api.resolveTwolekedeStream(match.id, resolvedServer, cleanTitle)
-                                        if (!resolvedFallback.isNullOrBlank() && MunowatchApi.isValidStreamUrl(resolvedFallback)) {
-                                            val cleanFallback = resolvedFallback.replace("&amp;", "&").replace("&#38;", "&").trim()
-                                            source = PlaybackSource(
-                                                url = cleanFallback,
-                                                type = if (cleanFallback.contains(".m3u8")) "application/x-mpegURL" else "video/mp4",
-                                                quality = "1080p Full HD",
-                                                serverName = resolvedServer,
-                                                headers = mapOf(
-                                                    "Referer" to "https://twolekede.com/",
-                                                    "User-Agent" to NetworkClient.USER_AGENT
+                                        if (isServer2OrMunowatch && MunowatchApi.isCdnRateLimited()) {
+                                            android.util.Log.w("MunowatchPlayback", "Skipping Twolekede fallback stream resolution for Server 2 because CDN is rate-limited")
+                                        } else {
+                                            val matchId = extractNumericId(match.streamUrl) ?: extractNumericId(match.id)
+                                            val resolvedFallback = (if (matchId != null) api.resolveTwolekedeStream(matchId, resolvedServer, cleanTitle) else null)
+                                                ?: api.resolveTwolekedeStream(match.streamUrl, resolvedServer, cleanTitle)
+                                                ?: api.resolveTwolekedeStream(match.id, resolvedServer, cleanTitle)
+                                            if (!resolvedFallback.isNullOrBlank() && MunowatchApi.isValidStreamUrl(resolvedFallback)) {
+                                                val cleanFallback = resolvedFallback.replace("&amp;", "&").replace("&#38;", "&").trim()
+                                                val normalizedFallback = NetworkClient.normalizeStreamUrl(cleanFallback)
+                                                source = PlaybackSource(
+                                                    url = normalizedFallback,
+                                                    type = if (normalizedFallback.contains(".m3u8")) "application/x-mpegURL" else "video/mp4",
+                                                    quality = "1080p Full HD",
+                                                    serverName = resolvedServer,
+                                                    headers = mapOf(
+                                                        "Referer" to "https://twolekede.com/",
+                                                        "User-Agent" to NetworkClient.USER_AGENT,
+                                                        "Accept" to "*/*"
+                                                    )
                                                 )
-                                            )
-                                            if (matchId != null) {
-                                                MediaCache.putStreamPath(contentId, "https://twolekede.com/preview.php?id=$matchId")
+                                                if (matchId != null) {
+                                                    MediaCache.putStreamPath(contentId, "https://twolekede.com/preview.php?id=$matchId")
+                                                }
+                                                break
                                             }
-                                            break
                                         }
                                     }
                                 }

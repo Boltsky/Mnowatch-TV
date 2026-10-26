@@ -790,29 +790,29 @@ class MoviesViewModel(
 
             if (!effectiveYear.isNullOrBlank()) {
                 val y = effectiveYear.filter { it.isDigit() }.take(4).toIntOrNull()
-                if (y != null && y in 1950..2025) return true
-                if (y != null && y > 2025) return false
+                if (y != null && y in 1950..2020) return true
+                if (y != null && y > 2020) return false
             }
             // 3. Check year in streamUrl
             val streamYear = Regex("""(?i)[?&]year=(19\d{2}|20\d{2})\b""").find(item.streamUrl)?.groupValues?.get(1)?.toIntOrNull()
             if (streamYear != null) {
-                if (streamYear in 1950..2025) return true
-                if (streamYear > 2025) return false
+                if (streamYear in 1950..2020) return true
+                if (streamYear > 2020) return false
             }
             // 4. Check year in title
             val titleYear = Regex("""\b(19\d{2}|20\d{2})\b""").find(item.title)?.value?.toIntOrNull()
             if (titleYear != null) {
-                if (titleYear in 1950..2025) return true
-                if (titleYear > 2025) return false
+                if (titleYear in 1950..2020) return true
+                if (titleYear > 2020) return false
             }
             // 5. Check classic blockbuster title match
             val cleanTitle = item.title.lowercase()
             if (OLD_BLOCKBUSTERS_SET.any { cleanTitle.contains(it) }) {
                 return true
             }
-            // 6. Check upload or poster timestamp (<= Jan 1, 2026)
+            // 6. Check upload or poster timestamp (<= Jan 1, 2021)
             val uploadTs = extractUploadTimestamp(item)
-            if (uploadTs != null && uploadTs in 946684800000L..1767225600000L) {
+            if (uploadTs != null && uploadTs in 946684800000L..1609459200000L) {
                 return true
             }
             return false
@@ -1181,69 +1181,64 @@ class MoviesViewModel(
     private var filterJob: Job? = null
 
     private fun applySortAndFilter() {
-        filterJob?.cancel()
         val currentState = _uiState.value
-        filterJob = viewModelScope.launch(Dispatchers.Default) {
-            val snapshot = synchronized(rawMovies) { rawMovies.filter { isMovieItem(it) } }
-            var filtered = snapshot.distinctBy { it.id.ifBlank { it.streamUrl }.ifBlank { it.title } }
+        val snapshot = synchronized(rawMovies) { rawMovies.filter { isMovieItem(it) } }
+        var filtered = snapshot.distinctBy { it.id.ifBlank { it.streamUrl }.ifBlank { it.title } }
 
-            // 1. Filter by Old Movies or Year if selected
-            if (currentState.sortMode == MovieSortMode.OLD_MOVIES) {
-                filtered = filtered.filter { isOldMovie(it) }
-            } else if (currentState.selectedYear != null) {
-                val y = currentState.selectedYear
-                filtered = filtered.filter { matchesYear(it, y) }
-            }
+        // 1. Filter by Old Movies or Year if selected
+        if (currentState.sortMode == MovieSortMode.OLD_MOVIES) {
+            filtered = filtered.filter { isOldMovie(it) }
+        } else if (currentState.selectedYear != null) {
+            val y = currentState.selectedYear
+            filtered = filtered.filter { matchesYear(it, y) }
+        }
 
-            // 2. Filter by VJ if selected
-            if (!currentState.selectedVj.isNullOrBlank() && !currentState.selectedVj.equals("All VJs", ignoreCase = true)) {
-                val vj = currentState.selectedVj
-                filtered = filtered.filter { matchesVj(it, vj) }
-            }
+        // 2. Filter by VJ if selected
+        if (!currentState.selectedVj.isNullOrBlank() && !currentState.selectedVj.equals("All VJs", ignoreCase = true)) {
+            val vj = currentState.selectedVj
+            filtered = filtered.filter { matchesVj(it, vj) }
+        }
 
-            // 3. Filter by Category if selected
-            if (!currentState.selectedCategory.isNullOrBlank() && !currentState.selectedCategory.equals("All Categories", ignoreCase = true)) {
-                val cat = currentState.selectedCategory
-                filtered = filtered.filter { matchesCategory(it, cat) }
-            }
+        // 3. Filter by Category if selected
+        if (!currentState.selectedCategory.isNullOrBlank() && !currentState.selectedCategory.equals("All Categories", ignoreCase = true)) {
+            val cat = currentState.selectedCategory
+            filtered = filtered.filter { matchesCategory(it, cat) }
+        }
 
-            // 4. Sort or Reshuffle
-            val sortedList = when (currentState.sortMode) {
-                MovieSortMode.RANDOM -> filtered.shuffled()
-                MovieSortMode.OLD_MOVIES, MovieSortMode.BY_YEAR -> {
-                    filtered.sortedWith(
-                        compareByDescending<MediaItem> { extractYear(it)?.toIntOrNull() ?: 0 }
-                            .thenByDescending { extractUploadTimestamp(it) ?: 0L }
-                    )
-                }
-                MovieSortMode.LATEST -> {
-                    if (currentState.selectedYear != null ||
-                        (!currentState.selectedVj.isNullOrBlank() && !currentState.selectedVj.equals("All VJs", ignoreCase = true)) ||
-                        (!currentState.selectedCategory.isNullOrBlank() && !currentState.selectedCategory.equals("All Categories", ignoreCase = true))) {
-                        filtered.sortedWith(
-                            compareByDescending<MediaItem> { extractUploadTimestamp(it) ?: 0L }
-                                .thenByDescending { extractYear(it)?.toIntOrNull() ?: 0 }
-                        )
-                    } else {
-                        filtered
-                    }
-                }
-            }
-
-            val distinctMovies = sortedList.distinctBy { it.id.ifBlank { it.streamUrl }.ifBlank { it.title } }
-            val availableY = if (currentState.availableYears.isEmpty()) computeAvailableYears(snapshot) else currentState.availableYears
-            val availableV = if (currentState.availableVjs.size <= DEFAULT_VJS.size) computeAvailableVjs(snapshot) else currentState.availableVjs
-            val availableC = if (currentState.availableCategories.size <= DEFAULT_CATEGORIES.size) computeAvailableCategories(snapshot) else currentState.availableCategories
-
-            withContext(Dispatchers.Main) {
-                _uiState.value = _uiState.value.copy(
-                    movies = distinctMovies,
-                    availableYears = availableY,
-                    availableVjs = availableV,
-                    availableCategories = availableC
+        // 4. Sort or Reshuffle
+        val sortedList = when (currentState.sortMode) {
+            MovieSortMode.RANDOM -> filtered.shuffled()
+            MovieSortMode.OLD_MOVIES, MovieSortMode.BY_YEAR -> {
+                filtered.sortedWith(
+                    compareByDescending<MediaItem> { extractYear(it)?.toIntOrNull() ?: 0 }
+                        .thenByDescending { extractUploadTimestamp(it) ?: 0L }
                 )
             }
+            MovieSortMode.LATEST -> {
+                if (currentState.selectedYear != null ||
+                    (!currentState.selectedVj.isNullOrBlank() && !currentState.selectedVj.equals("All VJs", ignoreCase = true)) ||
+                    (!currentState.selectedCategory.isNullOrBlank() && !currentState.selectedCategory.equals("All Categories", ignoreCase = true))) {
+                    filtered.sortedWith(
+                        compareByDescending<MediaItem> { extractUploadTimestamp(it) ?: 0L }
+                            .thenByDescending { extractYear(it)?.toIntOrNull() ?: 0 }
+                    )
+                } else {
+                    filtered
+                }
+            }
         }
+
+        val distinctMovies = sortedList.distinctBy { it.id.ifBlank { it.streamUrl }.ifBlank { it.title } }
+        val availableY = if (currentState.availableYears.isEmpty()) computeAvailableYears(snapshot) else currentState.availableYears
+        val availableV = if (currentState.availableVjs.size <= DEFAULT_VJS.size) computeAvailableVjs(snapshot) else currentState.availableVjs
+        val availableC = if (currentState.availableCategories.size <= DEFAULT_CATEGORIES.size) computeAvailableCategories(snapshot) else currentState.availableCategories
+
+        _uiState.value = _uiState.value.copy(
+            movies = distinctMovies,
+            availableYears = availableY,
+            availableVjs = availableV,
+            availableCategories = availableC
+        )
     }
 
     private fun appendLoadedMoviesToBottom(newItems: List<MediaItem>) {

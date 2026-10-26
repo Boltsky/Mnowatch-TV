@@ -43,7 +43,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -274,6 +276,18 @@ fun TvButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
 
+    var lastClickTime by remember { mutableLongStateOf(0L) }
+    val safeOnClick = remember(onClick) {
+        {
+            val now = android.os.SystemClock.uptimeMillis()
+            android.util.Log.d("TvButton", "safeOnClick called for $text: now=$now, diff=${now - lastClickTime}")
+            if (now - lastClickTime > 300L) {
+                lastClickTime = now
+                onClick()
+            }
+        }
+    }
+
     val scale by animateFloatAsState(
         targetValue = if (isFocused) 1.08f else 1.0f,
         animationSpec = tween(100),
@@ -281,7 +295,7 @@ fun TvButton(
     )
 
     Surface(
-        onClick = onClick,
+        onClick = safeOnClick,
         modifier = modifier
             .graphicsLayer {
                 scaleX = scale
@@ -293,11 +307,12 @@ fun TvButton(
                      keyEvent.key == Key.Enter ||
                      keyEvent.key == Key.NumPadEnter)
                 ) {
-                    onClick()
+                    android.util.Log.d("TvButton", "onKeyEvent captured ${keyEvent.key} for $text")
+                    safeOnClick()
                     true
                 } else false
             }
-            .testTag("tv_btn_${text.lowercase().replace(" ", "_")}"),
+        .testTag("tv_btn_${text.lowercase().replace(" ", "_")}"),
         interactionSource = interactionSource,
         shape = RoundedCornerShape(if (isCompact) 6.dp else 8.dp),
         color = when {

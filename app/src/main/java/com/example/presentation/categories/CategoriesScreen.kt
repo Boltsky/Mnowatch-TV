@@ -45,6 +45,11 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -123,6 +128,7 @@ class CategoriesViewModel(
             val vjs = if (fetchedVjs.isNotEmpty()) fetchedVjs else DEFAULT_VJ_CATEGORIES
 
             val currentSelected = _uiState.value.selectedCategory
+            val currentGenreFilter = _uiState.value.selectedGenreFilter
             val initialCat = when {
                 initialVjId != null -> vjs.find { it.id == initialVjId } ?: vjs.firstOrNull()
                 initialGenreId != null -> genres.find { it.id == initialGenreId } ?: genres.firstOrNull()
@@ -138,15 +144,29 @@ class CategoriesViewModel(
             }
             val initialTab = if (initialCat?.type == CategoryType.GENRE) CategoryType.GENRE else _uiState.value.selectedTab
 
+            val targetGenreFilter = when {
+                initialGenreId != null && initialVjId != null -> genres.find { it.id == initialGenreId }
+                initialGenreId != null && initialTab == CategoryType.VJ -> genres.find { it.id == initialGenreId }
+                else -> currentGenreFilter
+            }
+
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
                 genres = genres,
                 vjs = vjs,
                 selectedTab = initialTab,
-                selectedCategory = initialCat
+                selectedCategory = initialCat,
+                selectedGenreFilter = targetGenreFilter
             )
-            if (initialCat != null && (currentSelected == null || currentSelected.name != initialCat.name || _uiState.value.items.isEmpty())) {
-                selectCategory(initialCat)
+
+            if (initialCat != null) {
+                if (targetGenreFilter != null && initialTab == CategoryType.VJ) {
+                    if (_uiState.value.items.isEmpty()) {
+                        loadMoviesForVjAndGenre(initialCat, targetGenreFilter)
+                    }
+                } else if (currentSelected == null || currentSelected.name != initialCat.name || _uiState.value.items.isEmpty()) {
+                    selectCategory(initialCat)
+                }
             }
         }
     }
@@ -169,16 +189,16 @@ class CategoriesViewModel(
     }
 
     fun selectCategory(category: CategoryItem) {
+        if (_uiState.value.selectedCategory?.id == category.id && _uiState.value.items.isNotEmpty()) {
+            return
+        }
         scrollIndex = 0
         scrollOffset = 0
-        val currentGenre = _uiState.value.selectedGenreFilter
-        if (category.type == CategoryType.VJ && currentGenre != null) {
-            _uiState.value = _uiState.value.copy(selectedCategory = category)
-            loadMoviesForVjAndGenre(category, currentGenre)
-        } else {
-            _uiState.value = _uiState.value.copy(selectedGenreFilter = null)
-            loadCategoryCatalog(category)
-        }
+        _uiState.value = _uiState.value.copy(
+            selectedCategory = category,
+            selectedGenreFilter = null
+        )
+        loadCategoryCatalog(category)
     }
 
     fun selectGenreFilter(genre: CategoryItem?) {
@@ -209,19 +229,20 @@ class CategoriesViewModel(
 
         if (!cachedItems.isNullOrEmpty()) {
             allCategoryMovies = cachedItems
-            val initialDisplay = cachedItems.take(36)
             _uiState.value = _uiState.value.copy(
                 selectedCategory = category,
+                selectedGenreFilter = null,
                 isContentLoading = false,
                 isLoadingMore = false,
-                canLoadMore = initialDisplay.size < cachedItems.size || category.type == CategoryType.GENRE,
-                items = initialDisplay,
+                canLoadMore = category.type == CategoryType.GENRE,
+                items = cachedItems,
                 totalLoaded = cachedItems.size
             )
         } else {
             allCategoryMovies = emptyList()
             _uiState.value = _uiState.value.copy(
                 selectedCategory = category,
+                selectedGenreFilter = null,
                 isContentLoading = true,
                 isLoadingMore = false,
                 canLoadMore = true,
@@ -261,13 +282,12 @@ class CategoriesViewModel(
             lastFetchId = firstBatch.lastOrNull()?.id
             currentPage = 1
 
-            val initialDisplay = firstBatch.take(36)
             withContext(Dispatchers.Main) {
                 _uiState.value = _uiState.value.copy(
                     isContentLoading = false,
-                    items = initialDisplay,
+                    items = firstBatch,
                     totalLoaded = firstBatch.size,
-                    canLoadMore = initialDisplay.size < firstBatch.size || category.type == CategoryType.GENRE
+                    canLoadMore = category.type == CategoryType.GENRE
                 )
             }
         }
@@ -282,63 +302,47 @@ class CategoriesViewModel(
         val cached = com.example.data.repository.MediaCache.getVjGenreMovies(vj.id, genre.id)
         if (!cached.isNullOrEmpty() && cached.size >= 15) {
             allCategoryMovies = cached
-            val initialDisplay = cached.take(36)
             _uiState.value = _uiState.value.copy(
                 selectedCategory = vj,
                 selectedGenreFilter = genre,
                 isContentLoading = false,
                 isLoadingMore = false,
-                canLoadMore = initialDisplay.size < cached.size,
-                items = initialDisplay,
+                canLoadMore = true,
+                items = cached,
                 totalLoaded = cached.size
             )
         } else {
             allCategoryMovies = cached ?: emptyList()
-            val initialDisplay = allCategoryMovies.take(36)
             _uiState.value = _uiState.value.copy(
                 selectedCategory = vj,
                 selectedGenreFilter = genre,
                 isContentLoading = cached.isNullOrEmpty(),
                 isLoadingMore = false,
                 canLoadMore = true,
-                items = initialDisplay,
+                items = allCategoryMovies,
                 totalLoaded = cached?.size ?: 0
             )
         }
 
-        currentCategoryJob = viewModelScope.launch(Dispatchers.Default) {
-            // 2. Perform cross-filter from MediaCache in background
-            val matches = mutableListOf<MediaItem>()
-            val vjCached = com.example.data.repository.MediaCache.getVjMovies(vj.id) ?: emptyList()
-            matches.addAll(vjCached.filter { MoviesViewModel.matchesCategory(it, genre.name) })
-            val genreCached = com.example.data.repository.MediaCache.getGenreMovies(genre.id) ?: emptyList()
-            matches.addAll(genreCached.filter { MoviesViewModel.matchesVj(it, vj.name) })
-            val allCached = com.example.data.repository.MediaCache.getAll().filter {
-                MoviesViewModel.matchesVj(it, vj.name) && MoviesViewModel.matchesCategory(it, genre.name)
-            }
-            matches.addAll(allCached)
-
-            // 3. Fetch dedicated VJ + Genre batch (Page 1) from MovieRepository
+        currentCategoryJob = viewModelScope.launch(Dispatchers.IO) {
+            // 2. Fetch dedicated VJ + Genre batch (Page 1) from MovieRepository
             val primaryBatchResult = movieRepository.getMoviesByVjAndGenre(vj.id, genre.id, page = 1)
-            val primaryBatch = primaryBatchResult.getOrDefault(emptyList()).filter {
-                MoviesViewModel.matchesVj(it, vj.name) && MoviesViewModel.matchesCategory(it, genre.name)
-            }
-            matches.addAll(primaryBatch)
+            val primaryBatch = primaryBatchResult.getOrDefault(emptyList())
 
-            val distinctMatches = matches.distinctBy { it.id }.map {
-                if (it.vj.isBlank()) it.copy(vj = vj.name) else it
+            val distinctMatches = primaryBatch.distinctBy { it.id.ifBlank { it.streamUrl }.ifBlank { it.title } }.map {
+                val withVj = if (it.vj.isBlank()) it.copy(vj = vj.name) else it
+                if (withVj.genre.isBlank()) withVj.copy(genre = genre.name) else withVj
             }
 
             if (distinctMatches.isNotEmpty()) {
                 allCategoryMovies = distinctMatches
                 com.example.data.repository.MediaCache.setVjGenreMovies(vj.id, genre.id, distinctMatches)
-                val initialDisplay = distinctMatches.take(36)
                 withContext(Dispatchers.Main) {
                     _uiState.value = _uiState.value.copy(
                         isContentLoading = false,
-                        items = initialDisplay,
+                        items = distinctMatches,
                         totalLoaded = distinctMatches.size,
-                        canLoadMore = initialDisplay.size < distinctMatches.size
+                        canLoadMore = true
                     )
                 }
             } else {
@@ -359,13 +363,12 @@ class CategoriesViewModel(
             return
         }
 
-        // 1. Reveal next batch of 24 items from in-memory buffer immediately with zero network lag
+        // 1. Reveal all items from in-memory buffer if any are still pending
         if (currentState.items.size < allCategoryMovies.size) {
-            val nextCount = minOf(currentState.items.size + 24, allCategoryMovies.size)
-            val canMore = nextCount < allCategoryMovies.size || category.type == CategoryType.GENRE
             _uiState.value = currentState.copy(
-                items = allCategoryMovies.take(nextCount),
-                canLoadMore = canMore
+                items = allCategoryMovies,
+                totalLoaded = allCategoryMovies.size,
+                canLoadMore = true
             )
             return
         }
@@ -393,7 +396,12 @@ class CategoriesViewModel(
 
             val rawNext = nextResult.getOrDefault(emptyList())
             val filteredNext = if (currentState.selectedGenreFilter != null) {
-                rawNext.filter { MoviesViewModel.matchesCategory(it, currentState.selectedGenreFilter.name) }
+                rawNext.map {
+                    val withVj = if (it.vj.isBlank()) it.copy(vj = category.name) else it
+                    if (withVj.genre.isBlank()) withVj.copy(genre = currentState.selectedGenreFilter.name) else withVj
+                }
+            } else if (category.type == CategoryType.VJ) {
+                rawNext.filter { !it.isSeries }
             } else {
                 rawNext
             }
@@ -405,18 +413,22 @@ class CategoriesViewModel(
                     val existing = _uiState.value.items
                     val newUnique = nextItems.filter { item -> existing.none { it.id == item.id } }
                     val updatedList = existing + newUnique
+                    allCategoryMovies = updatedList
                     lastFetchId = newUnique.lastOrNull()?.id ?: nextItems.last().id
                     currentPage = nextPage
+                    if (currentState.selectedGenreFilter != null) {
+                        com.example.data.repository.MediaCache.setVjGenreMovies(category.id, currentState.selectedGenreFilter.id, updatedList)
+                    }
                     _uiState.value = _uiState.value.copy(
                         isLoadingMore = false,
                         items = updatedList,
                         totalLoaded = updatedList.size,
-                        canLoadMore = true
+                        canLoadMore = newUnique.isNotEmpty()
                     )
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isLoadingMore = false,
-                        canLoadMore = true
+                        canLoadMore = false
                     )
                 }
             }
@@ -498,7 +510,7 @@ fun CategoriesScreen(
         }
         val activeCategory = state.selectedCategory ?: activeList.firstOrNull()
 
-        var isSidebarExpanded by rememberSaveable { mutableStateOf(false) }
+        var isSidebarExpanded by rememberSaveable { mutableStateOf(true) }
         var isGenreFilterExpanded by rememberSaveable { mutableStateOf(false) }
 
         // Split Layout: Left Column (Categories List), Right Column (Media Grid)
@@ -549,7 +561,6 @@ fun CategoriesScreen(
                                 isSelected = isSelected,
                                 onClick = {
                                     viewModel.selectCategory(category)
-                                    isSidebarExpanded = false // Fold sidebar after selection to maximize movies space
                                 }
                             )
                         }
@@ -846,14 +857,20 @@ private fun TvCategoryListItem(
     val isFocused by interactionSource.collectIsFocusedAsState()
 
     Surface(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            )
-            .focusable(interactionSource = interactionSource),
+            .onKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown &&
+                    (keyEvent.key == Key.DirectionCenter ||
+                     keyEvent.key == Key.Enter ||
+                     keyEvent.key == Key.NumPadEnter)
+                ) {
+                    onClick()
+                    true
+                } else false
+            },
+        interactionSource = interactionSource,
         shape = RoundedCornerShape(8.dp),
         color = when {
             isFocused -> MunowatchGreenLight
@@ -893,13 +910,19 @@ private fun TvGenreFilterChip(
     val isFocused by interactionSource.collectIsFocusedAsState()
 
     Surface(
+        onClick = onClick,
         modifier = Modifier
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            )
-            .focusable(interactionSource = interactionSource),
+            .onKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown &&
+                    (keyEvent.key == Key.DirectionCenter ||
+                     keyEvent.key == Key.Enter ||
+                     keyEvent.key == Key.NumPadEnter)
+                ) {
+                    onClick()
+                    true
+                } else false
+            },
+        interactionSource = interactionSource,
         shape = RoundedCornerShape(20.dp),
         color = when {
             isFocused -> Color.White

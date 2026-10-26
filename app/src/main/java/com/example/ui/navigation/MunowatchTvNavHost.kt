@@ -1,6 +1,7 @@
 package com.example.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -60,6 +61,15 @@ fun MunowatchTvNavHost(
     val seriesViewModel = remember {
         SeriesViewModel(
             seriesRepository = appContainer.seriesRepository
+        )
+    }
+
+    // Hoisted CategoriesViewModel to retain categories catalog state, active VJ/genre filters, loaded items, and scroll position across navigation
+    val categoriesViewModel = remember {
+        CategoriesViewModel(
+            munowatchRepository = appContainer.munowatchRepository,
+            movieRepository = appContainer.movieRepository,
+            searchRepository = appContainer.searchRepository
         )
     }
 
@@ -188,13 +198,9 @@ fun MunowatchTvNavHost(
             val vjId = backStackEntry.arguments?.getString("vj_id")?.toIntOrNull()
             val genreId = backStackEntry.arguments?.getString("genre_id")?.toIntOrNull()
 
-            val categoriesViewModel = remember(vjId, genreId) {
-                CategoriesViewModel(
-                    munowatchRepository = appContainer.munowatchRepository,
-                    movieRepository = appContainer.movieRepository,
-                    searchRepository = appContainer.searchRepository
-                ).apply {
-                    loadCategories(initialVjId = vjId, initialGenreId = genreId)
+            LaunchedEffect(vjId, genreId) {
+                if (vjId != null || genreId != null) {
+                    categoriesViewModel.loadCategories(initialVjId = vjId, initialGenreId = genreId)
                 }
             }
             CategoriesScreen(

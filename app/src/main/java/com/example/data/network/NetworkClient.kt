@@ -5,6 +5,7 @@ import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.Dns
 import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.ResponseBody
@@ -18,101 +19,33 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 object BandwidthBypassProxyManager {
-    // High-performance, verified HTTPS CONNECT proxies tested and streaming 206 Partial Content from cdn.movviez.com
-    private val seedProxies = listOf(
-        Pair("213.136.72.147", 3128),
-        Pair("103.237.102.191", 11111),
-        Pair("120.232.115.57", 17981),
-        Pair("172.105.149.160", 5000),
-        Pair("102.244.78.61", 8082),
-        Pair("62.146.180.4", 3000),
-        Pair("102.244.78.61", 8089),
-        Pair("120.232.115.170", 17981),
-        Pair("184.75.221.82", 3118),
-        Pair("4.144.146.21", 80),
-        Pair("43.99.60.244", 8089),
-        Pair("27.185.218.213", 17981),
-        Pair("152.67.191.232", 6800),
-        Pair("102.244.78.61", 8084),
-        Pair("81.19.210.10", 80),
-        Pair("91.233.223.147", 3128),
-        Pair("144.31.143.58", 8080),
-        Pair("68.183.79.30", 3128)
-    )
-
-    private val proxyPool = java.util.concurrent.CopyOnWriteArrayList<java.net.Proxy>().apply {
-        for ((h, p) in seedProxies) {
-            add(java.net.Proxy(java.net.Proxy.Type.HTTP, java.net.InetSocketAddress(h, p)))
-        }
-    }
-
-    private val currentIndex = java.util.concurrent.atomic.AtomicInteger(0)
-    // Direct connection by default; proxy pool is only used if explicitly activated for geo-restrictions / 429
+    // Disabled: Direct connection is strictly enforced to eliminate proxy latency and dead socket hangs
     private val isBypassActive = java.util.concurrent.atomic.AtomicBoolean(false)
 
     var onBypassActivated: (() -> Unit)? = null
 
-    fun isBypassActive(): Boolean = isBypassActive.get()
+    fun isBypassActive(): Boolean = false
 
     fun activateBypass() {
-        if (isBypassActive.compareAndSet(false, true)) {
-            android.util.Log.i("BandwidthBypass", "Activated unlimited bandwidth proxy bypass")
-            try {
-                onBypassActivated?.invoke()
-            } catch (_: Throwable) {}
-        }
+        // No-op: Public proxies are permanently decommissioned for video streaming reliability
     }
 
     fun deactivateBypass() {
         isBypassActive.set(false)
     }
 
-    fun getCurrentProxy(): java.net.Proxy? {
-        if (proxyPool.isEmpty()) return null
-        val idx = Math.abs(currentIndex.get()) % proxyPool.size
-        return proxyPool[idx]
-    }
+    fun getCurrentProxy(): java.net.Proxy? = null
 
-    fun rotateProxy(): java.net.Proxy? {
-        isBypassActive.set(true)
-        val next = currentIndex.incrementAndGet()
-        val p = getCurrentProxy()
-        android.util.Log.i("BandwidthBypass", "Switched to proxy #${Math.abs(next) % proxyPool.size}: $p")
-        try {
-            onBypassActivated?.invoke()
-        } catch (_: Throwable) {}
-        return p
-    }
+    fun rotateProxy(): java.net.Proxy? = null
 
-    fun markFailed(sa: java.net.SocketAddress) {
-        android.util.Log.w("BandwidthBypass", "Proxy connection failed: $sa. Pushing to back and rotating...")
-        proxyPool.find { it.address() == sa }?.let {
-            proxyPool.remove(it)
-            proxyPool.add(it)
-        }
-        rotateProxy()
-    }
+    fun markFailed(sa: java.net.SocketAddress) {}
 
     val proxySelector = object : java.net.ProxySelector() {
         override fun select(uri: java.net.URI): List<java.net.Proxy> {
-            val host = uri.host?.lowercase().orEmpty()
-            val isMediaCdn = host.contains("movviez.com") || host.contains("twolekede.com")
-            if (isBypassActive.get() && isMediaCdn && proxyPool.isNotEmpty()) {
-                val list = mutableListOf<java.net.Proxy>()
-                val curr = currentIndex.get()
-                for (offset in 0 until minOf(4, proxyPool.size)) {
-                    val idx = Math.abs(curr + offset) % proxyPool.size
-                    list.add(proxyPool[idx])
-                }
-                // When bypass is active, strictly route via verified proxies to prevent 429 recurrence
-                return list
-            }
             return listOf(java.net.Proxy.NO_PROXY)
         }
 
-        override fun connectFailed(uri: java.net.URI, sa: java.net.SocketAddress, ioe: java.io.IOException) {
-            markFailed(sa)
-        }
+        override fun connectFailed(uri: java.net.URI, sa: java.net.SocketAddress, ioe: java.io.IOException) {}
     }
 }
 
@@ -197,9 +130,8 @@ class NetworkClient(private val sessionManager: SecureSessionManager) {
 
     private val cookieJar = object : CookieJar {
         override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-            val host = url.host
-            // Streaming requests to CDN/media delivery should NEVER save or associate cookies
-            if (host.startsWith("cdn.") || host.startsWith("dl.") || url.encodedPath.endsWith(".mp4") || url.queryParameter("file") != null) {
+            // Media delivery requests should NEVER save or associate cookies
+            if (isMediaDeliveryRequest(url)) {
                 return
             }
             synchronized(globalCookieStore) {
@@ -212,16 +144,16 @@ class NetworkClient(private val sessionManager: SecureSessionManager) {
         }
 
         override fun loadForRequest(url: HttpUrl): List<Cookie> {
-            val host = url.host
-            // Streaming requests to CDN/media delivery should NEVER send session cookies or tracking cookies.
-            // This ensures CDN edge nodes cannot enforce daily per-session or per-device bandwidth caps.
-            if (host.startsWith("cdn.") || host.startsWith("dl.") || url.encodedPath.endsWith(".mp4") || url.queryParameter("file") != null) {
+            // Media delivery requests (cdn.movviez.com, dl.movviez.com, .mp4, .m3u8, or ?file=)
+            // MUST remain completely clean without session or device cookies to maximize edge-caching
+            // and eliminate per-device/per-session rate-limiting headers.
+            if (isMediaDeliveryRequest(url)) {
                 return emptyList()
             }
             val cookies = synchronized(globalCookieStore) {
                 globalCookieStore[url.host]?.toMutableList() ?: mutableListOf()
             }
-            // Ensure stored session cookie is attached for munowatch.com requests
+            // Ensure stored session cookie is attached solely for HTML page navigation on munowatch.com
             if (url.host.contains("munowatch.com")) {
                 val storedSessionId = sessionManager.getSessionId()?.takeIf { it.isNotBlank() }
                     ?: com.example.data.session.SecureSessionManager.DEFAULT_SESSION_ID
@@ -236,9 +168,9 @@ class NetworkClient(private val sessionManager: SecureSessionManager) {
                     cookies.add(sessionCookie)
                 }
             }
-            // Ensure dynamic synthetic device ID is attached for twolekede / movviez requests to prevent quota lockout
+            // Ensure stable persistent device ID is attached solely for HTML page navigation on twolekede / movviez
             if (url.host.contains("twolekede.com") || url.host.contains("movviez.com")) {
-                val (_, devId) = getClientIdentity()
+                val devId = sessionManager.getDeviceId()
                 cookies.removeAll { it.name == "mvz_device_id" }
                 val devCookie = Cookie.Builder()
                     .domain(url.host)
@@ -253,7 +185,7 @@ class NetworkClient(private val sessionManager: SecureSessionManager) {
     }
 
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .proxySelector(BandwidthBypassProxyManager.proxySelector)
+        .proxy(java.net.Proxy.NO_PROXY)
         .dns(resilientDns)
         .cookieJar(cookieJar)
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -277,48 +209,14 @@ class NetworkClient(private val sessionManager: SecureSessionManager) {
                 .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
                 .header("Referer", referer)
 
-            if (isTwolekede) {
-                val (ip, _) = getClientIdentity()
-                requestBuilder
-                    .header("X-Forwarded-For", ip)
-                    .header("Client-IP", ip)
-                    .header("X-Real-IP", ip)
-                    .header("True-Client-IP", ip)
-            }
-
-            var response = chain.proceed(requestBuilder.build())
-            var attempt = 0
-            while (isTwolekede && (response.code == 429 || response.code == 403) && attempt < 3) {
-                attempt++
-                android.util.Log.w("NetworkClient", "Twolekede returned HTTP ${response.code} on $reqUrl (attempt $attempt). Activating proxy bypass and retrying...")
-                response.close()
-                BandwidthBypassProxyManager.activateBypass()
-                BandwidthBypassProxyManager.rotateProxy()
-                val (newIp, devId) = rotateClientIdentity()
-                val retryReq = requestBuilder
-                    .header("X-Forwarded-For", newIp)
-                    .header("Client-IP", newIp)
-                    .header("X-Real-IP", newIp)
-                    .header("True-Client-IP", newIp)
-                    .header("Cookie", "mvz_device_id=$devId")
-                    .build()
-                try {
-                    response = chain.proceed(retryReq)
-                    if (response.isSuccessful || response.code == 200 || response.code == 206) break
-                } catch (e: Exception) {
-                    android.util.Log.w("NetworkClient", "Proxy API retry attempt $attempt failed: ${e.message}")
-                    BandwidthBypassProxyManager.rotateProxy()
-                    if (attempt >= 3) throw e
-                }
-            }
-            response
+            chain.proceed(requestBuilder.build())
         }
         .build()
 
     // Dedicated client for ExoPlayer streaming that follows redirects
     val streamOkHttpClient: OkHttpClient = OkHttpClient.Builder()
         .protocols(listOf(okhttp3.Protocol.HTTP_1_1)) // HTTP/1.1 prevents CDN HTTP/2 multiplex stream idle timeouts
-        .proxySelector(BandwidthBypassProxyManager.proxySelector)
+        .proxy(java.net.Proxy.NO_PROXY)
         .dns(resilientDns)
         .cookieJar(cookieJar)
         .connectionPool(okhttp3.ConnectionPool(8, 5, TimeUnit.MINUTES))
@@ -330,14 +228,14 @@ class NetworkClient(private val sessionManager: SecureSessionManager) {
         .retryOnConnectionFailure(true)
         .addInterceptor { chain ->
             val original = chain.request()
-            val reqUrl = original.url
+            val reqUrl = normalizeStreamUrl(original.url)
             val host = reqUrl.host
             val isTwolekede = host.contains("twolekede.com") || host.contains("movviez.com")
             val existingReferer = original.header("Referer")
-            val referer = if (!existingReferer.isNullOrBlank()) {
-                existingReferer
-            } else if (isTwolekede) {
+            val referer = if (isTwolekede) {
                 "https://twolekede.com/"
+            } else if (!existingReferer.isNullOrBlank()) {
+                existingReferer
             } else {
                 "https://munowatch.com/"
             }
@@ -351,14 +249,10 @@ class NetworkClient(private val sessionManager: SecureSessionManager) {
                 .removeHeader("Sec-Fetch-User")
                 .header("User-Agent", USER_AGENT)
                 .header("Referer", referer)
+                .header("Accept", "*/*")
 
-            if (isTwolekede) {
-                val (ip, _) = getClientIdentity()
-                requestBuilder
-                    .header("X-Forwarded-For", ip)
-                    .header("Client-IP", ip)
-                    .header("X-Real-IP", ip)
-                    .header("True-Client-IP", ip)
+            if (isMediaDeliveryRequest(reqUrl)) {
+                requestBuilder.removeHeader("Cookie")
             }
 
             // Critical fix for MP4 streaming with trailing moov atom / chunked CDN:
@@ -381,40 +275,8 @@ class NetworkClient(private val sessionManager: SecureSessionManager) {
             val start = System.currentTimeMillis()
             var handedOffToSource = false
             try {
-                var response = chain.proceed(finalReq)
+                val response = chain.proceed(finalReq)
                 onStreamActivity()
-
-                // Transparent In-Flight Rate Limit (HTTP 429 / 403) Bypass:
-                // When Twolekede / Movviez returns 429 Daily Limit or 403, immediately activate proxy bypass,
-                // rotate proxy and client identity, and replay the request so ExoPlayer receives HTTP 206 seamlessly.
-                var streamAttempt = 0
-                while (isTwolekede && (response.code == 429 || response.code == 403) && streamAttempt < 4) {
-                    streamAttempt++
-                    android.util.Log.w("StreamHttp", "<-- ${response.code} Bandwidth Limit on $host (retry $streamAttempt/4). Activating proxy bypass...")
-                    response.close()
-                    BandwidthBypassProxyManager.activateBypass()
-                    BandwidthBypassProxyManager.rotateProxy()
-                    val (newIp, devId) = rotateClientIdentity()
-                    val retryReq = finalReq.newBuilder()
-                        .header("X-Forwarded-For", newIp)
-                        .header("Client-IP", newIp)
-                        .header("X-Real-IP", newIp)
-                        .header("True-Client-IP", newIp)
-                        .header("Cookie", "mvz_device_id=$devId")
-                        .build()
-                    try {
-                        response = chain.proceed(retryReq)
-                        onStreamActivity()
-                        if (response.isSuccessful || response.code == 206 || response.code == 200) {
-                            android.util.Log.i("StreamHttp", "--> Proxy bypass SUCCEEDED on attempt $streamAttempt with HTTP ${response.code}!")
-                            break
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.w("StreamHttp", "Proxy bypass attempt $streamAttempt connection failed: ${e.message}")
-                        BandwidthBypassProxyManager.rotateProxy()
-                        if (streamAttempt >= 4) throw e
-                    }
-                }
                 val duration = System.currentTimeMillis() - start
                 val len = response.header("Content-Length") ?: "unknown"
                 val ct = response.header("Content-Type") ?: "unknown"
@@ -494,6 +356,54 @@ class NetworkClient(private val sessionManager: SecureSessionManager) {
 
         private val globalCookieStore = mutableMapOf<String, MutableList<Cookie>>()
 
+        fun isMediaDeliveryRequest(url: HttpUrl): Boolean {
+            val host = url.host.lowercase()
+            val path = url.encodedPath.lowercase()
+            val query = url.encodedQuery?.lowercase()
+            return host.contains("cdn.movviez.com") ||
+                    host.contains("dl.movviez.com") ||
+                    host.contains("b-cdn.net") ||
+                    host.startsWith("cdn.") ||
+                    host.startsWith("dl.") ||
+                    path.endsWith(".mp4") ||
+                    path.endsWith(".m3u8") ||
+                    path.contains(".mp4") ||
+                    path.contains(".m3u8") ||
+                    query?.contains(".mp4") == true ||
+                    query?.contains(".m3u8") == true ||
+                    url.queryParameterNames.any { it.removePrefix("amp;").equals("file", ignoreCase = true) }
+        }
+
+        fun normalizeStreamUrl(url: HttpUrl): HttpUrl {
+            if (!isMediaDeliveryRequest(url)) return url
+
+            val extraneousParamNames = setOf(
+                "device_id", "deviceid", "mvz_device_id", "dev_id", "devid", "device",
+                "client_id", "clientid", "client_ip", "clientip",
+                "session_id", "sessionid", "phpsessid", "user_id", "userid", "uid", "uuid",
+                "app_version", "appversion", "_", "rnd", "nocache", "cachebust"
+            )
+
+            val queryParamNames = url.queryParameterNames
+            val hasExtraneous = queryParamNames.any { it.removePrefix("amp;").lowercase() in extraneousParamNames }
+            if (!hasExtraneous) return url
+
+            val builder = url.newBuilder()
+            for (name in queryParamNames) {
+                if (name.removePrefix("amp;").lowercase() in extraneousParamNames) {
+                    builder.removeAllQueryParameters(name)
+                    builder.removeAllEncodedQueryParameters(name)
+                }
+            }
+            return builder.build()
+        }
+
+        fun normalizeStreamUrl(urlString: String): String {
+            val clean = urlString.replace("&amp;", "&").replace("&#38;", "&").trim()
+            val parsed = clean.toHttpUrlOrNull() ?: return clean
+            return normalizeStreamUrl(parsed).toString()
+        }
+
         fun clearTwolekedeCookies() {
             synchronized(globalCookieStore) {
                 globalCookieStore.keys.removeAll { it.contains("twolekede") || it.contains("movviez") }
@@ -513,13 +423,8 @@ class NetworkClient(private val sessionManager: SecureSessionManager) {
         private var currentDeviceId: String = java.util.UUID.randomUUID().toString()
 
         fun rotateClientIdentity(): Pair<String, String> {
-            val newIp = generateSyntheticClientIp()
-            val newDevId = java.util.UUID.randomUUID().toString()
-            currentSyntheticIp = newIp
-            currentDeviceId = newDevId
-            clearTwolekedeCookies()
-            android.util.Log.i("NetworkClient", "Rotated client identity for unlimited bandwidth bypass: IP=$newIp, DeviceId=$newDevId")
-            return Pair(newIp, newDevId)
+            // Stable client identity avoids Cloudflare bot heuristics & IP-level rate limits
+            return Pair(currentSyntheticIp, currentDeviceId)
         }
 
         fun getClientIdentity(): Pair<String, String> = Pair(currentSyntheticIp, currentDeviceId)

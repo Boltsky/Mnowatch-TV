@@ -1019,4 +1019,21 @@ class ExampleRobolectricTest {
         viewModel.closeSeason()
         org.junit.Assert.assertNull(viewModel.uiState.value.openedSeasonData)
     }
+
+    @Test
+    fun `test getMoviesByVjAndGenre loads more than 200 action movies for VJ Junior`() = kotlinx.coroutines.runBlocking {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val sessionManager = com.example.data.session.SecureSessionManager(context)
+        val networkClient = com.example.data.network.NetworkClient(sessionManager)
+        val api = com.example.data.api.MunowatchApi(networkClient, sessionManager)
+        val parser = com.example.data.api.MunowatchHtmlParser()
+        val repo = com.example.data.repository.MovieRepositoryImpl(api, parser)
+
+        val page1 = repo.getMoviesByVjAndGenre(vjId = 1, genreId = 1, page = 1).getOrNull() ?: emptyList()
+        val page2 = repo.getMoviesByVjAndGenre(vjId = 1, genreId = 1, page = 2).getOrNull() ?: emptyList()
+        val merged = (page1 + page2).distinctBy { it.id.ifBlank { it.streamUrl }.ifBlank { it.title } }
+        println("ROBOLECTRIC TEST: Page 1 = ${page1.size}, Page 2 = ${page2.size}, Total = ${merged.size}")
+        assertTrue("Expected > 200 on page 1, got ${page1.size}", page1.size >= 200)
+        assertTrue("Expected more movies on page 2, got ${page2.size}", page2.size > 0)
+    }
 }

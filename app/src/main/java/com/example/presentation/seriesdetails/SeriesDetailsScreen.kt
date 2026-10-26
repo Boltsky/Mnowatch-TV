@@ -98,7 +98,11 @@ class SeriesDetailsViewModel(
     private val munowatchRepository: MunowatchRepository? = null
 ) : ViewModel() {
 
-    private val cached = MediaCache.getSeriesDetail(seriesId)
+    private val cached = MediaCache.getSeriesDetail(seriesId)?.takeIf { detail ->
+        detail.id.equals(seriesId, ignoreCase = true) ||
+        detail.id.removePrefix("series_").equals(seriesId.removePrefix("series_"), ignoreCase = true) ||
+        seriesId.contains(detail.id.removePrefix("series_"), ignoreCase = true)
+    }
     private val hasEpisodes = cached != null && cached.seasons.any { it.episodes.isNotEmpty() }
 
     private val _uiState = MutableStateFlow(
@@ -110,35 +114,27 @@ class SeriesDetailsViewModel(
     val uiState = _uiState.asStateFlow()
 
     init {
-        if (!hasEpisodes) {
-            loadSeriesDetails()
-        } else {
-            refreshSilent()
-        }
+        loadSeriesDetails()
         observeFavorite()
     }
 
     private fun loadSeriesDetails() {
         viewModelScope.launch {
             val result = seriesRepository.getSeriesDetails(seriesId)
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                seriesDetail = result.getOrNull() ?: _uiState.value.seriesDetail
-            )
-        }
-    }
-
-    private fun refreshSilent() {
-        viewModelScope.launch {
-            try {
-                val result = seriesRepository.getSeriesDetails(seriesId)
-                val detail = result.getOrNull()
-                if (detail != null && detail.seasons.any { it.episodes.isNotEmpty() }) {
-                    _uiState.value = _uiState.value.copy(
-                        seriesDetail = detail
-                    )
-                }
-            } catch (_: Exception) {}
+            val fresh = result.getOrNull()
+            if (fresh != null) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    seriesDetail = fresh
+                )
+            } else if (_uiState.value.seriesDetail == null) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    seriesDetail = null
+                )
+            } else {
+                _uiState.value = _uiState.value.copy(isLoading = false)
+            }
         }
     }
 

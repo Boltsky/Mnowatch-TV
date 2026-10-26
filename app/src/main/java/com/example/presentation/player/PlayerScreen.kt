@@ -457,7 +457,7 @@ data class PlayerUiState(
     val contentId: String = "",
     val quality: String = "HD",
     val activeServer: String = "Server 1 (Fast CDN)",
-    val availableServers: List<String> = listOf("Server 1 (Fast CDN)", "Server 2 (Backup)", "Server 3 (Direct / Alternate)", "Munowatch Website Stream"),
+    val availableServers: List<String> = listOf("Server 1 (Fast CDN)", "Server 2 (Munowatch Stream)", "Server 3 (Direct Backup)"),
     val playbackSource: PlaybackSource? = null,
     val errorMessage: String? = null,
     val isAuthError: Boolean = false,
@@ -479,9 +479,8 @@ class PlayerViewModel(
 
     val fallbackServers = listOf(
         "Server 1 (Fast CDN)",
-        "Server 2 (Backup)",
-        "Server 3 (Direct / Alternate)",
-        "Munowatch Website Stream"
+        "Server 2 (Munowatch Stream)",
+        "Server 3 (Direct Backup)"
     )
 
     private var currentServerIndex = 0
@@ -580,9 +579,6 @@ class PlayerViewModel(
 
     fun loadSource(serverName: String) {
         android.util.Log.d("MunowatchPlayer", "loadSource: contentId=$currentContentId, server=$serverName")
-        if (serverName.contains("Server 1", ignoreCase = true)) {
-            com.example.data.network.BandwidthBypassProxyManager.deactivateBypass()
-        }
         _uiState.value = _uiState.value.copy(
             isLoading = true,
             activeServer = serverName,
@@ -594,15 +590,17 @@ class PlayerViewModel(
                 android.util.Log.d("MunowatchPlayer", "loadSource SUCCESS: ${source.url}")
                 val cleanUrl = source.url.replace("&amp;", "&").replace("&#38;", "&").trim()
                 val fileParam = Regex("""[?&]file=([^&]+)""").find(cleanUrl)?.groupValues?.get(1)
+                val isHostRateLimited = (encountered429Error || com.example.data.api.MunowatchApi.isCdnRateLimited()) && cleanUrl.contains("movviez.com")
                 val isKnownBad = failedStreamUrls.contains(cleanUrl) ||
-                    (!fileParam.isNullOrBlank() && failedStreamFiles.contains(fileParam))
+                    (!fileParam.isNullOrBlank() && failedStreamFiles.contains(fileParam)) ||
+                    isHostRateLimited
                 if (isKnownBad) {
                     // Stream URL or file is already known to return 404, 429, timeout, or fail
                     if (currentServerIndex < fallbackServers.size - 1) {
                         currentServerIndex++
                         val nextServer = fallbackServers[currentServerIndex]
                         val switchNotice = if (nextServer.contains("Munowatch", ignoreCase = true)) {
-                            "Falling back to Munowatch website stream..."
+                            "Auto-routing past bandwidth limit via Munowatch stream..."
                         } else {
                             "Auto-routing via backup server ($nextServer)..."
                         }
@@ -622,8 +620,7 @@ class PlayerViewModel(
                             encountered404Error ->
                                 "This stream is currently unavailable on the server (HTTP 404 - File Not Found). Please select another title."
                             encountered429Error -> {
-                                com.example.data.network.NetworkClient.rotateClientIdentity()
-                                "Daily media server bandwidth limit refreshed for this network. Please tap Retry to resume playing."
+                                "Daily media server bandwidth limit reached for this network. Please tap Retry or switch to another server."
                             }
                             else ->
                                 "This title is currently unavailable across all streaming servers. Please select another movie or episode."
@@ -661,16 +658,11 @@ class PlayerViewModel(
                 )
             }.onFailure { error ->
                 val rawMsg = error.message.orEmpty()
-                if (rawMsg.contains("429") || rawMsg.contains("bandwidth", ignoreCase = true)) {
-                    com.example.data.network.BandwidthBypassProxyManager.activateBypass()
-                    com.example.data.network.BandwidthBypassProxyManager.rotateProxy()
-                    com.example.data.network.NetworkClient.rotateClientIdentity()
-                }
                 if (currentServerIndex < fallbackServers.size - 1) {
                     currentServerIndex++
                     val nextServer = fallbackServers[currentServerIndex]
                     val switchNotice = if (nextServer.contains("Munowatch", ignoreCase = true)) {
-                        "Falling back to Munowatch website stream..."
+                        "Auto-routing past bandwidth limit via Munowatch stream..."
                     } else {
                         "Auto-routing via backup server ($nextServer)..."
                     }
@@ -687,7 +679,7 @@ class PlayerViewModel(
                         rawMsg.contains("Authentication", ignoreCase = true) || rawMsg.contains("session", ignoreCase = true) || rawMsg.contains("sign in", ignoreCase = true) || rawMsg.contains("subscription", ignoreCase = true) ->
                             "This title is currently unavailable on media servers. Please select another title."
                         rawMsg.contains("429") || rawMsg.contains("bandwidth", ignoreCase = true) ->
-                            "Daily media server bandwidth limit refreshed for this network. Please tap Retry to resume playing."
+                            "Daily media server bandwidth limit reached for this network. Please tap Retry or switch to another server."
                         rawMsg.isNotBlank() -> rawMsg
                         else -> "Stream unavailable across all streaming servers. Please select another title or try again."
                     }
@@ -709,11 +701,9 @@ class PlayerViewModel(
         val is404 = errorReason.contains("404") || errorReason.contains("Not Found", ignoreCase = true)
 
         if (is429) {
-            com.example.data.network.BandwidthBypassProxyManager.activateBypass()
-            com.example.data.network.BandwidthBypassProxyManager.rotateProxy()
-            com.example.data.network.NetworkClient.rotateClientIdentity()
             encountered429Error = true
             consecutive429Errors++
+            com.example.data.api.MunowatchApi.markCdnRateLimited()
         }
         if (is503) {
             encountered503Error = true
@@ -745,7 +735,11 @@ class PlayerViewModel(
                 MediaCache.evictPlaybackSource(failedUrl)
             }
 
-            val nextServerIndex = if (currentServerIndex < fallbackServers.size - 1) {
+            val munoIdx = fallbackServers.indexOfFirst { it.contains("Munowatch", ignoreCase = true) }
+            val nextServerIndex = if (is429 && munoIdx >= 0 && currentServerIndex != munoIdx) {
+                // On 429 rate limit on Movviez CDN, fast-failover directly to independent Munowatch BunnyCDN stream (Server 2)
+                munoIdx
+            } else if (currentServerIndex < fallbackServers.size - 1) {
                 currentServerIndex + 1
             } else {
                 -1
@@ -782,7 +776,6 @@ class PlayerViewModel(
                     encountered404Error ->
                         "This stream is currently unavailable on the server (HTTP 404 - File Not Found). Please select another title."
                     encountered429Error -> {
-                        com.example.data.network.NetworkClient.rotateClientIdentity()
                         "Daily media server bandwidth limit reached on this network. Please tap Retry to resume playing or switch servers."
                     }
                     else -> {
@@ -816,9 +809,6 @@ class PlayerViewModel(
         encountered404Error = false
         encounteredAuthError = false
         com.example.data.api.MunowatchApi.resetCdnRateLimit()
-        com.example.data.network.BandwidthBypassProxyManager.activateBypass()
-        com.example.data.network.BandwidthBypassProxyManager.rotateProxy()
-        com.example.data.network.NetworkClient.rotateClientIdentity()
         viewModelScope.launch {
             playbackRepository.evictPlaybackSource(currentContentId)
             MediaCache.evictPlaybackSource(currentContentId)
@@ -830,10 +820,6 @@ class PlayerViewModel(
         val idx = fallbackServers.indexOf(serverName)
         if (idx >= 0) currentServerIndex = idx
         failedStreamHosts.clear()
-        if (encountered429Error) {
-            com.example.data.network.BandwidthBypassProxyManager.activateBypass()
-            com.example.data.network.BandwidthBypassProxyManager.rotateProxy()
-        }
         loadSource(serverName)
     }
 
@@ -876,6 +862,7 @@ fun PlayerScreen(
     val state by viewModel.uiState.collectAsState()
 
     var isPlaying by remember { mutableStateOf(false) }
+    var playWhenReadyState by remember { mutableStateOf(true) }
     var isBuffering by remember { mutableStateOf(false) }
     var isPlayerLoading by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableLongStateOf(0L) }
@@ -1052,17 +1039,17 @@ fun PlayerScreen(
     val loadControl = remember {
         DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 30_000,
+                /* minBufferMs = */ 20_000,
                 /* maxBufferMs = */ 120_000,
-                /* bufferForPlaybackMs = */ 2_500,
-                /* bufferForPlaybackAfterRebufferMs = */ 4_500
+                /* bufferForPlaybackMs = */ 800,
+                /* bufferForPlaybackAfterRebufferMs = */ 1_500
             )
             .setBackBuffer(
                 /* backBufferDurationMs = */ 30_000,
                 /* retainBackBufferFromKeyframe = */ true
             )
             .setTargetBufferBytes(C.LENGTH_UNSET)
-            .setPrioritizeTimeOverSizeThresholds(false)
+            .setPrioritizeTimeOverSizeThresholds(true)
             .build()
     }
 
@@ -1157,13 +1144,15 @@ fun PlayerScreen(
                 playWhenReady = true
                 addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(playing: Boolean) {
-                        isPlaying = playing || (this@apply.playWhenReady && this@apply.playbackState != Player.STATE_ENDED)
+                        isPlaying = playing
+                        playWhenReadyState = this@apply.playWhenReady
                         if (playing) {
                             viewModel.onPlaybackStarted()
                         }
                     }
 
                     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                        playWhenReadyState = playWhenReady
                         isPlaying = playWhenReady && (this@apply.playbackState != Player.STATE_ENDED)
                     }
 
@@ -1218,8 +1207,10 @@ fun PlayerScreen(
                         isBuffering = (playbackState == Player.STATE_BUFFERING)
                         if (playbackState == Player.STATE_ENDED) {
                             isPlaying = false
+                            playWhenReadyState = false
                         } else if (playbackState == Player.STATE_READY) {
                             isPlaying = this@apply.playWhenReady
+                            playWhenReadyState = this@apply.playWhenReady
                             viewModel.onPlaybackStarted()
                             val h = videoSize.height
                             if (h > 0 && !detectedVideoHeights.contains(h)) {
@@ -1662,9 +1653,11 @@ fun PlayerScreen(
                         Key.MediaPlayPause, Key.Spacebar -> {
                             if (exoPlayer.playWhenReady && exoPlayer.playbackState != Player.STATE_ENDED) {
                                 exoPlayer.pause()
+                                playWhenReadyState = false
                                 isPlaying = false
                             } else {
                                 exoPlayer.play()
+                                playWhenReadyState = true
                                 isPlaying = true
                             }
                             showControls = true
@@ -1673,6 +1666,7 @@ fun PlayerScreen(
                         }
                         Key.MediaPlay -> {
                             exoPlayer.play()
+                            playWhenReadyState = true
                             isPlaying = true
                             showControls = true
                             controlsTimeoutKey++
@@ -1680,6 +1674,7 @@ fun PlayerScreen(
                         }
                         Key.MediaPause -> {
                             exoPlayer.pause()
+                            playWhenReadyState = false
                             isPlaying = false
                             showControls = true
                             controlsTimeoutKey++
@@ -1764,13 +1759,14 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Loading spinner while player is loading initial stream or buffering mid-stream (including while paused)
-        val isActivelyBuffering = state.isLoading || isBuffering || (isPlayerLoading && (bufferedPosition < currentPosition + 12_000L || currentPosition < 1000L))
-        if (isActivelyBuffering) {
+        // Loading indicator:
+        // 1. Initial stream loading (before playback starts)
+        val isExoBuffering = isBuffering || (exoPlayer.playbackState == Player.STATE_BUFFERING)
+        if (state.isLoading) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = if (currentPosition > 1000L) 0.55f else 0.75f)),
+                    .background(Color.Black.copy(alpha = 0.75f)),
                 contentAlignment = Alignment.Center
             ) {
                 Column(
@@ -1782,31 +1778,27 @@ fun PlayerScreen(
                         strokeWidth = 4.dp,
                         modifier = Modifier.size(54.dp)
                     )
-                    val notice = state.statusMessage ?: when {
-                        state.isAutoSwitching -> "Auto-switching to backup server..."
-                        state.isLoading -> "Connecting to high-speed media server (${state.activeServer.substringBefore(" ")})..."
-                        isBuffering && currentPosition < 1000L -> {
-                            when (bufferingPhase) {
-                                1 -> "Connecting to high-speed media server (${state.activeServer.substringBefore(" ")})..."
-                                2 -> "Retrieving video from media archive... Please hold on..."
-                                else -> "Buffering stream... Please wait a moment"
-                            }
-                        }
-                        isBuffering && hasAppliedResumeForCurrentMedia && currentPosition < 1000L -> "Buffering saved position... Please wait a moment"
-                        !isPlaying && isPlayerLoading -> "Buffering video stream while paused... Please wait a moment"
-                        isBuffering || isActivelyBuffering -> "Buffering video stream... Please wait a moment"
-                        else -> null
-                    }
-                    if (notice != null) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = notice,
-                            color = MunowatchTextPrimary,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
+                    val notice = state.statusMessage ?: "Connecting to high-speed media server (${state.activeServer.substringBefore(" ")})..."
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = notice,
+                        color = MunowatchTextPrimary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
+            }
+        } else if (isExoBuffering) {
+            // 2. Both initial stream buffer preparation and midplay buffering: ALWAYS show a centered spinner
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = MunowatchGreen,
+                    strokeWidth = 4.dp,
+                    modifier = Modifier.size(54.dp)
+                )
             }
         }
 
@@ -1978,31 +1970,6 @@ fun PlayerScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium
                             )
-                            if (isActivelyBuffering) {
-                                Surface(
-                                    color = MunowatchGreen.copy(alpha = 0.2f),
-                                    shape = RoundedCornerShape(4.dp),
-                                    border = BorderStroke(1.dp, MunowatchGreen.copy(alpha = 0.6f))
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                    ) {
-                                        CircularProgressIndicator(
-                                            color = MunowatchGreen,
-                                            strokeWidth = 2.dp,
-                                            modifier = Modifier.size(10.dp)
-                                        )
-                                        Text(
-                                            text = if (!isPlaying && isPlayerLoading) "Buffering while paused..." else "Buffering...",
-                                            color = MunowatchGreenLight,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    }
-                                }
-                            }
                         }
 
                         // Playback Action Controls
@@ -2052,15 +2019,19 @@ fun PlayerScreen(
                                     }
                             )
 
+                            val isCurrentlyActive = playWhenReadyState && exoPlayer.playbackState != Player.STATE_ENDED
                             TvButton(
-                                text = if (isActivelyBuffering && !isPlaying) "Buffering..." else if (isPlaying) "Pause" else "Play",
-                                icon = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                text = if (isCurrentlyActive) "Pause" else "Play",
+                                icon = if (isCurrentlyActive) Icons.Default.Pause else Icons.Default.PlayArrow,
                                 onClick = {
-                                    if (exoPlayer.playWhenReady && exoPlayer.playbackState != Player.STATE_ENDED) {
+                                    android.util.Log.d("PlayerScreen", "PlayPause clicked: isCurrentlyActive=$isCurrentlyActive, playWhenReady=${exoPlayer.playWhenReady}, state=${exoPlayer.playbackState}")
+                                    if (isCurrentlyActive) {
                                         exoPlayer.pause()
+                                        playWhenReadyState = false
                                         isPlaying = false
                                     } else {
                                         exoPlayer.play()
+                                        playWhenReadyState = true
                                         isPlaying = true
                                     }
                                     controlsTimeoutKey++

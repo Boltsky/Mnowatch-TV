@@ -402,8 +402,12 @@ class MunowatchApi(
                             val title = obj.optString("title")
                             if (rowId.isBlank() || title.isBlank()) continue
 
-                            val posterPath = obj.optString("tmdb_poster_path")
                             val munoImg = obj.optString("img_port_muno_file_name")
+                            val trailer = obj.optString("trailer")
+                            if (mediaType == 2 && isSingleMovieMisclassifiedAsSeries(title, trailer, munoImg)) {
+                                continue
+                            }
+                            val posterPath = obj.optString("tmdb_poster_path")
                             val posterUrl = when {
                                 posterPath.isNotBlank() && posterPath != "null" -> {
                                     val cleanP = if (posterPath.startsWith("/")) posterPath else "/$posterPath"
@@ -1271,9 +1275,15 @@ class MunowatchApi(
             fun cleanStreamUrl(url: String?): String? {
                 if (url.isNullOrBlank()) return null
                 val clean = url.replace("&amp;", "&").replace("&#38;", "&").trim().let {
-                    if (it.startsWith("//")) "https:$it" else it
+                    when {
+                        it.startsWith("//") -> "https:$it"
+                        it.startsWith("/") -> "https://cdn.movviez.com$it"
+                        it.startsWith("secure.php") -> "https://cdn.movviez.com/$it"
+                        else -> it
+                    }
                 }
-                return if (isValidStreamUrl(clean)) clean else null
+                val normalized = NetworkClient.normalizeStreamUrl(clean)
+                return if (isValidStreamUrl(normalized)) normalized else null
             }
 
             fun urlMatchesExpectedTitle(url: String, expected: String): Boolean {
@@ -1429,30 +1439,12 @@ class MunowatchApi(
 
             val preferDataSaver = com.example.data.repository.MediaCache.getPreferredStreamQuality().equals("360P", ignoreCase = true)
 
-            if (isBackupServer) {
-                // Server 2 (Backup): Try download route first, fall back to streaming preview
-                val dl = cleanStreamUrl(fetchDownload())
-                if (dl != null) return@withContext dl
-                val prev = cleanStreamUrl(fetchPreview())
-                if (prev != null) return@withContext prev
-                return@withContext null
-            }
-
-            if (isDirectServer) {
-                // Server 3 (Direct / Alternate): Try streaming preview first, fall back to download
-                val prev = cleanStreamUrl(fetchPreview())
-                if (prev != null) return@withContext prev
-                val dl = cleanStreamUrl(fetchDownload())
-                if (dl != null) return@withContext dl
-                return@withContext null
-            }
-
-            // Server 1 (Fast CDN):
-            // Always prefer dedicated streaming preview route (mode=preview) for video playback.
-            // It points to the exact same full quality video file on cdn.movviez.com, but streams
-            // via Cloudflare edge caching without triggering the daily file download bandwidth limit.
+            // Prioritize fetchPreview across all stream resolution branches:
+            // preview.php?id=$id resolves to cdn.movviez.com with mode=preview using Cloudflare Anycast edge caching and byte-range support.
+            // Use fetchDownload() only as a secondary fallback if preview mode does not return a playable video source.
             val prev = cleanStreamUrl(fetchPreview())
             if (prev != null) return@withContext prev
+
             val dl = cleanStreamUrl(fetchDownload())
             if (dl != null) return@withContext dl
 
@@ -1623,13 +1615,64 @@ class MunowatchApi(
 
         fun markCdnRateLimited() {
             android.util.Log.w("MunowatchApi", "CDN stream encountered 429 rate limit")
+            isCdnRateLimited = true
+            cdnRateLimitResetTime = System.currentTimeMillis() + (10 * 60 * 1000L)
         }
 
         fun isCdnRateLimited(): Boolean {
+            if (isCdnRateLimited) {
+                if (System.currentTimeMillis() > cdnRateLimitResetTime) {
+                    isCdnRateLimited = false
+                    return false
+                }
+                return true
+            }
             return false
         }
 
         fun resetCdnRateLimit() {
+            isCdnRateLimited = false
+            cdnRateLimitResetTime = 0L
+        }
+
+        val KNOWN_SINGLE_MOVIES = setOf(
+            "lansky", "knives out", "glass onion", "the contender", "oppenheimer",
+            "the hill", "the sphere", "everest", "the brutalist", "interstellar",
+            "the irishman", "the wolf of wall street", "motherless brooklyn",
+            "where the crawdads sing", "bird box", "bird box: barcelona",
+            "death on the nile", "house of gucci", "to all the boys",
+            "to all the boys i've loved before", "a quiet place", "gladiator",
+            "inception", "avatar", "titanic", "joker", "fast and furious"
+        )
+
+        fun isSingleMovieMisclassifiedAsSeries(title: String, trailer: String = "", munoImg: String = ""): Boolean {
+            val cleanTitle = title.lowercase().trim()
+            if (KNOWN_SINGLE_MOVIES.any { cleanTitle == it || cleanTitle.startsWith("$it ") || cleanTitle.contains(it) }) {
+                if (!Regex("""(?i)\b(?:season\s*\d+|s\d+\s*e\d+|series)\b""").containsMatchIn(title)) {
+                    return true
+                }
+            }
+
+            if (trailer.startsWith("m_sr_", ignoreCase = true) && !munoImg.startsWith("s_img_", ignoreCase = true)) {
+                val isWhitelistedLegacySeries = cleanTitle.contains("peaky blinders") ||
+                    cleanTitle.contains("wednesday") ||
+                    cleanTitle.contains("13 reasons why") ||
+                    cleanTitle.contains("sex education") ||
+                    cleanTitle.contains("riverdale") ||
+                    cleanTitle.contains("cruel summer") ||
+                    cleanTitle.contains("pretty little liars") ||
+                    cleanTitle.contains("blood & water") ||
+                    cleanTitle.contains("blood and water") ||
+                    cleanTitle.contains("the dropout") ||
+                    cleanTitle.contains("roswell") ||
+                    cleanTitle.contains("survive") ||
+                    Regex("""(?i)\b(?:season|seasons|series|s\d+|episode|eps|ep\s*\d+)\b""").containsMatchIn(title)
+
+                if (!isWhitelistedLegacySeries) {
+                    return true
+                }
+            }
+            return false
         }
 
         fun isValidStreamUrl(url: String?): Boolean {

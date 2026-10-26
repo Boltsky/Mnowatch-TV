@@ -313,6 +313,12 @@ object MediaCache {
         return name.replace(Regex("""\s+"""), " ").trim(' ', '-', '–', '—', ':', '|', '.')
     }
 
+    private val GENERIC_ALIAS_BLOCKLIST = setOf(
+        "series", "movie", "movies", "munowatch", "vj", "all", "hd", "null", "none",
+        "series_series", "series_movie", "series_munowatch", "series_vj", "series_all", "series_null",
+        "munowatch_series", "series_munowatch_series"
+    )
+
     private fun generateAliases(idOrTitle: String, knownTitle: String? = null): Set<String> {
         val aliases = mutableSetOf<String>()
         val raw = idOrTitle.trim()
@@ -343,7 +349,7 @@ object MediaCache {
 
             if (noPrefix.contains("vj", ignoreCase = true)) {
                 val withoutVj = noPrefix.replace(Regex("""(?i)[_\s\-]*vj[_\s\-]+[a-z0-9]+.*$"""), "").trim(' ', '_', '-')
-                if (withoutVj.isNotBlank()) {
+                if (withoutVj.isNotBlank() && withoutVj.length >= 3) {
                     aliases.add(withoutVj)
                     aliases.add(withoutVj.lowercase())
                     val noVjSlug = withoutVj.lowercase().replace(Regex("""[^a-z0-9]"""), "_").trim('_')
@@ -362,7 +368,7 @@ object MediaCache {
             aliases.add("series_$tSlug")
 
             val baseName = extractBaseSeriesName(t)
-            if (baseName.isNotBlank()) {
+            if (baseName.isNotBlank() && baseName.length >= 3) {
                 aliases.add(baseName)
                 aliases.add(baseName.lowercase())
                 val baseSlug = baseName.lowercase().replace(Regex("""[^a-z0-9]"""), "_").trim('_')
@@ -370,7 +376,7 @@ object MediaCache {
                 aliases.add("series_$baseSlug")
             }
         }
-        return aliases
+        return aliases.filter { it.lowercase() !in GENERIC_ALIAS_BLOCKLIST && it.length >= 2 }.toSet()
     }
 
     fun normalizeShiftedSeasons(detail: SeriesDetail): SeriesDetail {
@@ -447,11 +453,34 @@ object MediaCache {
     }
 
     fun getSeriesDetail(idOrSlug: String): SeriesDetail? {
-        val aliases = generateAliases(idOrSlug)
+        if (idOrSlug.isBlank()) return null
+        val clean = idOrSlug.trim()
+
+        // 1. Strict primary lookup by exact ID
+        val exactMatch = seriesDetailsById[clean]
+            ?: seriesDetailsById["series_$clean"]
+            ?: seriesDetailsById[clean.removePrefix("series_")]
+        if (exactMatch != null && exactMatch.seasons.any { it.episodes.isNotEmpty() }) {
+            return normalizeShiftedSeasons(exactMatch)
+        }
+
+        // 2. Strict title slug lookup (only if matching the specific series)
+        val aliases = generateAliases(clean).filter {
+            it.isNotBlank() && it !in GENERIC_ALIAS_BLOCKLIST && it.length >= 3
+        }
         for (alias in aliases) {
             val item = seriesDetailsById[alias]
             if (item != null && item.seasons.any { it.episodes.isNotEmpty() }) {
-                return normalizeShiftedSeasons(item)
+                val matchesId = item.id.equals(clean, ignoreCase = true) ||
+                    item.id.removePrefix("series_").equals(clean.removePrefix("series_"), ignoreCase = true)
+                val cleanWithoutSeries = clean.removePrefix("series_").replace("_", " ").trim()
+                val matchesTitle = item.title.isNotBlank() && (
+                    item.title.equals(cleanWithoutSeries, ignoreCase = true) ||
+                    cleanWithoutSeries.startsWith("${item.title} ", ignoreCase = true)
+                )
+                if (matchesId || matchesTitle) {
+                    return normalizeShiftedSeasons(item)
+                }
             }
         }
 
@@ -459,7 +488,7 @@ object MediaCache {
         val dir = diskCacheDir
         if (dir != null) {
             val cleanId = idOrSlug.removePrefix("series_").replace(Regex("""[^a-zA-Z0-9_\-]"""), "_")
-            val candidateFileNames = aliases.map { a -> "series_${a.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_")}.json" }.distinct()
+            val candidateFileNames = (listOf("series_${cleanId}.json") + aliases.map { a -> "series_${a.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_")}.json" }).distinct()
             for (fName in candidateFileNames) {
                 val f = File(dir, fName)
                 if (f.exists() && f.length() > 0) {
@@ -467,9 +496,18 @@ object MediaCache {
                         val json = f.readText()
                         val detail = seriesDetailAdapter.fromJson(json)
                         if (detail != null && detail.seasons.any { it.episodes.isNotEmpty() }) {
-                            val norm = normalizeShiftedSeasons(detail)
-                            cacheSeriesDetailInMemory(norm)
-                            return norm
+                            val matchesId = detail.id.equals(clean, ignoreCase = true) ||
+                                detail.id.removePrefix("series_").equals(clean.removePrefix("series_"), ignoreCase = true)
+                            val cleanWithoutSeries = clean.removePrefix("series_").replace("_", " ").trim()
+                            val matchesTitle = detail.title.isNotBlank() && (
+                                detail.title.equals(cleanWithoutSeries, ignoreCase = true) ||
+                                cleanWithoutSeries.startsWith("${detail.title} ", ignoreCase = true)
+                            )
+                            if (matchesId || matchesTitle) {
+                                val norm = normalizeShiftedSeasons(detail)
+                                cacheSeriesDetailInMemory(norm)
+                                return norm
+                            }
                         }
                     } catch (_: Exception) {}
                 }

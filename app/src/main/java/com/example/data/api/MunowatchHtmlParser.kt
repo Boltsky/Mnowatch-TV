@@ -1279,7 +1279,7 @@ class MunowatchHtmlParser {
         // Server 2 routes through backup pull zone (munotech2/munotech3)
         // Server 3 routes through alternate pull zone (harvetz/nkuba)
         var finalUrl = videoUrl
-        if (serverName.contains("Backup", ignoreCase = true) && videoUrl.contains(".b-cdn.net")) {
+        if ((serverName.contains("Backup", ignoreCase = true) || serverName.contains("Server 2", ignoreCase = true) || serverName.contains("Munowatch", ignoreCase = true)) && videoUrl.contains(".b-cdn.net")) {
             if (videoUrl.contains("nkuba.b-cdn.net")) {
                 finalUrl = videoUrl.replace("nkuba.b-cdn.net", "munotech2.b-cdn.net")
             } else if (videoUrl.contains("harvetz.b-cdn.net")) {
