@@ -120,7 +120,8 @@ fun MunowatchTvNavHost(
                     appContainer.movieRepository,
                     appContainer.seriesRepository,
                     appContainer.playbackRepository,
-                    appContainer.munowatchRepository
+                    appContainer.munowatchRepository,
+                    appContainer.appUpdateRepository
                 )
             }
             HomeScreen(
@@ -327,7 +328,8 @@ fun MunowatchTvNavHost(
                     appContainer.authRepository,
                     appContainer.munowatchRepository,
                     appContainer.playbackRepository,
-                    appContainer.sessionManager
+                    appContainer.sessionManager,
+                    appContainer.appUpdateRepository
                 )
             }
             SettingsScreen(

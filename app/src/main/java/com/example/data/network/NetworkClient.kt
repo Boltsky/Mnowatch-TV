@@ -49,7 +49,10 @@ object BandwidthBypassProxyManager {
     }
 }
 
-class NetworkClient(private val sessionManager: SecureSessionManager) {
+open class NetworkClient(
+    private val sessionManager: SecureSessionManager,
+    customOkHttpClient: OkHttpClient? = null
+) {
 
     // Fallback DNS that resolves system DNS first and falls back to verified CDN/origin Anycast IPs
     private val resilientDns = object : Dns {
@@ -184,7 +187,7 @@ class NetworkClient(private val sessionManager: SecureSessionManager) {
         }
     }
 
-    val okHttpClient: OkHttpClient = OkHttpClient.Builder()
+    open val okHttpClient: OkHttpClient = customOkHttpClient ?: OkHttpClient.Builder()
         .proxy(java.net.Proxy.NO_PROXY)
         .dns(resilientDns)
         .cookieJar(cookieJar)

@@ -1279,19 +1279,28 @@ class MunowatchHtmlParser {
         // Server 2 routes through backup pull zone (munotech2/munotech3)
         // Server 3 routes through alternate pull zone (harvetz/nkuba)
         var finalUrl = videoUrl
-        if ((serverName.contains("Backup", ignoreCase = true) || serverName.contains("Server 2", ignoreCase = true) || serverName.contains("Munowatch", ignoreCase = true)) && videoUrl.contains(".b-cdn.net")) {
+        val isDirectServer = serverName.contains("Direct", ignoreCase = true) ||
+            serverName.contains("Alternate", ignoreCase = true) ||
+            serverName.contains("Server 3", ignoreCase = true)
+        val isBackupServer = !isDirectServer && (serverName.contains("Backup", ignoreCase = true) ||
+            serverName.contains("Server 2", ignoreCase = true) ||
+            serverName.contains("Munowatch", ignoreCase = true))
+
+        if (isBackupServer && videoUrl.contains(".b-cdn.net")) {
             if (videoUrl.contains("nkuba.b-cdn.net")) {
                 finalUrl = videoUrl.replace("nkuba.b-cdn.net", "munotech2.b-cdn.net")
             } else if (videoUrl.contains("harvetz.b-cdn.net")) {
                 finalUrl = videoUrl.replace("harvetz.b-cdn.net", "munotech3.b-cdn.net")
             }
-        } else if ((serverName.contains("Direct", ignoreCase = true) || serverName.contains("Alternate", ignoreCase = true)) && videoUrl.contains(".b-cdn.net")) {
+        } else if (isDirectServer && videoUrl.contains(".b-cdn.net")) {
             if (videoUrl.contains("nkuba.b-cdn.net")) {
                 finalUrl = videoUrl.replace("nkuba.b-cdn.net", "harvetz.b-cdn.net")
             } else if (videoUrl.contains("harvetz.b-cdn.net")) {
                 finalUrl = videoUrl.replace("harvetz.b-cdn.net", "nkuba.b-cdn.net")
             } else if (videoUrl.contains("munotech2.b-cdn.net")) {
-                finalUrl = videoUrl.replace("munotech2.b-cdn.net", "munotech3.b-cdn.net")
+                finalUrl = videoUrl.replace("munotech2.b-cdn.net", "harvetz.b-cdn.net")
+            } else if (videoUrl.contains("munotech3.b-cdn.net")) {
+                finalUrl = videoUrl.replace("munotech3.b-cdn.net", "harvetz.b-cdn.net")
             }
         }
 
@@ -1402,9 +1411,9 @@ class MunowatchHtmlParser {
         t = t.replace(Regex("""(?i)\bby\s+vj\s+.*$"""), "")
         t = t.replace(Regex("""(?i)\bvj\s+[a-z0-9_\-\.]+"""), "")
         t = t.replace(Regex("""\[.*?\]|\(.*?\)|<.*?>"""), "")
-        t = t.replace(Regex("""(?i)\s+(?:19\d{2}|20\d{2})\s+(?:jr|1080p|720p|480p|4k|hd|uhd|bluray|x264|x265)\b"""), " ")
+        t = t.replace(Regex("""(?i)\s+(?:19\d{2}|20\d{2})\s+(?:jr|2160p|1440p|1080p|720p|480p|360p|4k|hd|uhd|bluray|x264|x265)\b"""), " ")
         t = t.replace(Regex("""\s+[-–—|]\s*(?:19\d{2}|20\d{2})\s*$"""), " ")
-        t = t.replace(Regex("""(?i)\b(?:1080p|720p|480p|4k|hd|uhd|bluray|web-dl|x264|x265|jr)\b"""), "")
+        t = t.replace(Regex("""(?i)\b(?:2160p|1440p|1080p|720p|480p|360p|4k|hd|uhd|bluray|web-dl|x264|x265|jr)\b"""), "")
         // Normalize Roman numerals and parts
         t = t.replace(Regex("""(?i)\bpart\s+([0-9]+)\b"""), "pt $1")
         t = t.replace(Regex("""(?i)\bpart\s+i\b"""), "pt 1")
@@ -1502,7 +1511,7 @@ class MunowatchHtmlParser {
 
             if (base.isNotBlank() && (base == plainTitle || base.replace(" ", "") == plainTitle.replace(" ", ""))) {
                 // If sub is purely non-substantive (e.g. "preview", "trailer", "vj junior", "1080p", "hd", "part 1" when numbers match), allow it
-                val ignorableSubWords = setOf("preview", "trailer", "movie", "full", "hd", "1080p", "720p", "translated", "luganda", "twolekede", "vj", "junior", "jingo", "emmy", "icep", "ulio", "part", "pt", "cd", "1", "2", "3", "4", "5")
+                val ignorableSubWords = setOf("preview", "trailer", "movie", "full", "hd", "4k", "2160p", "1440p", "1080p", "720p", "480p", "360p", "translated", "luganda", "twolekede", "vj", "junior", "jingo", "emmy", "icep", "ulio", "part", "pt", "cd", "1", "2", "3", "4", "5")
                 val subWords = sub.split(" ").filter { it.isNotBlank() && it !in ignorableSubWords }
                 if (subWords.isEmpty()) {
                     return true

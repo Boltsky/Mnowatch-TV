@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp"
+    android:height="90dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+
+    <!-- Background -->
+    <path
+        android:fillColor="#010318"
+        android:pathData="M0,0h320v180h-320z" />
+
+    <!-- Gradient / accent glow effect -->
+    <path
+        android:fillColor="#0A1828"
+        android:pathData="M0,0h320v120h-320z" />
+
+    <!-- Subtle accent line -->
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M32,142h256v4h-256z" />
+
+    <!-- Stylized TV / Play icon badge -->
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M52,60 L78,75 L52,90 Z" />
+
+    <!-- M Symbol Shape -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M92,54 L102,54 L114,80 L126,54 L136,54 L136,96 L124,96 L124,72 L116,90 L112,90 L104,72 L104,96 L92,96 Z" />
+
+    <!-- UNO Symbol / Typography representation -->
+    <path
+        android:fillColor="#E2E8F0"
+        android:pathData="M146,54 L158,54 L158,82 C158,87 161,90 166,90 C171,90 174,87 174,82 L174,54 L186,54 L186,82 C186,92 178,98 166,98 C154,98 146,92 146,82 Z" />
+
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M198,54 L209,54 L224,80 L224,54 L235,54 L235,96 L224,96 L209,70 L209,96 L198,96 Z" />
+
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M246,54 C258,54 268,64 268,75 C268,86 258,96 246,96 C234,96 224,86 224,75 C224,64 234,54 246,54 Z M246,64 C240,64 235,69 235,75 C235,81 240,86 246,86 C252,86 257,81 257,75 C257,69 252,64 246,64 Z" />
+
+    <!-- Subtitle text badge: TV EDITION -->
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M130,114h60v16h-60z" />
+</vector>

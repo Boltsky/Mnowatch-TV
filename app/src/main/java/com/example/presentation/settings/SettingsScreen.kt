@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -43,12 +44,16 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.session.SecureSessionManager
+import com.example.domain.model.AppUpdateInfo
 import com.example.domain.model.DiagnosticsInfo
+import com.example.domain.model.UpdateDownloadState
+import com.example.domain.repository.AppUpdateRepository
 import com.example.domain.repository.AuthenticationRepository
 import com.example.domain.repository.MunowatchRepository
 import com.example.domain.repository.PlaybackRepository
 import com.example.ui.components.TvButton
 import com.example.ui.components.TvTopBar
+import com.example.ui.components.TvUpdateDialog
 import com.example.ui.theme.MunowatchBackground
 import com.example.ui.theme.MunowatchError
 import com.example.ui.theme.MunowatchGreen
@@ -58,6 +63,7 @@ import com.example.ui.theme.MunowatchTextMuted
 import com.example.ui.theme.MunowatchTextPrimary
 import com.example.ui.theme.MunowatchTextSecondary
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
@@ -66,21 +72,85 @@ data class SettingsUiState(
     val sessionStatus: String = "NOT_AUTHENTICATED",
     val subscriptionDays: Int? = null,
     val diagnostics: DiagnosticsInfo? = null,
-    val isClearing: Boolean = false
+    val isClearing: Boolean = false,
+    val isCheckingUpdate: Boolean = false,
+    val updateInfo: AppUpdateInfo? = null,
+    val checkUpdateMessage: String? = null,
+    val showUpdateDialog: Boolean = false
 )
 
 class SettingsViewModel(
     private val authRepository: AuthenticationRepository,
     private val munowatchRepository: MunowatchRepository,
     private val playbackRepository: PlaybackRepository,
-    private val sessionManager: SecureSessionManager
+    private val sessionManager: SecureSessionManager,
+    private val appUpdateRepository: AppUpdateRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState = _uiState.asStateFlow()
 
+    val downloadState: StateFlow<UpdateDownloadState> =
+        appUpdateRepository?.downloadState ?: MutableStateFlow(UpdateDownloadState.Idle)
+
     init {
         loadSettings()
+        viewModelScope.launch {
+            try {
+                val info = appUpdateRepository?.checkForUpdate(force = false)?.getOrNull()
+                if (info != null) {
+                    _uiState.value = _uiState.value.copy(updateInfo = info)
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun checkForUpdates() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isCheckingUpdate = true, checkUpdateMessage = null)
+            try {
+                val result = appUpdateRepository?.checkForUpdate(force = true)
+                val info = result?.getOrNull()
+                if (info != null) {
+                    val msg = if (info.isUpdateAvailable) {
+                        "New version available: v${info.latestVersionName} (Build ${info.latestVersionCode})"
+                    } else {
+                        "Munowatch TV is up to date (v${info.currentVersionName})"
+                    }
+                    _uiState.value = _uiState.value.copy(
+                        isCheckingUpdate = false,
+                        updateInfo = info,
+                        checkUpdateMessage = msg,
+                        showUpdateDialog = info.isUpdateAvailable
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isCheckingUpdate = false,
+                        checkUpdateMessage = "Unable to check updates. Please check your network."
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isCheckingUpdate = false,
+                    checkUpdateMessage = "Update check failed: ${e.message}"
+                )
+            }
+        }
+    }
+
+    fun startUpdateDownload() {
+        val info = _uiState.value.updateInfo ?: return
+        viewModelScope.launch {
+            val result = appUpdateRepository?.downloadApk(info.apkUrl)
+            result?.onSuccess { file ->
+                appUpdateRepository?.installApk(file)
+            }
+        }
+    }
+
+    fun dismissUpdateDialog() {
+        appUpdateRepository?.resetDownloadState()
+        _uiState.value = _uiState.value.copy(showUpdateDialog = false)
     }
 
     fun loadSettings() {
@@ -124,6 +194,16 @@ fun SettingsScreen(
     onNavigateToAuth: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
+    val downloadState by viewModel.downloadState.collectAsState()
+
+    if (state.showUpdateDialog && state.updateInfo != null) {
+        TvUpdateDialog(
+            updateInfo = state.updateInfo!!,
+            downloadState = downloadState,
+            onUpdateClick = { viewModel.startUpdateDownload() },
+            onDismissClick = { viewModel.dismissUpdateDialog() }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -313,6 +393,84 @@ fun SettingsScreen(
                             onClick = { viewModel.loadSettings() },
                             isPrimary = false
                         )
+                    }
+                }
+            }
+
+            // 4. Application Version & In-App Updates
+            item {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MunowatchSurfaceElevated,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.SystemUpdate,
+                                contentDescription = null,
+                                tint = MunowatchGreen,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "App Version & In-App Updates",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        val curVerName = state.updateInfo?.currentVersionName ?: "1.0"
+                        val curVerCode = state.updateInfo?.currentVersionCode ?: 1
+                        val latestVerName = state.updateInfo?.latestVersionName ?: curVerName
+                        val hasUpdate = state.updateInfo?.isUpdateAvailable == true
+
+                        DiagnosticRow(
+                            title = "Installed Version",
+                            value = "v$curVerName (Build $curVerCode)",
+                            isSuccess = true
+                        )
+
+                        DiagnosticRow(
+                            title = "Update Channel",
+                            value = "GitHub Mainline Release (Boltsky/Mnowatch-TV)",
+                            isSuccess = true
+                        )
+
+                        DiagnosticRow(
+                            title = "Status",
+                            value = state.checkUpdateMessage
+                                ?: (if (hasUpdate) "Update Available: v$latestVerName" else "App is up to date"),
+                            isSuccess = !hasUpdate
+                        )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TvButton(
+                                text = if (state.isCheckingUpdate) "Checking Updates..." else "Check for Updates",
+                                icon = Icons.Default.Refresh,
+                                onClick = { viewModel.checkForUpdates() },
+                                isPrimary = hasUpdate
+                            )
+
+                            if (hasUpdate) {
+                                TvButton(
+                                    text = "Install v$latestVerName",
+                                    icon = Icons.Default.SystemUpdate,
+                                    onClick = { viewModel.checkForUpdates() },
+                                    isPrimary = true
+                                )
+                            }
+                        }
                     }
                 }
             }

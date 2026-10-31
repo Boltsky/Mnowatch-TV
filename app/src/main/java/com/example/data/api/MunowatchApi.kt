@@ -1259,11 +1259,12 @@ class MunowatchApi(
         try {
             val id = extractTwolekedeId(episodeIdOrUrl) ?: return@withContext null
 
-            val isBackupServer = serverName?.contains("Backup", ignoreCase = true) == true ||
-                serverName?.contains("Server 2", ignoreCase = true) == true
             val isDirectServer = serverName?.contains("Direct", ignoreCase = true) == true ||
                 serverName?.contains("Alternate", ignoreCase = true) == true ||
                 serverName?.contains("Server 3", ignoreCase = true) == true
+            val isBackupServer = !isDirectServer && (serverName?.contains("Backup", ignoreCase = true) == true ||
+                serverName?.contains("Server 2", ignoreCase = true) == true ||
+                serverName?.contains("Munowatch", ignoreCase = true) == true)
 
             fun isGenericTitle(t: String): Boolean {
                 val l = t.lowercase().trim()
@@ -1274,11 +1275,12 @@ class MunowatchApi(
 
             fun cleanStreamUrl(url: String?): String? {
                 if (url.isNullOrBlank()) return null
+                val defaultHost = if (isDirectServer) "dl.movviez.com" else "cdn.movviez.com"
                 val clean = url.replace("&amp;", "&").replace("&#38;", "&").trim().let {
                     when {
                         it.startsWith("//") -> "https:$it"
-                        it.startsWith("/") -> "https://cdn.movviez.com$it"
-                        it.startsWith("secure.php") -> "https://cdn.movviez.com/$it"
+                        it.startsWith("/") -> "https://$defaultHost$it"
+                        it.startsWith("secure.php") -> "https://$defaultHost/$it"
                         else -> it
                     }
                 }
@@ -1307,6 +1309,17 @@ class MunowatchApi(
                     if (cleanUrlT.length >= 4 && cleanExpT.length >= 4 && (cleanUrlT == cleanExpT || cleanUrlT.replace(" ", "") == cleanExpT.replace(" ", ""))) {
                         return true
                     }
+                    val urlTitleNoYear = urlTitle
+                        .replace(Regex("""\b(?:19\d{2}|20\d{2})\b"""), " ")
+                        .replace(Regex("""\s+"""), " ").trim()
+                    if (urlTitleNoYear.length >= 2 && !isGenericTitle(urlTitleNoYear)) {
+                        if (parser.titlesMatch(urlTitleNoYear, expected)) return true
+                        if (parser.titlesMatch(urlTitleNoYear, baseExpected)) return true
+                        val cleanNoYear = parser.cleanForMatching(urlTitleNoYear)
+                        if (cleanExpT.length >= 4 && cleanNoYear.length >= 4 && (cleanExpT == cleanNoYear || cleanExpT.replace(" ", "") == cleanNoYear.replace(" ", ""))) {
+                            return true
+                        }
+                    }
                     return false
                 }
 
@@ -1318,9 +1331,10 @@ class MunowatchApi(
                     val rawName = urlFile.substringAfterLast("/").substringBeforeLast(".")
                     val fileName = rawName
                         .replace(Regex("""^\d+_"""), "") // Remove leading upload timestamp prefix
-                        .replace(Regex("""(?i)\b(?:x264|x265|hevc|1080p|720p|480p|hd|full\s*hd|mp4|mkv)\b"""), " ")
+                        .replace("_", " ").replace("-", " ").replace(".", " ")
+                        .replace(Regex("""(?i)\b(?:x264|x265|hevc|2160p|1440p|1080p|720p|480p|360p|4k|hd|full\s*hd|mp4|mkv)\b"""), " ")
                         .replace(Regex("""(?i)\b(?:vj\s+[a-z0-9_\-\.]*|vj|jr|jingo|ice\s*p|emmy|ks|waza|nelly|lance|kimuli|ivo)\b"""), " ")
-                        .replace("_", " ").replace("-", " ").replace(".", " ").trim()
+                        .replace(Regex("""\s+"""), " ").trim()
                     if (fileName.length >= 2 && !isGenericTitle(fileName)) {
                         if (parser.titlesMatch(fileName, expected)) return true
                         val baseExpected = parser.extractBaseSeriesName(expected).ifBlank { expected }
@@ -1329,6 +1343,17 @@ class MunowatchApi(
                         val cleanFile = parser.cleanForMatching(fileName)
                         if (cleanExp.length >= 4 && cleanFile.length >= 4 && (cleanExp == cleanFile || cleanExp.replace(" ", "") == cleanFile.replace(" ", ""))) {
                             return true
+                        }
+                        val fileNameNoYear = fileName
+                            .replace(Regex("""\b(?:19\d{2}|20\d{2})\b"""), " ")
+                            .replace(Regex("""\s+"""), " ").trim()
+                        if (fileNameNoYear.length >= 2 && !isGenericTitle(fileNameNoYear)) {
+                            if (parser.titlesMatch(fileNameNoYear, expected)) return true
+                            if (parser.titlesMatch(fileNameNoYear, baseExpected)) return true
+                            val cleanNoYear = parser.cleanForMatching(fileNameNoYear)
+                            if (cleanExp.length >= 4 && cleanNoYear.length >= 4 && (cleanExp == cleanNoYear || cleanExp.replace(" ", "") == cleanNoYear.replace(" ", ""))) {
+                                return true
+                            }
                         }
                         return false
                     }
@@ -1379,7 +1404,7 @@ class MunowatchApi(
                 val downloadUrl = "https://twolekede.com/download.php?id=$id"
                 val formBody = FormBody.Builder()
                     .add("submit", "Download")
-                    .add("submit", "download")
+                    .add("download", "Download")
                     .build()
                 val dlRequest = Request.Builder()
                     .url(downloadUrl)
@@ -1419,8 +1444,11 @@ class MunowatchApi(
                             } else ""
                             if (body.isBlank()) return@use null
 
-                            val rawUrl = Regex("""href=["'](https?://[^"']*(?:secure\.php|\.mp4)[^"']*)["']""").find(body)?.groupValues?.get(1)
+                            val rawUrl = Regex("""href=["']((?:https?:)?//[^"']*(?:secure\.php|\.mp4)[^"']*)["']""").find(body)?.groupValues?.get(1)
+                                ?: Regex("""href=["'](/(?:secure\.php|download)[^"']*)["']""").find(body)?.groupValues?.get(1)
+                                ?: Regex("""href=["'](secure\.php\?[^"']*)["']""").find(body)?.groupValues?.get(1)
                                 ?: Regex("""https?://(?:cdn|dl)\.movviez\.com/secure\.php\?[^\s"'<>]+""").find(body)?.value
+                                ?: Regex("""https?://[^\s"'<>]+\.(?:mp4|m3u8)[^\s"'<>]*""").find(body)?.value
                             rawUrl
                         } else null
                     }
@@ -1434,19 +1462,66 @@ class MunowatchApi(
                         }
                     }
                 }
+
+                // If POST attempt returned no link, try GET request on downloadUrl
+                val getLocation = try {
+                    val getReq = Request.Builder()
+                        .url(downloadUrl)
+                        .header("Referer", "https://twolekede.com/")
+                        .header("User-Agent", NetworkClient.USER_AGENT)
+                        .get()
+                        .build()
+                    noRedirectClient.newCall(getReq).execute().use { response ->
+                        if (response.code in 300..399) {
+                            val loc = response.header("Location")
+                            if (loc == "index.php" || loc == "/index.php" || loc?.contains("index.php") == true) null
+                            else loc
+                        } else if (response.code == 200) {
+                            val contentType = response.header("Content-Type").orEmpty().lowercase()
+                            if (contentType.contains("video") || contentType.contains("octet-stream")) {
+                                return@use downloadUrl
+                            }
+                            val body = response.body?.string().orEmpty()
+                            val rawUrl = Regex("""href=["']((?:https?:)?//[^"']*(?:secure\.php|\.mp4)[^"']*)["']""").find(body)?.groupValues?.get(1)
+                                ?: Regex("""href=["'](/(?:secure\.php|download)[^"']*)["']""").find(body)?.groupValues?.get(1)
+                                ?: Regex("""href=["'](secure\.php\?[^"']*)["']""").find(body)?.groupValues?.get(1)
+                                ?: Regex("""https?://(?:cdn|dl)\.movviez\.com/secure\.php\?[^\s"'<>]+""").find(body)?.value
+                                ?: Regex("""https?://[^\s"'<>]+\.(?:mp4|m3u8)[^\s"'<>]*""").find(body)?.value
+                            rawUrl
+                        } else null
+                    }
+                } catch (_: Exception) { null }
+
+                if (!getLocation.isNullOrBlank()) {
+                    val clean = cleanStreamUrl(getLocation)
+                    if (clean != null) {
+                        if (expectedTitle.isNullOrBlank() || urlMatchesExpectedTitle(clean, expectedTitle)) {
+                            return clean
+                        }
+                    }
+                }
+
                 return null
             }
 
             val preferDataSaver = com.example.data.repository.MediaCache.getPreferredStreamQuality().equals("360P", ignoreCase = true)
 
-            // Prioritize fetchPreview across all stream resolution branches:
-            // preview.php?id=$id resolves to cdn.movviez.com with mode=preview using Cloudflare Anycast edge caching and byte-range support.
-            // Use fetchDownload() only as a secondary fallback if preview mode does not return a playable video source.
-            val prev = cleanStreamUrl(fetchPreview())
-            if (prev != null) return@withContext prev
+            // Server stream selection prioritizes high-definition sources over low-resolution previews:
+            // download.php resolves to the original 1080p/720p HD movie stream without preview downscaling.
+            // If data saver is requested or download source is unavailable, fall back smoothly to preview mode.
+            if (!preferDataSaver) {
+                val dl = cleanStreamUrl(fetchDownload())
+                if (dl != null) return@withContext dl
 
-            val dl = cleanStreamUrl(fetchDownload())
-            if (dl != null) return@withContext dl
+                val prev = cleanStreamUrl(fetchPreview())
+                if (prev != null) return@withContext prev
+            } else {
+                val prev = cleanStreamUrl(fetchPreview())
+                if (prev != null) return@withContext prev
+
+                val dl = cleanStreamUrl(fetchDownload())
+                if (dl != null) return@withContext dl
+            }
 
             return@withContext null
         } catch (_: Exception) {

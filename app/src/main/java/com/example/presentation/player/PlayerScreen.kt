@@ -376,19 +376,34 @@ data class StreamQualityOption(
 ) {
     companion object {
         fun normalizeResolution(height: Int, width: Int = 0, tagHint: String? = null): Pair<Int, String> {
+            val equivHeight = if (width > 0) (width * 9) / 16 else height
+
+            if (height > 0 || width > 0) {
+                return when {
+                    height >= 2000 || width >= 3500 || equivHeight >= 2000 -> 2160 to "4K"
+                    height >= 1350 || width >= 2400 || equivHeight >= 1350 -> 1440 to "1440p"
+                    height >= 950 || width >= 1800 || equivHeight >= 950 -> 1080 to "1080p"
+                    height >= 650 || width >= 1150 || equivHeight >= 650 -> 720 to "720p"
+                    height >= 400 || equivHeight >= 400 -> 480 to "480p"
+                    else -> 360 to "360p"
+                }
+            }
+
             val hint = tagHint.orEmpty().lowercase()
+            val has4k = hint.contains("2160p") || hint.contains("2160") || hint.contains("4k") || hint.contains("uhd")
+            val has1440 = hint.contains("1440p") || hint.contains("1440") || hint.contains("2k") || hint.contains("qhd")
             val has1080 = hint.contains("1080p") || hint.contains("1080") || hint.contains("fhd") || hint.contains("full hd")
             val has720 = hint.contains("720p") || hint.contains("720") || Regex("""\bhd\b""").containsMatchIn(hint)
             val has480 = hint.contains("480p") || hint.contains("480") || Regex("""\bsd\b""").containsMatchIn(hint)
-
-            val equivHeight = if (width > 0) (width * 9) / 16 else height
+            val has360 = hint.contains("360p") || hint.contains("360")
 
             return when {
-                has1080 || width >= 1800 || height >= 950 || equivHeight >= 950 -> 1080 to "1080p"
-                has720 || width >= 1150 || height >= 650 || equivHeight >= 650 -> 720 to "720p"
-                has480 || width >= 640 || height >= 400 || equivHeight >= 400 -> 480 to "480p"
-                width >= 400 || height >= 240 || equivHeight >= 240 -> 480 to "480p"
-                height > 0 -> 480 to "480p"
+                has4k -> 2160 to "4K"
+                has1440 -> 1440 to "1440p"
+                has1080 -> 1080 to "1080p"
+                has720 -> 720 to "720p"
+                has480 -> 480 to "480p"
+                has360 -> 360 to "360p"
                 else -> 720 to "720p"
             }
         }
@@ -424,12 +439,16 @@ data class StreamQualityOption(
             val label = if (isSingleQuality) "$fullResName (Source Quality)" else fullResName
             val desc = when {
                 isSingleQuality -> "Original pristine source resolution uploaded for this title"
+                stdHeight >= 2160 -> "Ultra-high definition 4K resolution with maximum detail"
+                stdHeight >= 1440 -> "Quad high definition 2K resolution for high-end displays"
                 stdHeight >= 1080 -> "Crisp, pristine full HD picture for fast and stable networks"
                 stdHeight >= 700 -> "High definition with fast buffer for everyday connections"
                 stdHeight >= 420 -> "Standard definition, ideal for medium connections"
                 else -> "Low bandwidth stream that prevents buffering on weak networks"
             }
             val id = when {
+                stdHeight >= 2160 -> "4K"
+                stdHeight >= 1440 -> "1440P"
                 stdHeight >= 1080 -> "1080P"
                 stdHeight in 700..1079 -> "720P"
                 stdHeight in 420..699 -> "480P"
@@ -889,6 +908,7 @@ fun PlayerScreen(
         mutableStateOf<String?>(null)
     }
     var showQualityDialog by remember { mutableStateOf(false) }
+    var tracksRevision by remember { mutableIntStateOf(0) }
 
     // Reset detected video qualities when media changes
     LaunchedEffect(state.contentId, state.playbackSource) {
@@ -1000,22 +1020,32 @@ fun PlayerScreen(
 
     // Initialize AndroidX Media3 ExoPlayer once with decoder fallback & TV audio attributes
     val appContext = context.applicationContext
-    val okHttpDataSourceFactory = remember {
+    val bandwidthMeter = remember {
+        androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.Builder(appContext)
+            .setInitialBitrateEstimate(25_000_000L) // 25 Mbps: Ensures initial adaptive track selection starts at highest available quality (1080p/720p)
+            .build()
+    }
+
+    val okHttpDataSourceFactory = remember(bandwidthMeter) {
         OkHttpDataSource.Factory(networkClient.streamOkHttpClient)
             .setUserAgent(com.example.data.network.NetworkClient.USER_AGENT)
             .setTransferListener(object : androidx.media3.datasource.TransferListener {
                 override fun onTransferInitializing(source: androidx.media3.datasource.DataSource, dataSpec: androidx.media3.datasource.DataSpec, isNetwork: Boolean) {
+                    bandwidthMeter.onTransferInitializing(source, dataSpec, isNetwork)
                     NetworkClient.onStreamActivity()
                 }
                 override fun onTransferStart(source: androidx.media3.datasource.DataSource, dataSpec: androidx.media3.datasource.DataSpec, isNetwork: Boolean) {
+                    bandwidthMeter.onTransferStart(source, dataSpec, isNetwork)
                     NetworkClient.onStreamActivity()
                 }
                 override fun onBytesTransferred(source: androidx.media3.datasource.DataSource, dataSpec: androidx.media3.datasource.DataSpec, isNetwork: Boolean, bytesTransferred: Int) {
+                    bandwidthMeter.onBytesTransferred(source, dataSpec, isNetwork, bytesTransferred)
                     if (bytesTransferred > 0) {
                         NetworkClient.onStreamBytesRead(bytesTransferred.toLong())
                     }
                 }
                 override fun onTransferEnd(source: androidx.media3.datasource.DataSource, dataSpec: androidx.media3.datasource.DataSpec, isNetwork: Boolean) {
+                    bandwidthMeter.onTransferEnd(source, dataSpec, isNetwork)
                     NetworkClient.onStreamActivity()
                 }
             })
@@ -1031,7 +1061,12 @@ fun PlayerScreen(
         DefaultTrackSelector(appContext).apply {
             setParameters(
                 buildUponParameters()
-                    .setMaxVideoSize(3840, 2160)
+                    .clearVideoSizeConstraints()
+                    .setMaxVideoBitrate(Int.MAX_VALUE)
+                    .setExceedRendererCapabilitiesIfNecessary(true)
+                    .setExceedVideoConstraintsIfNecessary(true)
+                    .setAllowVideoMixedMimeTypeAdaptiveness(true)
+                    .setAllowVideoNonSeamlessAdaptiveness(true)
             )
         }
     }
@@ -1136,6 +1171,7 @@ fun PlayerScreen(
 
         ExoPlayer.Builder(appContext, renderersFactory)
             .setTrackSelector(trackSelector)
+            .setBandwidthMeter(bandwidthMeter)
             .setMediaSourceFactory(mediaSourceFactory)
             .setLoadControl(loadControl)
             .setAudioAttributes(audioAttributes, false)
@@ -1160,7 +1196,14 @@ fun PlayerScreen(
                         if (videoSize.height > 0) {
                             val hint = state.playbackSource?.url.orEmpty() + " " + state.title + " " + state.quality + " " + (com.example.data.repository.MediaCache.get(state.contentId)?.quality.orEmpty())
                             val (stdH, _) = StreamQualityOption.normalizeResolution(videoSize.height, videoSize.width, hint)
-                            val displayRes = if (stdH >= 1080) "1080p Full HD" else if (stdH in 700..1079) "720p HD" else if (stdH in 420..699) "480p SD" else "360p Data Saver"
+                            val displayRes = when {
+                                stdH >= 2160 -> "4K Ultra HD"
+                                stdH >= 1440 -> "1440p QHD"
+                                stdH >= 1080 -> "1080p Full HD"
+                                stdH in 700..1079 -> "720p HD"
+                                stdH in 420..699 -> "480p SD"
+                                else -> "360p Data Saver"
+                            }
                             currentRenderedResolution = displayRes
                             if (videoSize.width > 0) {
                                 detectedVideoWidth = videoSize.width
@@ -1173,6 +1216,7 @@ fun PlayerScreen(
                     }
 
                     override fun onTracksChanged(tracks: Tracks) {
+                        tracksRevision++
                         val heights = mutableSetOf<Int>()
                         val hint = state.playbackSource?.url.orEmpty() + " " + state.title + " " + state.quality + " " + (com.example.data.repository.MediaCache.get(state.contentId)?.quality.orEmpty())
                         for (group in tracks.groups) {
@@ -1184,7 +1228,14 @@ fun PlayerScreen(
                                     }
                                     if (group.isTrackSelected(i) && format.height > 0) {
                                         val (stdH, _) = StreamQualityOption.normalizeResolution(format.height, format.width, hint)
-                                        val displayRes = if (stdH >= 1080) "1080p Full HD" else if (stdH in 700..1079) "720p HD" else if (stdH in 420..699) "480p SD" else "360p Data Saver"
+                                        val displayRes = when {
+                                            stdH >= 2160 -> "4K Ultra HD"
+                                            stdH >= 1440 -> "1440p QHD"
+                                            stdH >= 1080 -> "1080p Full HD"
+                                            stdH in 700..1079 -> "720p HD"
+                                            stdH in 420..699 -> "480p SD"
+                                            else -> "360p Data Saver"
+                                        }
                                         currentRenderedResolution = displayRes
                                         if (format.width > 0) {
                                             detectedVideoWidth = format.width
@@ -1314,7 +1365,14 @@ fun PlayerScreen(
                 if (w > 0) detectedVideoWidth = w
                 if (currentRenderedResolution == null) {
                     val (stdH, _) = StreamQualityOption.normalizeResolution(h, w, hint)
-                    val displayRes = if (stdH >= 1080) "1080p Full HD" else if (stdH in 700..1079) "720p HD" else if (stdH in 420..699) "480p SD" else "360p Data Saver"
+                    val displayRes = when {
+                        stdH >= 2160 -> "4K Ultra HD"
+                        stdH >= 1440 -> "1440p QHD"
+                        stdH >= 1080 -> "1080p Full HD"
+                        stdH in 700..1079 -> "720p HD"
+                        stdH in 420..699 -> "480p SD"
+                        else -> "360p Data Saver"
+                    }
                     currentRenderedResolution = displayRes
                 }
             }
@@ -1333,38 +1391,41 @@ fun PlayerScreen(
         }
     }
 
-    val effectiveHeights = remember(detectedVideoHeights, currentRenderedResolution, showQualityDialog) {
+    val effectiveHeights = remember(detectedVideoHeights, currentRenderedResolution, showQualityDialog, tracksRevision) {
         val tracks = exoPlayer.currentTracks
-        val videoTrackHeights = mutableSetOf<Int>()
+        val tagHint = state.playbackSource?.url.orEmpty() + " " + state.title + " " + state.quality + " " + (com.example.data.repository.MediaCache.get(state.contentId)?.quality.orEmpty())
+        val set = mutableSetOf<Int>()
+
         for (group in tracks.groups) {
             if (group.type == C.TRACK_TYPE_VIDEO) {
                 for (i in 0 until group.length) {
                     val f = group.getTrackFormat(i)
-                    if (f.height > 0) videoTrackHeights.add(f.height)
+                    if (f.height > 0 || f.width > 0) {
+                        val (stdH, _) = StreamQualityOption.normalizeResolution(f.height, f.width, tagHint)
+                        set.add(stdH)
+                    }
                 }
             }
         }
 
-        val tagHint = state.playbackSource?.url.orEmpty() + " " + state.title + " " + state.quality + " " + (com.example.data.repository.MediaCache.get(state.contentId)?.quality.orEmpty())
-
-        val set = mutableSetOf<Int>()
-        if (videoTrackHeights.size > 1) {
-            for (h in videoTrackHeights) {
-                val (stdH, _) = StreamQualityOption.normalizeResolution(h, 0, tagHint)
-                set.add(stdH)
-            }
-        } else {
-            val rawH = if (videoTrackHeights.isNotEmpty()) videoTrackHeights.first() else exoPlayer.videoSize.height
+        if (set.isEmpty()) {
+            val rawH = exoPlayer.videoSize.height
             val rawW = exoPlayer.videoSize.width
-            if (rawH > 0) {
+            if (rawH > 0 || rawW > 0) {
                 val (stdH, _) = StreamQualityOption.normalizeResolution(rawH, rawW, tagHint)
                 set.add(stdH)
             } else {
-                val parsed = Regex("""\b(\d{3,4})p?""").find(currentRenderedResolution.orEmpty())?.groupValues?.get(1)?.toIntOrNull()
-                if (parsed != null && parsed > 0) {
-                    set.add(parsed)
-                } else {
-                    set.add(720)
+                for (dh in detectedVideoHeights) {
+                    val (stdH, _) = StreamQualityOption.normalizeResolution(dh, detectedVideoWidth, tagHint)
+                    set.add(stdH)
+                }
+                if (set.isEmpty()) {
+                    val parsed = Regex("""\b(\d{3,4})p?""").find(currentRenderedResolution.orEmpty())?.groupValues?.get(1)?.toIntOrNull()
+                    if (parsed != null && parsed > 0) {
+                        set.add(parsed)
+                    } else {
+                        set.add(720)
+                    }
                 }
             }
         }
@@ -1381,7 +1442,7 @@ fun PlayerScreen(
             val nonAutoList = mutableListOf<StreamQualityOption>()
             val seenIds = mutableSetOf<String>()
             for (h in effectiveHeights) {
-                val w = if (isSingle && detectedVideoWidth > 0) detectedVideoWidth else (h * 16) / 9
+                val w = if (detectedVideoWidth > 0) detectedVideoWidth else (h * 24) / 9
                 val opt = StreamQualityOption.fromHeight(h, w, isSingleQuality = isSingle, tagHint = tagHint)
                 if (seenIds.add(opt.id)) {
                     nonAutoList.add(opt)
@@ -1405,7 +1466,12 @@ fun PlayerScreen(
             val builder = trackSelector.buildUponParameters()
             if (qualityOption.isAuto) {
                 builder.clearVideoSizeConstraints()
+                builder.clearOverridesOfType(C.TRACK_TYPE_VIDEO)
                 builder.setMaxVideoBitrate(Int.MAX_VALUE)
+                builder.setExceedRendererCapabilitiesIfNecessary(true)
+                builder.setExceedVideoConstraintsIfNecessary(true)
+                builder.setAllowVideoMixedMimeTypeAdaptiveness(true)
+                builder.setAllowVideoNonSeamlessAdaptiveness(true)
                 builder.setForceHighestSupportedBitrate(false)
                 val currentOverrides = trackSelector.parameters.overrides
                 for ((trackGroup, _) in currentOverrides) {
@@ -1415,39 +1481,65 @@ fun PlayerScreen(
                 }
             } else {
                 val targetHeight = qualityOption.height
-                val targetWidth = if (qualityOption.width > 0) qualityOption.width else (targetHeight * 16) / 9
-                builder.setMaxVideoSize(targetWidth + 200, targetHeight + 100)
-                builder.setForceHighestSupportedBitrate(targetHeight >= 1080)
+                val targetWidth = kotlin.math.max(
+                    if (qualityOption.width > 0) qualityOption.width else 0,
+                    (targetHeight * 24) / 9
+                )
+                builder.setMaxVideoSize(targetWidth + 400, targetHeight + 100)
+                builder.setMaxVideoBitrate(Int.MAX_VALUE)
+                builder.setExceedRendererCapabilitiesIfNecessary(true)
+                builder.setExceedVideoConstraintsIfNecessary(true)
+                builder.setForceHighestSupportedBitrate(true)
+                builder.clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+                val currentOverrides = trackSelector.parameters.overrides
+                for ((trackGroup, _) in currentOverrides) {
+                    if (trackGroup.type == C.TRACK_TYPE_VIDEO) {
+                        builder.clearOverride(trackGroup)
+                    }
+                }
 
                 val tracks = exoPlayer.currentTracks
+                var bestGroup: androidx.media3.common.TrackGroup? = null
+                var bestTrackIdx = -1
+                var closestDiff = Int.MAX_VALUE
+                var bestBitrate = -1
+
                 for (group in tracks.groups) {
                     if (group.type == C.TRACK_TYPE_VIDEO) {
-                        var bestTrackIdx = -1
-                        var closestDiff = Int.MAX_VALUE
                         for (i in 0 until group.length) {
                             val format = group.getTrackFormat(i)
-                            val height = format.height
-                            if (height > 0) {
-                                val diff = kotlin.math.abs(height - targetHeight)
-                                if (diff < closestDiff) {
+                            val effHeight = if (format.width > 0 && format.height > 0 && (format.width * 9) / 16 > format.height) {
+                                (format.width * 9) / 16
+                            } else {
+                                format.height
+                            }
+                            if (effHeight > 0) {
+                                val diff = kotlin.math.abs(effHeight - targetHeight)
+                                val currentBitrate = maxOf(format.bitrate, format.peakBitrate)
+                                if (diff < closestDiff || (diff == closestDiff && currentBitrate > bestBitrate)) {
                                     closestDiff = diff
+                                    bestBitrate = currentBitrate
+                                    bestGroup = group.mediaTrackGroup
                                     bestTrackIdx = i
                                 }
                             }
                         }
-                        if (bestTrackIdx != -1) {
-                            builder.setOverrideForType(
-                                TrackSelectionOverride(group.mediaTrackGroup, listOf(bestTrackIdx))
-                            )
-                        }
                     }
                 }
+                if (bestGroup != null && bestTrackIdx != -1) {
+                    builder.setOverrideForType(
+                        TrackSelectionOverride(bestGroup, listOf(bestTrackIdx))
+                    )
+                }
             }
-            trackSelector.setParameters(builder)
+            val newParameters = builder.build()
+            if (trackSelector.parameters != newParameters) {
+                trackSelector.setParameters(newParameters)
+            }
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(selectedOption, detectedVideoHeights, tracksRevision) {
         applyQualitySelection(selectedOption)
     }
 

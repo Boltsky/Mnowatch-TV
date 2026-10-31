@@ -61,9 +61,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.example.data.repository.MediaCache
+import com.example.domain.model.AppUpdateInfo
 import com.example.domain.model.CategoryItem
 import com.example.domain.model.ContinueWatchingItem
 import com.example.domain.model.MediaItem
+import com.example.domain.model.UpdateDownloadState
+import com.example.domain.repository.AppUpdateRepository
 import com.example.domain.repository.MovieRepository
 import com.example.domain.repository.MunowatchRepository
 import com.example.domain.repository.PlaybackRepository
@@ -73,6 +76,7 @@ import com.example.ui.components.TvErrorView
 import com.example.ui.components.TvLoadingIndicator
 import com.example.ui.components.TvMediaCard
 import com.example.ui.components.TvTopBar
+import com.example.ui.components.TvUpdateDialog
 import com.example.ui.theme.MunowatchBackground
 import com.example.ui.theme.MunowatchFocusBorder
 import com.example.ui.theme.MunowatchGreen
@@ -83,6 +87,7 @@ import com.example.ui.theme.MunowatchTextMuted
 import com.example.ui.theme.MunowatchTextPrimary
 import com.example.ui.theme.MunowatchTextSecondary
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
@@ -97,20 +102,26 @@ data class HomeUiState(
     val freeMovies: List<MediaItem> = emptyList(),
     val vjCategories: List<CategoryItem> = emptyList(),
     val subscriptionDays: Int? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val updateInfo: AppUpdateInfo? = null,
+    val showUpdateDialog: Boolean = false
 )
 
 class HomeViewModel(
     private val movieRepository: MovieRepository,
     private val seriesRepository: SeriesRepository,
     private val playbackRepository: PlaybackRepository,
-    private val munowatchRepository: MunowatchRepository
+    private val munowatchRepository: MunowatchRepository,
+    private val appUpdateRepository: AppUpdateRepository? = null
 ) : ViewModel() {
 
     private val cachedMovies = MediaCache.getPopularMovies()
     private val cachedSeries = MediaCache.getPopularSeries()
     private val cachedFree = MediaCache.getFreeMovies()
     private val hasAnyCache = cachedMovies.isNotEmpty() || cachedSeries.isNotEmpty()
+
+    val downloadState: StateFlow<UpdateDownloadState> =
+        appUpdateRepository?.downloadState ?: MutableStateFlow(UpdateDownloadState.Idle)
 
     private val _uiState = MutableStateFlow(
         HomeUiState(
@@ -127,6 +138,7 @@ class HomeViewModel(
         loadHomeData(silentRefresh = hasAnyCache)
         observeContinueWatching()
         observeWatchlist()
+        checkForUpdates()
     }
 
     fun loadHomeData(silentRefresh: Boolean = false) {
@@ -210,6 +222,43 @@ class HomeViewModel(
             munowatchRepository.toggleFavorite(hero)
         }
     }
+
+    fun checkForUpdates() {
+        viewModelScope.launch {
+            try {
+                val result = appUpdateRepository?.checkForUpdate()
+                val info = result?.getOrNull()
+                if (info != null && info.isUpdateAvailable) {
+                    val dismissed = appUpdateRepository?.isUpdateDismissed(info.latestVersionCode) == true
+                    if (!dismissed || info.isForceUpdate) {
+                        _uiState.value = _uiState.value.copy(
+                            updateInfo = info,
+                            showUpdateDialog = true
+                        )
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun startUpdateDownload() {
+        val info = _uiState.value.updateInfo ?: return
+        viewModelScope.launch {
+            val result = appUpdateRepository?.downloadApk(info.apkUrl)
+            result?.onSuccess { file ->
+                appUpdateRepository?.installApk(file)
+            }
+        }
+    }
+
+    fun dismissUpdateDialog() {
+        val info = _uiState.value.updateInfo
+        if (info != null) {
+            appUpdateRepository?.dismissCurrentUpdate(info.latestVersionCode)
+        }
+        appUpdateRepository?.resetDownloadState()
+        _uiState.value = _uiState.value.copy(showUpdateDialog = false)
+    }
 }
 
 @Composable
@@ -221,6 +270,16 @@ fun HomeScreen(
     onOpenSeriesDetails: ((String) -> Unit)? = null
 ) {
     val state by viewModel.uiState.collectAsState()
+    val downloadState by viewModel.downloadState.collectAsState()
+
+    if (state.showUpdateDialog && state.updateInfo != null) {
+        TvUpdateDialog(
+            updateInfo = state.updateInfo!!,
+            downloadState = downloadState,
+            onUpdateClick = { viewModel.startUpdateDownload() },
+            onDismissClick = { viewModel.dismissUpdateDialog() }
+        )
+    }
 
     if (state.isLoading) {
         TvLoadingIndicator(message = "Loading Munowatch Catalog...")

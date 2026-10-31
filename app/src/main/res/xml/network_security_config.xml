@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">munowatch.com</domain>
+        <domain includeSubdomains="true">twolekede.com</domain>
+        <domain includeSubdomains="true">movviez.com</domain>
+        <domain includeSubdomains="true">b-cdn.net</domain>
+        <domain includeSubdomains="true">nkuba.b-cdn.net</domain>
+        <domain includeSubdomains="true">harvetz.b-cdn.net</domain>
+        <domain includeSubdomains="true">munotech2.b-cdn.net</domain>
+        <domain includeSubdomains="true">munotech3.b-cdn.net</domain>
+    </domain-config>
+</network-security-config>

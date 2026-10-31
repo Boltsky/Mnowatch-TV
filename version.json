@@ -1,0 +1,9 @@
+{
+  "versionCode": 1,
+  "versionName": "1.0",
+  "title": "Munowatch TV v1.0",
+  "changelog": "• Enhanced 1080p Full HD video stream quality across all media servers\n• Instant buffer-free playback with adaptive bitrate fallback\n• Automated in-app update checks and notification prompts\n• Improved TV remote control responsiveness",
+  "apkUrl": "https://raw.githubusercontent.com/Boltsky/Mnowatch-TV/main/apk/Munowatch-TV.apk",
+  "releaseDate": "2026-10-31",
+  "forceUpdate": false
+}

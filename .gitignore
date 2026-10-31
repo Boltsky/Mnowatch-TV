@@ -20,8 +20,9 @@ debug.keystore
 
 # Temporary debug dumps, screenshots, and scratch files
 scratch/
+.agents/
 *.png
-*.xml
+!app/src/**/*.xml
 *.html
 *.txt
 scratch_*.py

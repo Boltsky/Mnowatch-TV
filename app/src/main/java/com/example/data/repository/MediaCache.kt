@@ -695,7 +695,8 @@ object MediaCache {
         if (candidate.url.contains("trailer256.b-cdn.net") ||
             candidate.url.contains("intro_myvj") ||
             candidate.url.contains("/trailer") ||
-            candidate.url.contains("_trailer")
+            candidate.url.contains("_trailer") ||
+            (candidate.url.contains("mode=preview") && !getPreferredStreamQuality().equals("360P", ignoreCase = true))
         ) {
             evictPlaybackSource(contentId)
             return null
