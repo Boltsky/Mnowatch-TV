@@ -382,9 +382,9 @@ data class StreamQualityOption(
                 return when {
                     height >= 2000 || width >= 3500 || equivHeight >= 2000 -> 2160 to "4K"
                     height >= 1350 || width >= 2400 || equivHeight >= 1350 -> 1440 to "1440p"
-                    height >= 950 || width >= 1800 || equivHeight >= 950 -> 1080 to "1080p"
+                    height >= 950 || width >= 1700 || equivHeight >= 950 -> 1080 to "1080p"
                     height >= 650 || width >= 1150 || equivHeight >= 650 -> 720 to "720p"
-                    height >= 400 || equivHeight >= 400 -> 480 to "480p"
+                    height >= 400 || width >= 720 || equivHeight >= 400 -> 480 to "480p"
                     else -> 360 to "360p"
                 }
             }
@@ -433,7 +433,7 @@ data class StreamQualityOption(
                 stdHeight >= 1440 -> "$stdRes 2K QHD"
                 stdHeight >= 1080 -> "$stdRes Full HD"
                 stdHeight in 700..1079 -> "$stdRes HD"
-                stdHeight in 420..699 -> "$stdRes SD"
+                stdHeight in 400..699 -> "$stdRes SD"
                 else -> "$stdRes Data Saver"
             }
             val label = if (isSingleQuality) "$fullResName (Source Quality)" else fullResName
@@ -443,7 +443,7 @@ data class StreamQualityOption(
                 stdHeight >= 1440 -> "Quad high definition 2K resolution for high-end displays"
                 stdHeight >= 1080 -> "Crisp, pristine full HD picture for fast and stable networks"
                 stdHeight >= 700 -> "High definition with fast buffer for everyday connections"
-                stdHeight >= 420 -> "Standard definition, ideal for medium connections"
+                stdHeight >= 400 -> "Standard definition, ideal for medium connections"
                 else -> "Low bandwidth stream that prevents buffering on weak networks"
             }
             val id = when {
@@ -451,7 +451,7 @@ data class StreamQualityOption(
                 stdHeight >= 1440 -> "1440P"
                 stdHeight >= 1080 -> "1080P"
                 stdHeight in 700..1079 -> "720P"
-                stdHeight in 420..699 -> "480P"
+                stdHeight in 400..699 -> "480P"
                 else -> "360P"
             }
             return StreamQualityOption(
@@ -663,8 +663,9 @@ class PlayerViewModel(
                     ?: source.headers["X-Title"]?.takeIf { it.isNotBlank() }
                     ?: _uiState.value.title
                 val movieTitle = cleanPlayerDisplayTitle(rawCandidate, currentContentId)
-                val itemQuality = MediaCache.get(currentContentId)?.quality
-                    ?: cachedItem?.quality
+                val itemQuality = MediaCache.get(currentContentId)?.quality?.takeIf { it.isNotBlank() }
+                    ?: cachedItem?.quality?.takeIf { it.isNotBlank() }
+                    ?: source.quality.takeIf { it.isNotBlank() }
                     ?: _uiState.value.quality
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
@@ -1074,10 +1075,10 @@ fun PlayerScreen(
     val loadControl = remember {
         DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 20_000,
-                /* maxBufferMs = */ 120_000,
-                /* bufferForPlaybackMs = */ 800,
-                /* bufferForPlaybackAfterRebufferMs = */ 1_500
+                /* minBufferMs = */ 15_000,
+                /* maxBufferMs = */ 60_000,
+                /* bufferForPlaybackMs = */ 500,
+                /* bufferForPlaybackAfterRebufferMs = */ 1_000
             )
             .setBackBuffer(
                 /* backBufferDurationMs = */ 30_000,
@@ -1178,6 +1179,7 @@ fun PlayerScreen(
             .setHandleAudioBecomingNoisy(false)
             .build().apply {
                 playWhenReady = true
+                videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
                 addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(playing: Boolean) {
                         isPlaying = playing
@@ -1201,7 +1203,7 @@ fun PlayerScreen(
                                 stdH >= 1440 -> "1440p QHD"
                                 stdH >= 1080 -> "1080p Full HD"
                                 stdH in 700..1079 -> "720p HD"
-                                stdH in 420..699 -> "480p SD"
+                                stdH in 400..699 -> "480p SD"
                                 else -> "360p Data Saver"
                             }
                             currentRenderedResolution = displayRes
@@ -1233,7 +1235,7 @@ fun PlayerScreen(
                                             stdH >= 1440 -> "1440p QHD"
                                             stdH >= 1080 -> "1080p Full HD"
                                             stdH in 700..1079 -> "720p HD"
-                                            stdH in 420..699 -> "480p SD"
+                                            stdH in 400..699 -> "480p SD"
                                             else -> "360p Data Saver"
                                         }
                                         currentRenderedResolution = displayRes
@@ -1370,7 +1372,7 @@ fun PlayerScreen(
                         stdH >= 1440 -> "1440p QHD"
                         stdH >= 1080 -> "1080p Full HD"
                         stdH in 700..1079 -> "720p HD"
-                        stdH in 420..699 -> "480p SD"
+                        stdH in 400..699 -> "480p SD"
                         else -> "360p Data Saver"
                     }
                     currentRenderedResolution = displayRes
@@ -1826,6 +1828,7 @@ fun PlayerScreen(
                     player = exoPlayer
                     useController = false // Use custom TV D-pad controller overlay
                     keepScreenOn = true
+                    resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
                     setOnClickListener {
                         showControls = !showControls
                         if (showControls) controlsTimeoutKey++

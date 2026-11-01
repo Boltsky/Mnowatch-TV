@@ -2146,15 +2146,15 @@ class PlaybackRepositoryImpl(
             ?: (if (!contentId.startsWith("myvj_")) MediaCache.get("myvj_$contentId") ?: MediaCache.getMovieDetail("myvj_$contentId") else null)
             ?: finalId?.let { MediaCache.get(it) }
 
-        fun determineStreamQuality(url: String, defaultQuality: String = "1080p Full HD"): String {
+        fun determineStreamQuality(url: String, defaultQuality: String = "720p HD"): String {
             val lower = url.lowercase()
             return when {
-                lower.contains("mode=preview") || lower.contains("360p") -> "360p Data Saver"
                 lower.contains("4k") || lower.contains("2160p") -> "4K Ultra HD"
                 lower.contains("1440p") || lower.contains("2k") -> "1440p QHD"
                 lower.contains("1080p") || lower.contains("full hd") || lower.contains("fhd") -> "1080p Full HD"
                 lower.contains("720p") || lower.contains("hd") -> "720p HD"
                 lower.contains("480p") || lower.contains("sd") -> "480p SD"
+                lower.contains("mode=preview") || lower.contains("360p") -> "360p Data Saver"
                 else -> cachedItem?.quality?.takeIf { it.isNotBlank() } ?: defaultQuality
             }
         }
@@ -2185,7 +2185,7 @@ class PlaybackRepositoryImpl(
             val source = PlaybackSource(
                 url = normalizedUrl,
                 type = if (normalizedUrl.contains(".m3u8")) "application/x-mpegURL" else "video/mp4",
-                quality = determineStreamQuality(cleanUrl, cachedItem?.quality ?: "1080p Full HD"),
+                quality = determineStreamQuality(cleanUrl, cachedItem?.quality ?: "720p HD"),
                 serverName = resolvedServer,
                 headers = mapOf(
                     "Referer" to if (normalizedUrl.contains("twolekede") || normalizedUrl.contains("movviez")) "https://twolekede.com/" else "https://munowatch.com/",
@@ -2420,7 +2420,7 @@ class PlaybackRepositoryImpl(
                 val source = PlaybackSource(
                     url = cleanUrl,
                     type = if (cleanUrl.contains(".m3u8")) "application/x-mpegURL" else "video/mp4",
-                    quality = determineStreamQuality(cleanUrl, cachedItem?.quality ?: "1080p Full HD"),
+                    quality = determineStreamQuality(cleanUrl, cachedItem?.quality ?: "720p HD"),
                     serverName = resolvedServer,
                     headers = mapOf(
                         "Referer" to "https://munowatch.com/",
@@ -2449,7 +2449,7 @@ class PlaybackRepositoryImpl(
                     val source = PlaybackSource(
                         url = normalizedUrl,
                         type = if (normalizedUrl.contains(".m3u8")) "application/x-mpegURL" else "video/mp4",
-                        quality = determineStreamQuality(cleanUrl, "1080p Full HD"),
+                        quality = determineStreamQuality(cleanUrl, cachedItem?.quality ?: "720p HD"),
                         serverName = resolvedServer,
                         headers = mapOf(
                             "Referer" to "https://twolekede.com/",
@@ -2583,7 +2583,7 @@ class PlaybackRepositoryImpl(
                                     val source = PlaybackSource(
                                         url = normalizedUrl,
                                         type = if (normalizedUrl.contains(".m3u8")) "application/x-mpegURL" else "video/mp4",
-                                        quality = determineStreamQuality(cleanUrl, "1080p Full HD"),
+                                        quality = determineStreamQuality(cleanUrl, cachedItem?.quality ?: "720p HD"),
                                         serverName = resolvedServer,
                                         headers = mapOf(
                                             "Referer" to "https://twolekede.com/",
@@ -2806,7 +2806,7 @@ class PlaybackRepositoryImpl(
                                                         source = PlaybackSource(
                                                             url = normalizedFallback,
                                                             type = if (normalizedFallback.contains(".m3u8")) "application/x-mpegURL" else "video/mp4",
-                                                            quality = determineStreamQuality(cleanFallback, "1080p Full HD"),
+                                                            quality = determineStreamQuality(cleanFallback, cachedItem?.quality ?: "720p HD"),
                                                             serverName = resolvedServer,
                                                             headers = mapOf(
                                                                 "Referer" to "https://twolekede.com/",
@@ -2847,7 +2847,7 @@ class PlaybackRepositoryImpl(
                                                 source = PlaybackSource(
                                                     url = normalizedFallback,
                                                     type = if (normalizedFallback.contains(".m3u8")) "application/x-mpegURL" else "video/mp4",
-                                                    quality = determineStreamQuality(cleanFallback, "1080p Full HD"),
+                                                    quality = determineStreamQuality(cleanFallback, cachedItem?.quality ?: "720p HD"),
                                                     serverName = resolvedServer,
                                                     headers = mapOf(
                                                         "Referer" to "https://twolekede.com/",

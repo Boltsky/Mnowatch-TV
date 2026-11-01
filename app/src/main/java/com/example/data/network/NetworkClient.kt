@@ -254,7 +254,10 @@ open class NetworkClient(
                 .header("Referer", referer)
                 .header("Accept", "*/*")
 
-            if (isMediaDeliveryRequest(reqUrl)) {
+            if (isTwolekede) {
+                val (_, devId) = getClientIdentity()
+                requestBuilder.header("Cookie", "mvz_device_id=$devId")
+            } else if (isMediaDeliveryRequest(reqUrl)) {
                 requestBuilder.removeHeader("Cookie")
             }
 

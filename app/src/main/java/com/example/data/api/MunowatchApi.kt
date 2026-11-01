@@ -1505,10 +1505,6 @@ class MunowatchApi(
             }
 
             val preferDataSaver = com.example.data.repository.MediaCache.getPreferredStreamQuality().equals("360P", ignoreCase = true)
-
-            // Server stream selection prioritizes high-definition sources over low-resolution previews:
-            // download.php resolves to the original 1080p/720p HD movie stream without preview downscaling.
-            // If data saver is requested or download source is unavailable, fall back smoothly to preview mode.
             if (!preferDataSaver) {
                 val dl = cleanStreamUrl(fetchDownload())
                 if (dl != null) return@withContext dl
