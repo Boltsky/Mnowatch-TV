@@ -46,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -60,6 +61,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import com.example.data.repository.MediaCache
 import com.example.domain.model.AppUpdateInfo
 import com.example.domain.model.CategoryItem
@@ -147,19 +150,22 @@ class HomeViewModel(
         }
         viewModelScope.launch {
             try {
-                // Fetch categories, hero, movies, series in parallel
-                val categoriesResult = munowatchRepository.getCategories()
-                val latestMoviesResult = movieRepository.getLatestMovies()
-                val popularSeriesResult = seriesRepository.getPopularSeries()
-                val freeMoviesResult = movieRepository.getFreeMovies()
-                val subDaysResult = munowatchRepository.getRemainingSubscriptionDays()
+                // Fetch categories, hero, movies, series in parallel with IO dispatcher
+                val categoriesDeferred = async(Dispatchers.IO) { munowatchRepository.getCategories() }
+                val latestMoviesDeferred = async(Dispatchers.IO) { movieRepository.getLatestMovies() }
+                val popularSeriesDeferred = async(Dispatchers.IO) { seriesRepository.getPopularSeries() }
+                val freeMoviesDeferred = async(Dispatchers.IO) { movieRepository.getFreeMovies() }
+
+                val categoriesResult = categoriesDeferred.await()
+                val latestMoviesResult = latestMoviesDeferred.await()
+                val popularSeriesResult = popularSeriesDeferred.await()
+                val freeMoviesResult = freeMoviesDeferred.await()
 
                 val vjs = categoriesResult.getOrNull()?.second ?: emptyList()
                 val movies = latestMoviesResult.getOrDefault(emptyList())
                 val series = popularSeriesResult.getOrDefault(emptyList())
                 val free = freeMoviesResult.getOrDefault(emptyList())
                 val hero = movies.firstOrNull() ?: series.firstOrNull()
-                val subDays = subDaysResult.getOrNull()
                 val currentHeroId = (hero ?: _uiState.value.heroItem)?.id
                 val heroFav = currentHeroId?.let { hid -> _uiState.value.watchlist.any { it.id == hid } } ?: _uiState.value.isHeroFavorite
 
@@ -170,8 +176,7 @@ class HomeViewModel(
                     latestMovies = if (movies.isNotEmpty()) movies else _uiState.value.latestMovies,
                     popularSeries = if (series.isNotEmpty()) series else _uiState.value.popularSeries,
                     freeMovies = if (free.isNotEmpty()) free else _uiState.value.freeMovies,
-                    vjCategories = if (vjs.isNotEmpty()) vjs else _uiState.value.vjCategories,
-                    subscriptionDays = subDays ?: _uiState.value.subscriptionDays
+                    vjCategories = if (vjs.isNotEmpty()) vjs else _uiState.value.vjCategories
                 )
 
                 // Proactively fetch hero's authentic movie description from Munowatch
@@ -309,11 +314,12 @@ fun HomeScreen(
             }
         }
 
-        // Top Navigation Bar
+        // Top Navigation Bar (Days Left text hidden on homescreen per UI spec)
         TvTopBar(
             currentRoute = "home",
             onNavigate = onNavigate,
-            subscriptionDays = state.subscriptionDays,
+            subscriptionDays = null,
+            showSubscriptionBadge = false,
             onDownFocusRequester = heroPlayFocusRequester
         )
 
@@ -346,7 +352,11 @@ fun HomeScreen(
                             contentPadding = PaddingValues(horizontal = 36.dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            items(state.continueWatching, key = { it.contentId }) { cwItem ->
+                            items(
+                                items = state.continueWatching,
+                                key = { it.contentId },
+                                contentType = { "tv_continue_watching" }
+                            ) { cwItem ->
                                 TvContinueWatchingCard(
                                     item = cwItem,
                                     onClick = { onPlayMedia(cwItem.contentId) }
@@ -368,7 +378,11 @@ fun HomeScreen(
                             contentPadding = PaddingValues(horizontal = 36.dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            items(state.watchlist, key = { "wl_${it.id}" }) { watchItem ->
+                            items(
+                                items = state.watchlist,
+                                key = { "wl_${it.id}" },
+                                contentType = { "tv_media_card" }
+                            ) { watchItem ->
                                 TvMediaCard(
                                     item = watchItem,
                                     onClick = {
@@ -395,7 +409,11 @@ fun HomeScreen(
                         contentPadding = PaddingValues(horizontal = 36.dp),
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        items(state.latestMovies, key = { it.id.ifBlank { it.streamUrl } }) { movie ->
+                        items(
+                            items = state.latestMovies,
+                            key = { it.id.ifBlank { it.streamUrl } },
+                            contentType = { "tv_media_card" }
+                        ) { movie ->
                             TvMediaCard(
                                 item = movie,
                                 onClick = { onOpenDetails(movie.id) }
@@ -416,7 +434,11 @@ fun HomeScreen(
                             contentPadding = PaddingValues(horizontal = 36.dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            items(state.popularSeries, key = { it.id.ifBlank { it.streamUrl } }) { series ->
+                            items(
+                                items = state.popularSeries,
+                                key = { it.id.ifBlank { it.streamUrl } },
+                                contentType = { "tv_media_card" }
+                            ) { series ->
                                 TvMediaCard(
                                     item = series,
                                     onClick = {
@@ -444,7 +466,11 @@ fun HomeScreen(
                             contentPadding = PaddingValues(horizontal = 36.dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            items(state.vjCategories, key = { it.id }) { vj ->
+                            items(
+                                items = state.vjCategories,
+                                key = { it.id },
+                                contentType = { "tv_vj_chip" }
+                            ) { vj ->
                                 TvVjChip(
                                     item = vj,
                                     onClick = { onNavigate("categories?vj_id=${vj.id}") }
@@ -466,7 +492,11 @@ fun HomeScreen(
                             contentPadding = PaddingValues(horizontal = 36.dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            items(state.freeMovies, key = { it.id.ifBlank { it.streamUrl } }) { freeMovie ->
+                            items(
+                                items = state.freeMovies,
+                                key = { it.id.ifBlank { it.streamUrl } },
+                                contentType = { "tv_media_card" }
+                            ) { freeMovie ->
                                 TvMediaCard(
                                     item = freeMovie,
                                     onClick = { onOpenDetails(freeMovie.id) }
@@ -505,7 +535,7 @@ fun TvHeroBanner(
             val imageRequest = remember(heroModel) {
                 coil.request.ImageRequest.Builder(context)
                     .data(heroModel)
-                    .size(coil.size.Size(1280, 480))
+                    .size(coil.size.Size(960, 360))
                     .precision(coil.size.Precision.INEXACT)
                     .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
                     .allowRgb565(true)
@@ -520,31 +550,30 @@ fun TvHeroBanner(
             )
         }
 
-        // Cinematic gradient scrims
+        // Single optimized cinematic gradient scrim with cached draw
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.horizontalGradient(
+                .drawWithCache {
+                    val horizontalScrim = Brush.horizontalGradient(
                         colors = listOf(
                             MunowatchBackground.copy(alpha = 0.95f),
                             MunowatchBackground.copy(alpha = 0.7f),
                             Color.Transparent
                         )
                     )
-                )
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
+                    val verticalScrim = Brush.verticalGradient(
                         colors = listOf(
                             Color.Transparent,
                             MunowatchBackground.copy(alpha = 0.9f)
                         )
                     )
-                )
+                    onDrawWithContent {
+                        drawContent()
+                        drawRect(horizontalScrim)
+                        drawRect(verticalScrim)
+                    }
+                }
         )
 
         // Banner Content

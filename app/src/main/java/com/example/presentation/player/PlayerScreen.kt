@@ -116,6 +116,7 @@ import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.ui.PlayerView
 import com.example.data.repository.MediaCache
+import com.example.data.cache.ExoPlayerMediaCache
 import com.example.data.network.NetworkClient
 import com.example.domain.model.ContinueWatchingItem
 import com.example.domain.model.PlaybackSource
@@ -475,8 +476,8 @@ data class PlayerUiState(
     val title: String = "Munowatch Playback",
     val contentId: String = "",
     val quality: String = "HD",
-    val activeServer: String = "Server 1 (Fast CDN)",
-    val availableServers: List<String> = listOf("Server 1 (Fast CDN)", "Server 2 (Munowatch Stream)", "Server 3 (Direct Backup)"),
+    val activeServer: String = "Server 1 (Munowatch HD - Direct CDN)",
+    val availableServers: List<String> = listOf("Server 1 (Munowatch HD - Direct CDN)", "Server 2 (BunnyCDN Backup)", "Server 3 (Direct Node Backup)"),
     val playbackSource: PlaybackSource? = null,
     val errorMessage: String? = null,
     val isAuthError: Boolean = false,
@@ -497,9 +498,9 @@ class PlayerViewModel(
     private val cachedItem = MediaCache.get(initialContentId)
 
     val fallbackServers = listOf(
-        "Server 1 (Fast CDN)",
-        "Server 2 (Munowatch Stream)",
-        "Server 3 (Direct Backup)"
+        "Server 1 (Munowatch HD - Direct CDN)",
+        "Server 2 (BunnyCDN Backup)",
+        "Server 3 (Direct Node Backup)"
     )
 
     private var currentServerIndex = 0
@@ -609,7 +610,8 @@ class PlayerViewModel(
                 android.util.Log.d("MunowatchPlayer", "loadSource SUCCESS: ${source.url}")
                 val cleanUrl = source.url.replace("&amp;", "&").replace("&#38;", "&").trim()
                 val fileParam = Regex("""[?&]file=([^&]+)""").find(cleanUrl)?.groupValues?.get(1)
-                val isHostRateLimited = (encountered429Error || com.example.data.api.MunowatchApi.isCdnRateLimited()) && cleanUrl.contains("movviez.com")
+                val streamHost = try { Uri.parse(cleanUrl).host?.lowercase() } catch (_: Exception) { null }
+                val isHostRateLimited = streamHost != null && failedStreamHosts.contains(streamHost)
                 val isKnownBad = failedStreamUrls.contains(cleanUrl) ||
                     (!fileParam.isNullOrBlank() && failedStreamFiles.contains(fileParam)) ||
                     isHostRateLimited
@@ -632,6 +634,21 @@ class PlayerViewModel(
                         delay(200)
                         loadSource(nextServer)
                         return@launch
+                    } else if (encountered429Error && !MediaCache.getPreferredStreamQuality().equals("360P", ignoreCase = true)) {
+                        // All HD nodes rate limited on this network: auto step-down to Data Saver SD stream
+                        MediaCache.setPreferredStreamQuality("360P")
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = true,
+                            isAutoSwitching = true,
+                            statusMessage = "Auto-routing past server bandwidth limit via Data Saver...",
+                            activeServer = fallbackServers[0]
+                        )
+                        failedStreamUrls.clear()
+                        failedStreamHosts.clear()
+                        currentServerIndex = 0
+                        delay(300)
+                        loadSource(fallbackServers[0])
+                        return@launch
                     } else {
                         val failMsg = when {
                             encountered503Error ->
@@ -639,7 +656,7 @@ class PlayerViewModel(
                             encountered404Error ->
                                 "This stream is currently unavailable on the server (HTTP 404 - File Not Found). Please select another title."
                             encountered429Error -> {
-                                "Daily media server bandwidth limit reached for this network. Please tap Retry or switch to another server."
+                                "Daily media server bandwidth limit reached on Twolekede for this network. Please select a title from the Munowatch catalog to stream unlimited in 1080p Full HD."
                             }
                             else ->
                                 "This title is currently unavailable across all streaming servers. Please select another movie or episode."
@@ -699,7 +716,7 @@ class PlayerViewModel(
                         rawMsg.contains("Authentication", ignoreCase = true) || rawMsg.contains("session", ignoreCase = true) || rawMsg.contains("sign in", ignoreCase = true) || rawMsg.contains("subscription", ignoreCase = true) ->
                             "This title is currently unavailable on media servers. Please select another title."
                         rawMsg.contains("429") || rawMsg.contains("bandwidth", ignoreCase = true) ->
-                            "Daily media server bandwidth limit reached for this network. Please tap Retry or switch to another server."
+                            "Daily media server bandwidth limit reached on Twolekede for this network. Please select a title from the Munowatch catalog to stream unlimited in 1080p Full HD."
                         rawMsg.isNotBlank() -> rawMsg
                         else -> "Stream unavailable across all streaming servers. Please select another title or try again."
                     }
@@ -720,10 +737,21 @@ class PlayerViewModel(
         val is503 = errorReason.contains("503") || errorReason.contains("Still uploading", ignoreCase = true) || errorReason.contains("Service Unavailable", ignoreCase = true)
         val is404 = errorReason.contains("404") || errorReason.contains("Not Found", ignoreCase = true)
 
+        val failedHost = if (!failedUrl.isNullOrBlank()) {
+            val clean = failedUrl.replace("&amp;", "&").replace("&#38;", "&").trim()
+            try { Uri.parse(clean).host?.lowercase() } catch (_: Exception) { null }
+        } else null
+
         if (is429) {
             encountered429Error = true
             consecutive429Errors++
-            com.example.data.api.MunowatchApi.markCdnRateLimited()
+            if (failedHost != null) {
+                failedStreamHosts.add(failedHost)
+            }
+            NetworkClient.rotateClientIdentity()
+            if (failedHost?.contains("movviez.com") == true) {
+                com.example.data.api.MunowatchApi.markCdnRateLimited()
+            }
         }
         if (is503) {
             encountered503Error = true
@@ -787,6 +815,22 @@ class PlayerViewModel(
                 )
                 delay(200)
                 loadSource(nextServer)
+            } else if (is429 && !MediaCache.getPreferredStreamQuality().equals("360P", ignoreCase = true)) {
+                // Fallback to Data Saver mode to bypass network-wide HD bandwidth limits
+                MediaCache.setPreferredStreamQuality("360P")
+                _uiState.value = _uiState.value.copy(
+                    isLoading = true,
+                    isAutoSwitching = true,
+                    statusMessage = "Auto-routing past bandwidth limit via Data Saver stream...",
+                    activeServer = fallbackServers[0],
+                    playbackSource = null,
+                    errorMessage = null
+                )
+                failedStreamUrls.clear()
+                failedStreamHosts.clear()
+                currentServerIndex = 0
+                delay(300)
+                loadSource(fallbackServers[0])
             } else {
                 val userMsg = when {
                     encountered503Error ->
@@ -796,7 +840,7 @@ class PlayerViewModel(
                     encountered404Error ->
                         "This stream is currently unavailable on the server (HTTP 404 - File Not Found). Please select another title."
                     encountered429Error -> {
-                        "Daily media server bandwidth limit reached on this network. Please tap Retry to resume playing or switch servers."
+                        "Daily media server bandwidth limit reached on Twolekede for this network. Please select a title from the Munowatch catalog to stream unlimited in 1080p Full HD."
                     }
                     else -> {
                         val cleaned = errorReason.replace(Regex("""(?i)sign\s*in|session|account|authentication"""), "").trim()
@@ -828,7 +872,7 @@ class PlayerViewModel(
         encountered429Error = false
         encountered404Error = false
         encounteredAuthError = false
-        com.example.data.api.MunowatchApi.resetCdnRateLimit()
+        NetworkClient.rotateClientIdentity()
         viewModelScope.launch {
             playbackRepository.evictPlaybackSource(currentContentId)
             MediaCache.evictPlaybackSource(currentContentId)
@@ -1076,9 +1120,9 @@ fun PlayerScreen(
         DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 /* minBufferMs = */ 15_000,
-                /* maxBufferMs = */ 60_000,
-                /* bufferForPlaybackMs = */ 500,
-                /* bufferForPlaybackAfterRebufferMs = */ 1_000
+                /* maxBufferMs = */ 30_000,
+                /* bufferForPlaybackMs = */ 250,
+                /* bufferForPlaybackAfterRebufferMs = */ 500
             )
             .setBackBuffer(
                 /* backBufferDurationMs = */ 30_000,
@@ -1154,7 +1198,8 @@ fun PlayerScreen(
         val extractorsFactory = androidx.media3.extractor.DefaultExtractorsFactory()
             .setConstantBitrateSeekingEnabled(true)
 
-        val dataSourceFactory = DefaultDataSource.Factory(appContext, okHttpDataSourceFactory)
+        val cachedUpstreamFactory = ExoPlayerMediaCache.createCacheDataSourceFactory(appContext, okHttpDataSourceFactory)
+        val dataSourceFactory = DefaultDataSource.Factory(appContext, cachedUpstreamFactory)
         val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
             .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
 

@@ -39,9 +39,9 @@ class AppUpdateRepositoryTest {
     fun parseVersionJson_detectsNewUpdateAvailable() {
         val json = """
             {
-              "versionCode": 2,
-              "versionName": "1.1",
-              "title": "Munowatch TV v1.1 Update",
+              "versionCode": 999,
+              "versionName": "9.9",
+              "title": "Munowatch TV v9.9 Update",
               "changelog": "• Better video stream quality\n• In-app updates",
               "apkUrl": "https://raw.githubusercontent.com/Boltsky/Mnowatch-TV/main/apk/Munowatch-TV.apk",
               "releaseDate": "2026-10-31",
@@ -51,9 +51,9 @@ class AppUpdateRepositoryTest {
 
         val info = repository.parseVersionJson(json)
         assertTrue(info.isUpdateAvailable)
-        assertEquals(2, info.latestVersionCode)
-        assertEquals("1.1", info.latestVersionName)
-        assertEquals("Munowatch TV v1.1 Update", info.title)
+        assertEquals(999, info.latestVersionCode)
+        assertEquals("9.9", info.latestVersionName)
+        assertEquals("Munowatch TV v9.9 Update", info.title)
         assertTrue(info.changelog.contains("In-app updates"))
         assertFalse(info.isForceUpdate)
     }

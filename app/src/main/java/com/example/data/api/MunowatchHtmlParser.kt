@@ -161,7 +161,7 @@ class MunowatchHtmlParser {
                 true
             } else {
                 href.contains("serie", ignoreCase = true) ||
-                Regex("""(?i)\b(?:Season\s*\d+|Seasons\s*\d+|S\d+\s*E\d+|Episode\s*\d+|EPS\s*\d+)\b""").containsMatchIn(rawTitle) ||
+                Regex("""(?i)\b(?:Season\s*\d+|Seasons\s*\d+|S\d+\s*E\d+|Episode\s*\d+)\b""").containsMatchIn(rawTitle) ||
                 el.parents().any { it.id() == "twolekede-series-search-results" }
             }
 
@@ -1286,21 +1286,23 @@ class MunowatchHtmlParser {
             serverName.contains("Server 2", ignoreCase = true) ||
             serverName.contains("Munowatch", ignoreCase = true))
 
-        if (isBackupServer && videoUrl.contains(".b-cdn.net")) {
-            if (videoUrl.contains("nkuba.b-cdn.net")) {
-                finalUrl = videoUrl.replace("nkuba.b-cdn.net", "munotech2.b-cdn.net")
-            } else if (videoUrl.contains("harvetz.b-cdn.net")) {
-                finalUrl = videoUrl.replace("harvetz.b-cdn.net", "munotech3.b-cdn.net")
-            }
-        } else if (isDirectServer && videoUrl.contains(".b-cdn.net")) {
-            if (videoUrl.contains("nkuba.b-cdn.net")) {
-                finalUrl = videoUrl.replace("nkuba.b-cdn.net", "harvetz.b-cdn.net")
-            } else if (videoUrl.contains("harvetz.b-cdn.net")) {
-                finalUrl = videoUrl.replace("harvetz.b-cdn.net", "nkuba.b-cdn.net")
-            } else if (videoUrl.contains("munotech2.b-cdn.net")) {
-                finalUrl = videoUrl.replace("munotech2.b-cdn.net", "harvetz.b-cdn.net")
-            } else if (videoUrl.contains("munotech3.b-cdn.net")) {
-                finalUrl = videoUrl.replace("munotech3.b-cdn.net", "harvetz.b-cdn.net")
+        if (!videoUrl.contains("/port/str/")) {
+            if (isBackupServer && videoUrl.contains(".b-cdn.net")) {
+                if (videoUrl.contains("nkuba.b-cdn.net")) {
+                    finalUrl = videoUrl.replace("nkuba.b-cdn.net", "munotech2.b-cdn.net")
+                } else if (videoUrl.contains("harvetz.b-cdn.net")) {
+                    finalUrl = videoUrl.replace("harvetz.b-cdn.net", "munotech3.b-cdn.net")
+                }
+            } else if (isDirectServer && videoUrl.contains(".b-cdn.net")) {
+                if (videoUrl.contains("nkuba.b-cdn.net")) {
+                    finalUrl = videoUrl.replace("nkuba.b-cdn.net", "harvetz.b-cdn.net")
+                } else if (videoUrl.contains("harvetz.b-cdn.net")) {
+                    finalUrl = videoUrl.replace("harvetz.b-cdn.net", "nkuba.b-cdn.net")
+                } else if (videoUrl.contains("munotech2.b-cdn.net")) {
+                    finalUrl = videoUrl.replace("munotech2.b-cdn.net", "harvetz.b-cdn.net")
+                } else if (videoUrl.contains("munotech3.b-cdn.net")) {
+                    finalUrl = videoUrl.replace("munotech3.b-cdn.net", "harvetz.b-cdn.net")
+                }
             }
         }
 
@@ -1654,23 +1656,32 @@ class MunowatchHtmlParser {
         }
 
         // Clean any leading labels and promotional prefixes while keeping actual plot/synopsis
+        cleaned = cleaned.replace(Regex("""^(?:Watch|Stream)\s+[^.\-–—]*?\b(?:translated\s+in\s+Luganda|translated\s+movies\s+and\s+series\s+in\s+Luganda|by\s+VJ\s+[a-zA-Z0-9_\-]+|top\s+Veejays|Munowatch(?:\.com)?|exclusively)[^.\-–—]*?(?:\.|\s*[-–—:]\s*)\s*""", RegexOption.IGNORE_CASE), "")
         cleaned = cleaned.replace(Regex("""^(?:Watch|Stream)\s+[^.]+?\s+(?:on|at)\s+Munowatch(?:\.com)?\.?\s*[-–—:]*\s*""", RegexOption.IGNORE_CASE), "")
         cleaned = cleaned.replace(Regex("""^(?:Munowatch is your #?1 platform for translated movies and series in Luganda\.?)\s*""", RegexOption.IGNORE_CASE), "")
         cleaned = cleaned.replace(Regex("""^(?:Katandika Butandisi\s*[-–—:]*\s*Twolekede Ekyatuleese\.?)\s*""", RegexOption.IGNORE_CASE), "")
         cleaned = cleaned.replace(Regex("""^(?:Story|Synopsis|Overview|Description|Plot|Ebikwata|About(?:\s+Movie)?)\s*[:–—\-]\s*""", RegexOption.IGNORE_CASE), "")
         cleaned = cleaned.trim()
 
-        return if (cleaned.length >= 15 && !isGenericMunowatchText(cleaned)) cleaned else ""
+        return if (cleaned.length >= 15 && !isGenericMunowatchText(cleaned) && !isPlaceholderOrGenericDescription(cleaned)) cleaned else ""
     }
 
     fun isPlaceholderOrGenericDescription(text: String): Boolean {
         if (text.isBlank() || text.length < 15) return true
         if (isGenericMunowatchText(text)) return true
-        val lower = text.lowercase()
-        if (lower.startsWith("watch ") && lower.contains("translated in luganda by top veejays")) return true
+        val lower = text.lowercase().trim()
+        if (lower.contains("translated in luganda by top veejays")) return true
         if (lower.contains("stream full 1080p hd exclusively on munowatch tv")) return true
+        if (lower.contains("stream all full hd episodes exclusively on munowatch tv")) return true
+        if (lower.contains("stream all full hd episodes exclusively")) return true
+        if (lower.contains("exclusively on munowatch tv")) return true
+        if (lower.contains("exclusively on munowatch")) return true
         if (lower.contains("platform for translated movies")) return true
-        if (lower.contains("translated movies and series in luganda")) return true
+        if (lower.startsWith("watch ") && (lower.contains("translated in luganda") || lower.contains("translated movies and series")) &&
+            !lower.contains(" encounters ") && !lower.contains(" investigates ") && !lower.contains(" turns to ") && lower.length < 120
+        ) {
+            return true
+        }
         return false
     }
 

@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -57,6 +58,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -98,17 +100,41 @@ class SeriesDetailsViewModel(
     private val munowatchRepository: MunowatchRepository? = null
 ) : ViewModel() {
 
-    private val cached = MediaCache.getSeriesDetail(seriesId)?.takeIf { detail ->
+    private val cachedDetail = MediaCache.getSeriesDetail(seriesId)?.takeIf { detail ->
         detail.id.equals(seriesId, ignoreCase = true) ||
         detail.id.removePrefix("series_").equals(seriesId.removePrefix("series_"), ignoreCase = true) ||
         seriesId.contains(detail.id.removePrefix("series_"), ignoreCase = true)
     }
-    private val hasEpisodes = cached != null && cached.seasons.any { it.episodes.isNotEmpty() }
+
+    private val cachedItem = MediaCache.get(seriesId)
+        ?: MediaCache.get(seriesId.removePrefix("series_"))
+        ?: MediaCache.getMovieDetail(seriesId)
+        ?: MediaCache.getAll().firstOrNull {
+            it.id.equals(seriesId, ignoreCase = true) ||
+            it.id.removePrefix("series_").equals(seriesId.removePrefix("series_"), ignoreCase = true) ||
+            it.streamUrl.equals(seriesId, ignoreCase = true)
+        }
+
+    private val initialSeriesDetail = cachedDetail ?: cachedItem?.let { item ->
+        SeriesDetail(
+            id = seriesId,
+            title = item.title,
+            description = item.description,
+            posterUrl = item.posterUrl,
+            backdropUrl = item.backdropUrl.ifBlank { item.posterUrl },
+            vj = item.vj,
+            year = item.year,
+            genres = if (item.genre.isNotBlank()) listOf(item.genre) else listOf("Series", "Ugandan Translated"),
+            seasons = emptyList()
+        )
+    }
+
+    private val hasEpisodes = cachedDetail != null && cachedDetail.seasons.any { it.episodes.isNotEmpty() }
 
     private val _uiState = MutableStateFlow(
         SeriesDetailsUiState(
-            isLoading = !hasEpisodes,
-            seriesDetail = cached
+            isLoading = (initialSeriesDetail == null),
+            seriesDetail = initialSeriesDetail
         )
     )
     val uiState = _uiState.asStateFlow()
@@ -183,8 +209,8 @@ fun SeriesDetailsScreen(
         onBack()
     }
 
-    if (state.isLoading) {
-        TvLoadingIndicator(message = "Loading series episodes...")
+    if (state.isLoading && state.seriesDetail == null) {
+        TvLoadingIndicator(message = "Loading series...")
         return
     }
 
@@ -243,10 +269,22 @@ fun SeriesDetailsScreen(
             .fillMaxSize()
             .background(MunowatchBackground)
     ) {
-        // Backdrop Image with gradient overlay
+        // Backdrop Image with gradient overlay (Bounded downsampled decoding for low RAM TVs)
         if (detail.backdropUrl.isNotBlank() || detail.posterUrl.isNotBlank()) {
+            val context = LocalContext.current
+            val backdropModel = detail.backdropUrl.ifBlank { detail.posterUrl }
+            val backdropRequest = remember(backdropModel) {
+                coil.request.ImageRequest.Builder(context)
+                    .data(backdropModel)
+                    .size(coil.size.Size(960, 540))
+                    .precision(coil.size.Precision.INEXACT)
+                    .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
+                    .allowRgb565(true)
+                    .crossfade(false)
+                    .build()
+            }
             AsyncImage(
-                model = detail.backdropUrl.ifBlank { detail.posterUrl },
+                model = backdropRequest,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
@@ -322,8 +360,19 @@ fun SeriesDetailsScreen(
                             .aspectRatio(2f / 3f)
                     ) {
                         if (detail.posterUrl.isNotBlank()) {
+                            val context = LocalContext.current
+                            val posterRequest = remember(detail.posterUrl) {
+                                coil.request.ImageRequest.Builder(context)
+                                    .data(detail.posterUrl)
+                                    .size(coil.size.Size(300, 450))
+                                    .precision(coil.size.Precision.INEXACT)
+                                    .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
+                                    .allowRgb565(true)
+                                    .crossfade(false)
+                                    .build()
+                            }
                             AsyncImage(
-                                model = detail.posterUrl,
+                                model = posterRequest,
                                 contentDescription = detail.title,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
@@ -472,9 +521,12 @@ fun SeriesDetailsScreen(
                                 .fillMaxWidth()
                                 .padding(bottom = 16.dp)
                         ) {
-                            val descriptionText = detail.description.takeIf { it.isNotBlank() }
-                                ?: "Watch ${detail.title} translated in Luganda by top Veejays (${detail.vj.ifBlank { "VJ Junior" }}). Stream all full HD episodes exclusively on Munowatch TV."
-                            val textColor = if (detail.description.isNotBlank()) {
+                            val descriptionText = detail.description.takeIf {
+                                it.isNotBlank() &&
+                                !it.contains("Stream all full HD episodes exclusively", ignoreCase = true) &&
+                                !it.contains("translated in Luganda by top Veejays", ignoreCase = true)
+                            } ?: "${detail.title} translated by ${detail.vj.ifBlank { "VJ Translated" }}."
+                            val textColor = if (detail.description.isNotBlank() && descriptionText != "${detail.title} translated by ${detail.vj.ifBlank { "VJ Translated" }}.") {
                                 MunowatchTextPrimary.copy(alpha = 0.95f)
                             } else {
                                 MunowatchTextSecondary.copy(alpha = 0.85f)
@@ -512,6 +564,18 @@ fun SeriesDetailsScreen(
                                             ?: firstEp.id
                                         onPlayEpisode(target)
                                     },
+                                    isPrimary = true
+                                )
+                            } else {
+                                TvButton(
+                                    text = "Loading Episodes...",
+                                    icon = Icons.Default.PlayArrow,
+                                    modifier = Modifier
+                                        .focusRequester(playEpisodeFocusRequester)
+                                        .focusProperties {
+                                            up = backFocusRequester
+                                        },
+                                    onClick = {},
                                     isPrimary = true
                                 )
                             }
@@ -589,22 +653,45 @@ fun SeriesDetailsScreen(
                 }
             }
 
-            // Episodes Grid Items with guaranteed unique keys
-            itemsIndexed(
-                items = displayEpisodes,
-                key = { index, episode -> "${episode.id}_$index" }
-            ) { index, episode ->
-                TvEpisodeGridCard(
-                    episode = episode,
-                    defaultPoster = detail.posterUrl,
-                    onClick = {
-                        val target = episode.streamUrl.takeIf { it.isNotBlank() && (it.contains("twolekede") || it.contains("mid=") || it.contains("preview.php") || it.contains("download.php")) }
-                            ?: Regex("""[?&]mid=([0-9]+)""").find(episode.streamUrl)?.let { "/twolekede?mid=${it.groupValues[1]}" }
-                            ?: episode.streamUrl.takeIf { it.isNotBlank() }
-                            ?: episode.id
-                        onPlayEpisode(target)
+            if (displayEpisodes.isEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 28.dp, bottom = 28.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            color = MunowatchGreen,
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Loading episodes...",
+                            color = MunowatchTextSecondary,
+                            fontSize = 14.sp
+                        )
                     }
-                )
+                }
+            } else {
+                itemsIndexed(
+                    items = displayEpisodes,
+                    key = { index, episode -> "${episode.id}_$index" }
+                ) { index, episode ->
+                    TvEpisodeGridCard(
+                        episode = episode,
+                        defaultPoster = detail.posterUrl,
+                        onClick = {
+                            val target = episode.streamUrl.takeIf { it.isNotBlank() && (it.contains("twolekede") || it.contains("mid=") || it.contains("preview.php") || it.contains("download.php")) }
+                                ?: Regex("""[?&]mid=([0-9]+)""").find(episode.streamUrl)?.let { "/twolekede?mid=${it.groupValues[1]}" }
+                                ?: episode.streamUrl.takeIf { it.isNotBlank() }
+                                ?: episode.id
+                            onPlayEpisode(target)
+                        }
+                    )
+                }
             }
         }
     }
@@ -655,8 +742,19 @@ private fun TvEpisodeGridCard(
                     .background(Color(0xFF14171E))
             ) {
                 if (posterUrl.isNotBlank()) {
+                    val context = LocalContext.current
+                    val epRequest = remember(posterUrl) {
+                        coil.request.ImageRequest.Builder(context)
+                            .data(posterUrl)
+                            .size(coil.size.Size(240, 135))
+                            .precision(coil.size.Precision.INEXACT)
+                            .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
+                            .allowRgb565(true)
+                            .crossfade(false)
+                            .build()
+                    }
                     AsyncImage(
-                        model = posterUrl,
+                        model = epRequest,
                         contentDescription = "Episode ${episode.number} Poster",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()

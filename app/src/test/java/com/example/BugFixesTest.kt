@@ -21,12 +21,16 @@ class BugFixesTest {
         val placeholder1 = "Watch MobLand translated in Luganda by top Veejays. Stream full 1080p HD exclusively on Munowatch TV."
         val placeholder2 = "Munowatch is your #1 platform for translated movies and series in Luganda."
         val placeholder3 = ""
+        val placeholderTerminalList = "Watch Terminal List translated in Luganda by top Veejays (Vj Junior). Stream all full HD episodes exclusively on Munowatch TV."
         val realPlot = "A sheriff tries to keep the peace when a desperate family man robs a pill mill with a reckless enforcer."
+        val navySealPlot = "A former Navy SEAL officer investigates why his entire platoon was ambushed during a high-stakes covert mission."
 
         assertTrue(parser.isPlaceholderOrGenericDescription(placeholder1))
         assertTrue(parser.isPlaceholderOrGenericDescription(placeholder2))
         assertTrue(parser.isPlaceholderOrGenericDescription(placeholder3))
+        assertTrue(parser.isPlaceholderOrGenericDescription(placeholderTerminalList))
         assertFalse(parser.isPlaceholderOrGenericDescription(realPlot))
+        assertFalse(parser.isPlaceholderOrGenericDescription(navySealPlot))
     }
 
     @Test
@@ -182,7 +186,7 @@ class BugFixesTest {
 
     @Test
     fun testSecureSessionManagerDefaultActiveSession() {
-        assertEquals("f32a41dacb33fb4175640b14530f03b0", SecureSessionManager.DEFAULT_SESSION_ID)
+        assertEquals("926cdd498cd8113008318bd9c6696ff5", SecureSessionManager.DEFAULT_SESSION_ID)
     }
 
     @Test
@@ -613,7 +617,7 @@ class BugFixesTest {
 
     @Test
     fun testMunowatchDefaultSessionCookieFormat() {
-        assertEquals("f32a41dacb33fb4175640b14530f03b0", SecureSessionManager.DEFAULT_SESSION_ID)
+        assertEquals("926cdd498cd8113008318bd9c6696ff5", SecureSessionManager.DEFAULT_SESSION_ID)
         assertEquals(32, SecureSessionManager.DEFAULT_SESSION_ID.length)
         assertTrue(SecureSessionManager.DEFAULT_SESSION_ID.all { it.isDigit() || it in 'a'..'f' })
     }
@@ -640,7 +644,7 @@ class BugFixesTest {
             "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept" to "*/*"
         )
-        assertEquals("PHPSESSID=f32a41dacb33fb4175640b14530f03b0", headers["Cookie"])
+        assertEquals("PHPSESSID=926cdd498cd8113008318bd9c6696ff5", headers["Cookie"])
         assertEquals("https://munowatch.com/", headers["Referer"])
     }
 }

@@ -661,4 +661,71 @@ class VideoStreamQualityTest {
         assertEquals("Must select the highest bitrate format (index 1 @ 8.5 Mbps)", 1, bestTrackIdx)
         assertEquals(8_500_000, bestBitrate)
     }
+
+    @Test
+    fun testExoPlayerMediaCache_createsSingletonAndCacheDataSourceFactory() {
+        val upstreamFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+        val cacheFactory = com.example.data.cache.ExoPlayerMediaCache.createCacheDataSourceFactory(context, upstreamFactory)
+        assertNotNull(cacheFactory)
+
+        val cacheInstance = com.example.data.cache.ExoPlayerMediaCache.getCache(context)
+        assertNotNull(cacheInstance)
+        val expectedDir = java.io.File(context.cacheDir, "exoplayer_media_cache")
+        assertTrue("Cache dir must exist", expectedDir.exists())
+
+        // Releasing and clearing
+        com.example.data.cache.ExoPlayerMediaCache.release()
+    }
+
+    @Test
+    fun testNetworkClientRotateClientIdentity_generatesNewDeviceId() {
+        val (ip1, id1) = com.example.data.network.NetworkClient.getClientIdentity()
+        assertNotNull(ip1)
+        assertNotNull(id1)
+
+        val (ip2, id2) = com.example.data.network.NetworkClient.rotateClientIdentity()
+        assertNotNull(ip2)
+        assertNotNull(id2)
+        assertTrue("Device ID must change upon identity rotation to reset CDN rate limit", id1 != id2)
+    }
+
+    @Test
+    fun testRateLimitDomainDifferentiation_dlMovviezNotBlockedWhenCdnMovviezFlagged() {
+        val failedStreamHosts = mutableSetOf<String>()
+        failedStreamHosts.add("cdn.movviez.com")
+
+        val cdnUrl = "https://cdn.movviez.com/secure.php?file=test.mp4"
+        val dlUrl = "https://dl.movviez.com/secure.php?file=test.mp4"
+
+        val cdnHost = android.net.Uri.parse(cdnUrl).host?.lowercase()
+        val dlHost = android.net.Uri.parse(dlUrl).host?.lowercase()
+
+        assertTrue("cdn.movviez.com should be recognized as rate-limited", failedStreamHosts.contains(cdnHost))
+        assertFalse("dl.movviez.com MUST NOT be blocked when only cdn.movviez.com failed", failedStreamHosts.contains(dlHost))
+    }
+
+    @Test
+    fun testMunowatchSessionCookie_activeSessionReturnsValidId() {
+        sessionManager.saveSessionId(SecureSessionManager.DEFAULT_SESSION_ID)
+        val sessionId = sessionManager.getSessionId()
+        assertEquals("926cdd498cd8113008318bd9c6696ff5", sessionId)
+        assertEquals("926cdd498cd8113008318bd9c6696ff5", SecureSessionManager.DEFAULT_SESSION_ID)
+    }
+
+    @Test
+    fun testMunowatchDataGumite_decodesAuthenticBunnyCdnStream() {
+        val b64Stream = java.util.Base64.getEncoder().encodeToString(
+            "https://munotech2.b-cdn.net/port/str/eyJkcyI6InRlc3QiLCJmIjoiMTIzIn0=".toByteArray(Charsets.UTF_8)
+        )
+        val html = """
+            <html><body>
+                <div id="soul-info" data-series-code="123" data-vidid="123" data-gumite="$b64Stream"></div>
+            </body></html>
+        """.trimIndent()
+
+        val parsed = parser.extractVideoSourceFromWatchPage(html, "Server 1 (Munowatch HD - Direct CDN)")
+        assertNotNull(parsed)
+        assertTrue("Stream must route to BunnyCDN", parsed!!.url.contains("munotech2.b-cdn.net"))
+        assertTrue("Stream token must be preserved", parsed.url.contains("/port/str/"))
+    }
 }

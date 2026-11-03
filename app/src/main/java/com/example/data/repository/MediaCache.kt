@@ -181,6 +181,19 @@ object MediaCache {
         } catch (_: Exception) {}
     }
 
+    fun isPlaceholderDescription(desc: String): Boolean {
+        if (desc.isBlank() || desc.length < 15) return true
+        val lower = desc.lowercase()
+        return lower.contains("translated in luganda by top veejays") ||
+            lower.contains("stream all full hd episodes exclusively") ||
+            lower.contains("exclusively on munowatch tv") ||
+            lower.contains("exclusively on munowatch") ||
+            lower.contains("stream full 1080p hd exclusively") ||
+            lower.contains("platform for translated movies") ||
+            lower.contains("translated movies and series in luganda") ||
+            (lower.contains("watch ") && lower.contains("translated in luganda"))
+    }
+
     private fun loadAllSeriesDetailsFromDisk(dir: File) {
         try {
             val files = dir.listFiles { file -> file.name.startsWith("series_") && file.name.endsWith(".json") }
@@ -189,7 +202,8 @@ object MediaCache {
                     val json = file.readText()
                     val detail = seriesDetailAdapter.fromJson(json)
                     if (detail != null && detail.seasons.any { it.episodes.isNotEmpty() }) {
-                        cacheSeriesDetailInMemory(detail)
+                        val sanitizedDesc = if (isPlaceholderDescription(detail.description)) "" else detail.description
+                        cacheSeriesDetailInMemory(detail.copy(description = sanitizedDesc))
                     }
                 } catch (_: Exception) {}
             }
@@ -211,8 +225,7 @@ object MediaCache {
                             movie.title.startsWith("Movie #", ignoreCase = true) ||
                             movie.description.contains("All rights reserved", ignoreCase = true) ||
                             movie.description.contains("&copy;", ignoreCase = true)
-                        val isPlaceholder = movie.description.contains("translated in Luganda by top Veejays", ignoreCase = true) ||
-                            movie.description.contains("exclusively on Munowatch TV", ignoreCase = true)
+                        val isPlaceholder = isPlaceholderDescription(movie.description)
                         if (isCorrupt || isPlaceholder) {
                             file.delete()
                         } else {
@@ -226,6 +239,11 @@ object MediaCache {
 
     fun put(item: MediaItem) {
         val existing = itemsById[item.id]
+        val cleanDesc = when {
+            item.description.isNotBlank() && !isPlaceholderDescription(item.description) -> item.description
+            existing?.description?.isNotBlank() == true && !isPlaceholderDescription(existing.description) -> existing.description
+            else -> ""
+        }
         val effectiveItem = if (existing != null) {
             existing.copy(
                 title = if (item.title.isNotBlank()) item.title else existing.title,
@@ -234,10 +252,10 @@ object MediaCache {
                 genre = if (item.genre.isNotBlank() && !item.genre.equals("Movie", ignoreCase = true) && !item.genre.equals("Uncategorized", ignoreCase = true)) item.genre else existing.genre,
                 posterUrl = if (item.posterUrl.isNotBlank() && !item.posterUrl.contains("placeholder")) item.posterUrl else existing.posterUrl,
                 streamUrl = if (item.streamUrl.isNotBlank()) item.streamUrl else existing.streamUrl,
-                description = if (item.description.isNotBlank() && !item.description.contains("translated in Luganda by top Veejays")) item.description else existing.description
+                description = cleanDesc
             )
         } else {
-            item
+            item.copy(description = cleanDesc)
         }
 
         itemsById[effectiveItem.id] = effectiveItem
@@ -420,7 +438,8 @@ object MediaCache {
     }
 
     private fun cacheSeriesDetailInMemory(rawDetail: SeriesDetail) {
-        val seriesDetail = normalizeShiftedSeasons(rawDetail)
+        val cleanDesc = if (isPlaceholderDescription(rawDetail.description)) "" else rawDetail.description
+        val seriesDetail = normalizeShiftedSeasons(rawDetail.copy(description = cleanDesc))
         val allAliases = generateAliases(seriesDetail.id, seriesDetail.title)
         for (alias in allAliases) {
             seriesDetailsById[alias] = seriesDetail

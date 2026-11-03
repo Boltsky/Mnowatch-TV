@@ -161,14 +161,31 @@ open class NetworkClient(
                 val storedSessionId = sessionManager.getSessionId()?.takeIf { it.isNotBlank() }
                     ?: com.example.data.session.SecureSessionManager.DEFAULT_SESSION_ID
                 if (!storedSessionId.isNullOrBlank()) {
-                    cookies.removeAll { it.name == "PHPSESSID" }
-                    val sessionCookie = Cookie.Builder()
-                        .domain(url.host)
-                        .path("/")
-                        .name("PHPSESSID")
-                        .value(storedSessionId)
-                        .build()
-                    cookies.add(sessionCookie)
+                    cookies.removeAll { it.name == "PHPSESSID" || it.name == "_ga" || it.name.startsWith("_ga_") }
+                    cookies.add(
+                        Cookie.Builder()
+                            .domain(url.host)
+                            .path("/")
+                            .name("PHPSESSID")
+                            .value(storedSessionId)
+                            .build()
+                    )
+                    cookies.add(
+                        Cookie.Builder()
+                            .domain(url.host)
+                            .path("/")
+                            .name("_ga")
+                            .value(com.example.data.session.SecureSessionManager.DEFAULT_GA)
+                            .build()
+                    )
+                    cookies.add(
+                        Cookie.Builder()
+                            .domain(url.host)
+                            .path("/")
+                            .name("_ga_1TPS2Y78PS")
+                            .value(com.example.data.session.SecureSessionManager.DEFAULT_GA_SESSION)
+                            .build()
+                    )
                 }
             }
             // Ensure stable persistent device ID is attached solely for HTML page navigation on twolekede / movviez
@@ -429,7 +446,11 @@ open class NetworkClient(
         private var currentDeviceId: String = java.util.UUID.randomUUID().toString()
 
         fun rotateClientIdentity(): Pair<String, String> {
-            // Stable client identity avoids Cloudflare bot heuristics & IP-level rate limits
+            currentDeviceId = java.util.UUID.randomUUID().toString()
+            clearTwolekedeCookies()
+            try {
+                BandwidthBypassProxyManager.onBypassActivated?.invoke()
+            } catch (_: Throwable) {}
             return Pair(currentSyntheticIp, currentDeviceId)
         }
 

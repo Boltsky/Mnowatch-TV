@@ -87,6 +87,13 @@ import com.example.ui.theme.MunowatchTextMuted
 import com.example.ui.theme.MunowatchTextPrimary
 import com.example.ui.theme.MunowatchTextSecondary
 
+// Pre-allocated static drawing primitives to eliminate object allocation and GC churn during TV navigation
+private val CardCornerShape = RoundedCornerShape(8.dp)
+private val FocusedBorderStroke = BorderStroke(3.dp, MunowatchFocusBorder)
+private val UnfocusedBorderStroke = BorderStroke(1.dp, Color.Transparent)
+private val LogoBadgeShape = RoundedCornerShape(4.dp)
+private val LogoBadgeBorder = BorderStroke(1.dp, MunowatchGreen)
+
 /**
  * TV Poster Card with D-pad focus scaling, glowing emerald border, and metadata badges.
  */
@@ -102,8 +109,8 @@ fun TvMediaCard(
     val isFocused by interactionSource.collectIsFocusedAsState()
 
     val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1.06f else 1.0f,
-        animationSpec = tween(durationMillis = 100),
+        targetValue = if (isFocused) 1.05f else 1.0f,
+        animationSpec = tween(durationMillis = 80, easing = androidx.compose.animation.core.FastOutSlowInEasing),
         label = "card_scale"
     )
 
@@ -122,11 +129,11 @@ fun TvMediaCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(aspectRatio)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(CardCornerShape)
                 .background(MunowatchSurfaceElevated)
                 .border(
-                    border = if (isFocused) BorderStroke(3.dp, MunowatchFocusBorder) else BorderStroke(1.dp, Color.Transparent),
-                    shape = RoundedCornerShape(8.dp)
+                    border = if (isFocused) FocusedBorderStroke else UnfocusedBorderStroke,
+                    shape = CardCornerShape
                 )
                 .clickable(
                     interactionSource = interactionSource,
@@ -363,6 +370,7 @@ fun TvTopBar(
     onNavigate: (String) -> Unit,
     modifier: Modifier = Modifier,
     subscriptionDays: Int? = null,
+    showSubscriptionBadge: Boolean = false,
     onDownFocusRequester: FocusRequester? = null
 ) {
     val navItems = listOf(
@@ -400,8 +408,8 @@ fun TvTopBar(
             Spacer(modifier = Modifier.width(8.dp))
             Surface(
                 color = MunowatchGreen.copy(alpha = 0.2f),
-                border = BorderStroke(1.dp, MunowatchGreen),
-                shape = RoundedCornerShape(4.dp)
+                border = LogoBadgeBorder,
+                shape = LogoBadgeShape
             ) {
                 Text(
                     text = "TV",
@@ -429,8 +437,8 @@ fun TvTopBar(
             }
         }
 
-        // Subscription Status
-        if (subscriptionDays != null && subscriptionDays > 0) {
+        // Subscription Status: Hidden on HomeScreen per clean TV layout; accessible in Settings
+        if (showSubscriptionBadge && subscriptionDays != null && subscriptionDays > 0) {
             Surface(
                 color = MunowatchSurfaceElevated,
                 shape = RoundedCornerShape(16.dp),

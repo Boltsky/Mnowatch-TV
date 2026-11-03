@@ -1,9 +1,9 @@
 {
-  "versionCode": 1,
-  "versionName": "1.0",
-  "title": "Munowatch TV v1.0",
-  "changelog": "• Enhanced 1080p Full HD video stream quality across all media servers\n• Instant buffer-free playback with adaptive bitrate fallback\n• Automated in-app update checks and notification prompts\n• Improved TV remote control responsiveness",
+  "versionCode": 2,
+  "versionName": "1.1",
+  "title": "Munowatch TV v1.1",
+  "changelog": "• Dynamic live synchronization of newly uploaded movies and series across all backend databases\n• Automatic daily ingestion of new Luganda translations with genuine TMDB metadata\n• Multi-database deduplication preserving authentic synopses, backdrops, and release years\n• Zero-lag UI navigation optimized for low-RAM Android TVs\n• High-speed BunnyCDN 1080p stream failovers with no rate limits",
   "apkUrl": "https://raw.githubusercontent.com/Boltsky/Mnowatch-TV/main/apk/Munowatch-TV.apk",
-  "releaseDate": "2026-10-31",
+  "releaseDate": "2026-11-03",
   "forceUpdate": false
 }

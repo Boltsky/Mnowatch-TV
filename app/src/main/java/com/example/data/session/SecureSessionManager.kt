@@ -115,12 +115,18 @@ class SecureSessionManager(context: Context) {
                 val spec = GCMParameterSpec(128, iv)
                 cipher.init(Cipher.DECRYPT_MODE, secretKey, spec)
                 val decrypted = cipher.doFinal(cipherBytes)
-                return String(decrypted, Charsets.UTF_8)
+                val stored = String(decrypted, Charsets.UTF_8)
+                if (stored.isNotBlank() && stored != "f32a41dacb33fb4175640b14530f03b0") {
+                    return stored
+                }
             }
 
             val fallbackEncoded = prefs.getString(PREF_FALLBACK_SESSION, null)
             if (fallbackEncoded != null) {
-                return String(Base64.decode(fallbackEncoded, Base64.NO_WRAP), Charsets.UTF_8)
+                val stored = String(Base64.decode(fallbackEncoded, Base64.NO_WRAP), Charsets.UTF_8)
+                if (stored.isNotBlank() && stored != "f32a41dacb33fb4175640b14530f03b0") {
+                    return stored
+                }
             }
         } catch (e: Exception) {
             // Redact in error states
@@ -171,7 +177,9 @@ class SecureSessionManager(context: Context) {
     }
 
     companion object {
-        const val DEFAULT_SESSION_ID = "f32a41dacb33fb4175640b14530f03b0"
+        const val DEFAULT_SESSION_ID = "926cdd498cd8113008318bd9c6696ff5"
+        const val DEFAULT_GA = "GA1.1.994953773.1791526221"
+        const val DEFAULT_GA_SESSION = "GS2.1.s1793602702\$o4\$g1\$t1793602713\$j49\$l0\$h0"
         private const val PREF_ENCRYPTED_SESSION = "pref_enc_session_id"
         private const val PREF_FALLBACK_SESSION = "pref_fallback_session_id"
         private const val PREF_SESSION_STATUS = "pref_session_status"

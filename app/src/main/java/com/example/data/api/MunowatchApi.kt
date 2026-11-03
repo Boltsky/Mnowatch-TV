@@ -127,6 +127,7 @@ class MunowatchApi(
     suspend fun getGridSlot(
         pipeType: String,
         pipeId: String,
+        pageName: String? = null,
         vjId: String? = null,
         genreId: String? = null,
         lastFetchId: String? = null,
@@ -138,6 +139,9 @@ class MunowatchApi(
                 .addQueryParameter("pipe_type", pipeType)
                 .addQueryParameter("pipe_id", pipeId)
 
+            if (!pageName.isNullOrBlank()) {
+                urlBuilder.addQueryParameter("page_name", pageName)
+            }
             vjId?.let {
                 urlBuilder.addQueryParameter("vj_id", it)
             }
@@ -148,9 +152,7 @@ class MunowatchApi(
                 urlBuilder.addQueryParameter("last_fetch_id", lastFetchId)
             } else {
                 page?.let {
-                    if (it > 1) {
-                        urlBuilder.addQueryParameter("page", it.toString())
-                    }
+                    urlBuilder.addQueryParameter("page", it.toString())
                 }
                 offset?.let {
                     if (it > 0) {
@@ -211,52 +213,87 @@ class MunowatchApi(
             val clean = title
                 .replace(Regex("""\[.*?\]|\(.*?\)|(?i)\b(?:by\s+vj|vj)\s+.*$"""), " ")
                 .replace(Regex("""(?i)\b(?:season|seasons|series|s)\s*[0-9]+.*$|(?i)\b(?:episode|ep|e)\s*[0-9]+.*$"""), " ")
-                .trim(' ', '-', '–', '—', ':', '|')
+                .replace('–', '-')
+                .replace('—', '-')
+                .replace('−', '-')
+                .replace(Regex("""\s+"""), " ")
+                .trim(' ', '-', ':', '|')
             if (clean.length < 2) return@withContext null
 
-            val searchHtml = search(clean).getOrNull()
-            if (searchHtml.isNullOrBlank()) return@withContext null
+            // Build candidate queries for Munowatch's SQL LIKE search
+            val queryCandidates = mutableListOf<String>()
+            queryCandidates.add(clean)
 
-            val parsedCards = parser.parseMediaCards(searchHtml)
+            if (clean.contains("-")) {
+                val beforeDash = clean.substringBefore("-").trim()
+                val afterDash = clean.substringAfter("-").trim()
+                if (beforeDash.length >= 2) queryCandidates.add(beforeDash)
+                if (afterDash.length >= 2) queryCandidates.add(afterDash)
+            }
+            if (clean.contains(":")) {
+                val beforeColon = clean.substringBefore(":").trim()
+                val afterColon = clean.substringAfter(":").trim()
+                if (beforeColon.length >= 2) queryCandidates.add(beforeColon)
+                if (afterColon.length >= 2) queryCandidates.add(afterColon)
+            }
+
+            val substantiveTokens = clean.split(" ")
+                .map { it.replace(Regex("""[^a-zA-Z0-9]"""), "").trim() }
+                .filter { it.length >= 4 && it.lowercase() !in setOf("the", "with", "from", "part", "this", "that", "movie", "full", "translated", "luganda", "saga", "world") }
+            for (token in substantiveTokens) {
+                if (token.length >= 3 && !queryCandidates.contains(token)) {
+                    queryCandidates.add(token)
+                }
+            }
+
             val targetVj = vj?.lowercase()?.replace("vj", "")?.replace(".", "")?.trim().orEmpty()
-            val matchedCard = parsedCards.firstOrNull { card ->
-                val titleMatch = parser.titlesMatch(card.title, clean)
-                val cvj = card.vj.lowercase().replace("vj", "").replace(".", "").trim()
-                val vjMatch = targetVj.isBlank() || cvj.contains(targetVj) || targetVj.contains(cvj)
-                titleMatch && vjMatch
-            } ?: parsedCards.firstOrNull { card ->
-                parser.titlesMatch(card.title, clean)
+
+            for (candidateQuery in queryCandidates.distinct()) {
+                val searchHtml = search(candidateQuery).getOrNull()
+                if (searchHtml.isNullOrBlank()) continue
+
+                val parsedCards = parser.parseMediaCards(searchHtml)
+                val matchedCard = parsedCards.firstOrNull { card ->
+                    val titleMatch = parser.titlesMatch(card.title, clean)
+                    val cvj = card.vj.lowercase().replace("vj", "").replace(".", "").trim()
+                    val vjMatch = targetVj.isBlank() || cvj.contains(targetVj) || targetVj.contains(cvj)
+                    titleMatch && vjMatch
+                } ?: parsedCards.firstOrNull { card ->
+                    parser.titlesMatch(card.title, clean)
+                }
+
+                if (matchedCard != null && matchedCard.streamUrl.isNotBlank()) {
+                    val su = matchedCard.streamUrl
+                    return@withContext if (su.startsWith("http://") || su.startsWith("https://")) su
+                    else if (su.startsWith("/")) "https://munowatch.com$su"
+                    else "https://munowatch.com/$su"
+                }
+
+                val doc = org.jsoup.Jsoup.parse(searchHtml)
+                val cards = doc.select("a[href*='twolekede?v='], a[href*='/twolekede?']")
+                if (cards.isNotEmpty()) {
+                    val bestCard = cards.firstOrNull { card ->
+                        val cardTitle = (card.selectFirst("img")?.attr("alt")
+                            ?: parser.extractTitleFromUrl(card.attr("href")) ?: "").trim()
+                        val cardVj = (card.selectFirst("p")?.text() ?: "").lowercase().trim()
+                        val titleMatch = cardTitle.isNotBlank() && parser.titlesMatch(cardTitle, clean)
+                        val vjMatch = targetVj.isBlank() || cardVj.contains(targetVj) || targetVj.contains(cardVj)
+                        titleMatch && vjMatch
+                    } ?: cards.firstOrNull { card ->
+                        val cardTitle = (card.selectFirst("img")?.attr("alt")
+                            ?: parser.extractTitleFromUrl(card.attr("href")) ?: "").trim()
+                        cardTitle.isNotBlank() && parser.titlesMatch(cardTitle, clean)
+                    }
+
+                    val href = bestCard?.attr("href")?.replace("&amp;", "&")?.trim()
+                    if (!href.isNullOrBlank()) {
+                        return@withContext if (href.startsWith("http://") || href.startsWith("https://")) href
+                        else if (href.startsWith("/")) "https://munowatch.com$href"
+                        else "https://munowatch.com/$href"
+                    }
+                }
             }
-
-            if (matchedCard != null && matchedCard.streamUrl.isNotBlank()) {
-                val su = matchedCard.streamUrl
-                return@withContext if (su.startsWith("http://") || su.startsWith("https://")) su
-                else if (su.startsWith("/")) "https://munowatch.com$su"
-                else "https://munowatch.com/$su"
-            }
-
-            val doc = org.jsoup.Jsoup.parse(searchHtml)
-            val cards = doc.select("a[href*='twolekede?v='], a[href*='/twolekede?']")
-            if (cards.isEmpty()) return@withContext null
-
-            // Match by title and VJ first, then title alone
-            val bestCard = cards.firstOrNull { card ->
-                val cardTitle = (card.selectFirst("img")?.attr("alt") ?: "").trim()
-                val cardVj = (card.selectFirst("p")?.text() ?: "").lowercase().trim()
-                val titleMatch = cardTitle.isNotBlank() && parser.titlesMatch(cardTitle, clean)
-                val vjMatch = targetVj.isBlank() || cardVj.contains(targetVj) || targetVj.contains(cardVj)
-                titleMatch && vjMatch
-            } ?: cards.firstOrNull { card ->
-                val cardTitle = (card.selectFirst("img")?.attr("alt") ?: "").trim()
-                cardTitle.isNotBlank() && parser.titlesMatch(cardTitle, clean)
-            }
-
-            val href = bestCard?.attr("href")?.replace("&amp;", "&")?.trim()
-            if (!href.isNullOrBlank()) {
-                if (href.startsWith("http://") || href.startsWith("https://")) href
-                else if (href.startsWith("/")) "https://munowatch.com$href"
-                else "https://munowatch.com/$href"
-            } else null
+            null
         } catch (_: Exception) {
             null
         }
@@ -1259,6 +1296,11 @@ class MunowatchApi(
         try {
             val id = extractTwolekedeId(episodeIdOrUrl) ?: return@withContext null
 
+            if (isCdnRateLimited()) {
+                android.util.Log.w("MunowatchApi", "Skipping resolveTwolekedeStream because movviez CDN is rate-limited")
+                return@withContext null
+            }
+
             val isDirectServer = serverName?.contains("Direct", ignoreCase = true) == true ||
                 serverName?.contains("Alternate", ignoreCase = true) == true ||
                 serverName?.contains("Server 3", ignoreCase = true) == true
@@ -1579,12 +1621,17 @@ class MunowatchApi(
 
     suspend fun resolveStreamPathForId(contentId: String): String? = withContext(Dispatchers.IO) {
         try {
-            val gridResult = getGridSlot("p", "4")
+            val uploadResult = getGridSlot("p", "18", pageName = "Latest Uploads")
+            if (uploadResult.isSuccess) {
+                val link = extractLinkForId(uploadResult.getOrDefault(""), contentId)
+                if (link != null) return@withContext link
+            }
+            val gridResult = getGridSlot("p", "4", pageName = "Latest Movies")
             if (gridResult.isSuccess) {
                 val link = extractLinkForId(gridResult.getOrDefault(""), contentId)
                 if (link != null) return@withContext link
             }
-            val freeResult = getGridSlot("fr", "4")
+            val freeResult = getGridSlot("fr", "4", pageName = "Free Movies")
             if (freeResult.isSuccess) {
                 val link = extractLinkForId(freeResult.getOrDefault(""), contentId)
                 if (link != null) return@withContext link
@@ -1772,6 +1819,7 @@ class MunowatchApi(
             // Must be a recognized video stream or CDN endpoint
             return clean.contains(".mp4") || clean.contains(".m3u8") || clean.contains(".mpd") ||
                    clean.contains("movviez.com") || clean.contains("b-cdn.net") ||
+                   clean.contains("munotech") || clean.contains("/port/str/") ||
                    clean.contains("secure.php")
         }
     }

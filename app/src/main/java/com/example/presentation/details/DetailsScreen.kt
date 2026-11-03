@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
 import com.example.data.repository.MediaCache
 import com.example.domain.model.MediaItem
@@ -96,7 +97,15 @@ class DetailsViewModel(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : ViewModel() {
 
-    private val cached = MediaCache.getMovieDetail(contentId) ?: MediaCache.get(contentId)
+    private val cached = MediaCache.getMovieDetail(contentId)
+        ?: MediaCache.get(contentId)
+        ?: MediaCache.get(contentId.removePrefix("myvj_"))
+        ?: MediaCache.get("myvj_$contentId")
+        ?: MediaCache.getAll().firstOrNull {
+            it.id.equals(contentId, ignoreCase = true) ||
+            it.id.removePrefix("myvj_").equals(contentId.removePrefix("myvj_"), ignoreCase = true) ||
+            it.streamUrl.equals(contentId, ignoreCase = true)
+        }
     private val hasDetails = cached != null && cached.description.isNotBlank()
 
     private val _uiState = MutableStateFlow(
@@ -269,10 +278,22 @@ fun DetailsScreen(
             .fillMaxSize()
             .background(MunowatchBackground)
     ) {
-        // Backdrop Image with Scrim
+        // Backdrop Image with Scrim (Bounded downsampled decoding for low RAM TVs)
         if (movie.backdropUrl.isNotBlank() || movie.posterUrl.isNotBlank()) {
+            val context = LocalContext.current
+            val backdropModel = movie.backdropUrl.ifBlank { movie.posterUrl }
+            val backdropRequest = remember(backdropModel) {
+                coil.request.ImageRequest.Builder(context)
+                    .data(backdropModel)
+                    .size(coil.size.Size(960, 540))
+                    .precision(coil.size.Precision.INEXACT)
+                    .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
+                    .allowRgb565(true)
+                    .crossfade(false)
+                    .build()
+            }
             AsyncImage(
-                model = movie.backdropUrl.ifBlank { movie.posterUrl },
+                model = backdropRequest,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
@@ -329,8 +350,19 @@ fun DetailsScreen(
                             .border(2.dp, MunowatchFocusBorder, RoundedCornerShape(12.dp))
                     ) {
                         if (movie.posterUrl.isNotBlank()) {
+                            val context = LocalContext.current
+                            val posterRequest = remember(movie.posterUrl) {
+                                coil.request.ImageRequest.Builder(context)
+                                    .data(movie.posterUrl)
+                                    .size(coil.size.Size(300, 450))
+                                    .precision(coil.size.Precision.INEXACT)
+                                    .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
+                                    .allowRgb565(true)
+                                    .crossfade(false)
+                                    .build()
+                            }
                             AsyncImage(
-                                model = movie.posterUrl,
+                                model = posterRequest,
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
