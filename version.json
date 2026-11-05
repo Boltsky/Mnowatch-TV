@@ -1,9 +1,9 @@
 {
-  "versionCode": 2,
-  "versionName": "1.1",
-  "title": "Munowatch TV v1.1",
-  "changelog": "• Dynamic live synchronization of newly uploaded movies and series across all backend databases\n• Automatic daily ingestion of new Luganda translations with genuine TMDB metadata\n• Multi-database deduplication preserving authentic synopses, backdrops, and release years\n• Zero-lag UI navigation optimized for low-RAM Android TVs\n• High-speed BunnyCDN 1080p stream failovers with no rate limits",
-  "apkUrl": "https://raw.githubusercontent.com/Boltsky/Mnowatch-TV/main/apk/Munowatch-TV.apk",
-  "releaseDate": "2026-11-03",
+  "versionCode": 3,
+  "versionName": "1.2",
+  "title": "Munowatch TV v1.2",
+  "changelog": "• In-app update verification with version check against GitHub\n• Live synchronization of newly uploaded movies and series across all backend databases\n• Order-preserving multi-database deduplication with authentic TMDB synopses\n• Fixed movie descriptions and TV series classification\n• Android TV UI and memory optimizations for low-RAM devices",
+  "apkUrl": "https://raw.githubusercontent.com/Boltsky/Mnowatch-TV/main/apk/Munowatch-TV-v1.2.apk",
+  "releaseDate": "2026-11-05",
   "forceUpdate": false
 }

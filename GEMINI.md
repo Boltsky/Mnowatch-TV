@@ -30,3 +30,11 @@ This guarantees an uncorrupted binary image every time.
 
 3. **NO SYNTHETIC IP SPOOFING HEADERS ON CLOUDFLARE ENDPOINTS**:
    - Never inject arbitrary `X-Forwarded-For`, `Client-IP`, or `True-Client-IP` headers into requests directed to Cloudflare-protected CDNs (`movviez.com`). Cloudflare WAF flags header spoofing as bot traffic and imposes aggressive HTTP 429 blocks.
+
+## 3. GitHub Release & Version Control Invariants (MANDATORY RELEASE RULE)
+Whenever committing/releasing to GitHub:
+1. **Always bump version numbers**: Increment `versionCode` (integer) and `versionName` (e.g. `1.1` ➔ `1.2`) in `app/build.gradle.kts` and `version.json`.
+2. **Commit versioned APKs**: Compile the release/debug APK and save it as both `apk/Munowatch-TV-v<versionName>.apk` and `apk/Munowatch-TV.apk`.
+3. **Synchronize version.json**: Update `version.json` with the new `versionCode`, `versionName`, release date, changelog, and `"apkUrl"` pointing to the new versioned APK raw URL (`https://raw.githubusercontent.com/Boltsky/Mnowatch-TV/main/apk/Munowatch-TV-v<versionName>.apk`).
+4. **Guarantee In-App Update Trigger**: This guarantees that existing installed APKs compare `currentVersionCode` against `version.json` on GitHub, detect the newer version, and trigger in-app updates.
+
