@@ -79,6 +79,41 @@ class AppUpdateRepositoryTest {
     }
 
     @Test
+    fun parseVersionJson_withAppReleaseHubFormat_resolvesDownloadUrlAndDetails() {
+        val json = """
+            {
+              "appId": "munowatch-tv",
+              "appName": "Munowatch TV",
+              "version": "1.2.0",
+              "versionCode": 999,
+              "releaseDate": "2026-11-05",
+              "mandatory": false,
+              "platforms": {
+                "android": {
+                  "fileName": "Munowatch-TV-v1.2.apk",
+                  "downloadUrl": "/releases/munowatch-tv/Munowatch-TV-v1.2.apk",
+                  "fileSize": "26.5 MB",
+                  "bytes": 27795545
+                }
+              },
+              "changelog": [
+                "In-app update verification with version check against release server",
+                "Live synchronization of newly uploaded movies"
+              ]
+            }
+        """.trimIndent()
+
+        val info = repository.parseVersionJson(json, "https://awake-zephyr-d9x5.here.now")
+        assertTrue(info.isUpdateAvailable)
+        assertEquals(999, info.latestVersionCode)
+        assertEquals("1.2.0", info.latestVersionName)
+        assertEquals("Munowatch TV v1.2.0", info.title)
+        assertEquals("https://awake-zephyr-d9x5.here.now/releases/munowatch-tv/Munowatch-TV-v1.2.apk", info.apkUrl)
+        assertTrue(info.changelog.contains("Live synchronization"))
+        assertFalse(info.isForceUpdate)
+    }
+
+    @Test
     fun parseGitHubReleaseJson_extractsApkAssetAndReleaseDetails() {
         val json = """
             {

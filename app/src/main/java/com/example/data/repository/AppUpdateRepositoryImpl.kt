@@ -68,7 +68,30 @@ class AppUpdateRepositoryImpl(
 
     override suspend fun checkForUpdate(force: Boolean): Result<AppUpdateInfo> = withContext(Dispatchers.IO) {
         try {
-            // 1. Primary: raw.githubusercontent.com version.json (zero API rate limits)
+            // 1. Primary: Edge-hosted Release Hub (https://awake-zephyr-d9x5.here.now)
+            val hubUrl = "https://awake-zephyr-d9x5.here.now/api/updates/munowatch-tv/latest.json"
+            val hubRequest = Request.Builder()
+                .url(hubUrl)
+                .header("User-Agent", "MunowatchTV-Updater")
+                .header("Cache-Control", "no-cache")
+                .build()
+
+            val hubResult = try {
+                okHttpClient.newCall(hubRequest).execute().use { response ->
+                    if (response.isSuccessful && response.body != null) {
+                        val body = response.body!!.string()
+                        parseVersionJson(body, "https://awake-zephyr-d9x5.here.now")
+                    } else null
+                }
+            } catch (_: Exception) {
+                null
+            }
+
+            if (hubResult != null) {
+                return@withContext Result.success(hubResult)
+            }
+
+            // 2. Secondary fallback: raw.githubusercontent.com version.json (zero API rate limits)
             val rawUrl = "https://raw.githubusercontent.com/Boltsky/Mnowatch-TV/main/version.json"
             val rawRequest = Request.Builder()
                 .url(rawUrl)
@@ -91,7 +114,7 @@ class AppUpdateRepositoryImpl(
                 return@withContext Result.success(rawResult)
             }
 
-            // 2. Secondary fallback: GitHub Releases API
+            // 3. Tertiary fallback: GitHub Releases API
             val releaseUrl = "https://api.github.com/repos/Boltsky/Mnowatch-TV/releases/latest"
             val releaseRequest = Request.Builder()
                 .url(releaseUrl)
@@ -114,7 +137,7 @@ class AppUpdateRepositoryImpl(
                 return@withContext Result.success(releaseResult)
             }
 
-            // Return current version with no update if both endpoints unreachable
+            // Return current version with no update if all endpoints unreachable
             Result.success(
                 AppUpdateInfo(
                     isUpdateAvailable = false,
@@ -129,12 +152,61 @@ class AppUpdateRepositoryImpl(
         }
     }
 
-    fun parseVersionJson(jsonStr: String): AppUpdateInfo {
+    fun parseVersionJson(jsonStr: String, fallbackBaseUrl: String = "https://awake-zephyr-d9x5.here.now"): AppUpdateInfo {
         val json = JSONObject(jsonStr)
+
+        // Support App Release Hub format (has "platforms" or "appId")
+        if (json.has("platforms") || json.has("appId")) {
+            val latestCode = json.optInt("versionCode", 1)
+            val latestName = json.optString("version", json.optString("versionName", "1.0"))
+            val appName = json.optString("appName", "Munowatch TV")
+            val releaseDate = json.optString("releaseDate", "")
+            val mandatory = json.optBoolean("mandatory", json.optBoolean("forceUpdate", false))
+
+            val changelog = when (val clObj = json.opt("changelog")) {
+                is org.json.JSONArray -> {
+                    (0 until clObj.length()).joinToString("\n") { i -> "• ${clObj.optString(i)}" }
+                }
+                is String -> clObj
+                else -> "Performance improvements and bug fixes."
+            }
+
+            val platforms = json.optJSONObject("platforms")
+            val androidObj = platforms?.optJSONObject("android")
+            val rawDownloadUrl = androidObj?.optString("downloadUrl")
+                ?: json.optString("apkUrl", "https://awake-zephyr-d9x5.here.now/releases/munowatch-tv/Munowatch-TV-v1.2.apk")
+
+            val apkUrl = if (rawDownloadUrl.startsWith("http://") || rawDownloadUrl.startsWith("https://")) {
+                rawDownloadUrl
+            } else {
+                "${fallbackBaseUrl.trimEnd('/')}/${rawDownloadUrl.trimStart('/')}"
+            }
+
+            val isAvailable = latestCode > currentVersionCode
+
+            return AppUpdateInfo(
+                isUpdateAvailable = isAvailable,
+                latestVersionCode = latestCode,
+                latestVersionName = latestName,
+                currentVersionCode = currentVersionCode,
+                currentVersionName = currentVersionName,
+                title = "$appName v$latestName",
+                changelog = changelog,
+                apkUrl = apkUrl,
+                releaseDate = releaseDate,
+                isForceUpdate = mandatory
+            )
+        }
+
+        // Standard version.json format
         val latestCode = json.optInt("versionCode", 1)
         val latestName = json.optString("versionName", "1.0")
         val title = json.optString("title", "Munowatch TV v$latestName")
-        val changelog = json.optString("changelog", "Performance improvements and bug fixes.")
+        val changelog = when (val clObj = json.opt("changelog")) {
+            is org.json.JSONArray -> (0 until clObj.length()).joinToString("\n") { i -> "• ${clObj.optString(i)}" }
+            is String -> clObj
+            else -> "Performance improvements and bug fixes."
+        }
         val apkUrl = json.optString("apkUrl", "https://raw.githubusercontent.com/Boltsky/Mnowatch-TV/main/apk/Munowatch-TV.apk")
         val releaseDate = json.optString("releaseDate", "")
         val forceUpdate = json.optBoolean("forceUpdate", false)
