@@ -30,6 +30,7 @@ scratch/
 *.png
 !app/src/**/*.xml
 *.html
+!frontend/**/*.html
 *.txt
 scratch_*.py
 test_*.py
