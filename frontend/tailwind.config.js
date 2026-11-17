@@ -7,15 +7,24 @@ export default {
   theme: {
     extend: {
       colors: {
-        muno: {
-          dark: '#0a0f0d',
-          card: '#121a16',
-          border: '#1f2d26',
-          primary: '#10b981', // Emerald green brand color
-          glow: '#059669',
-          accent: '#34d399',
-          surface: '#18241e'
+        munowatch: {
+          bg: '#010318',
+          surface: '#0A192F',
+          elevated: '#132845',
+          variant: '#1E293B',
+          green: '#10B981',
+          greenLight: '#34D399',
+          greenDark: '#059669',
+          focusBorder: '#34D399',
+          gold: '#FBBF24',
+          textPrimary: '#F8FAFC',
+          textSecondary: '#94A3B8',
+          textMuted: '#64748B',
+          error: '#EF4444'
         }
+      },
+      fontFamily: {
+        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif']
       }
     },
   },

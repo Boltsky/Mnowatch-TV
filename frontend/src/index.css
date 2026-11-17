@@ -4,12 +4,13 @@
 
 @layer base {
   body {
-    background-color: #0a0f0d;
-    color: #ffffff;
+    background-color: #010318;
+    color: #F8FAFC;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     touch-action: manipulation;
+    overflow-x: hidden;
   }
 }
 
@@ -22,14 +23,29 @@
   scrollbar-width: none;
 }
 
-/* TV & Keyboard Focus styling */
-.focus-glow:focus,
-.focus-glow.focused {
+/* TV D-Pad & Keyboard Focus styling matching Compose TvMediaCard */
+.tv-card-focus {
+  transition: transform 80ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 80ms cubic-bezier(0.4, 0, 0.2, 1), border-color 80ms ease;
+}
+.tv-card-focus:hover,
+.tv-card-focus:focus,
+.tv-card-focus.focused {
   outline: none;
-  box-shadow: 0 0 0 3px #10b981, 0 0 25px rgba(16, 185, 129, 0.6);
-  transform: scale(1.04);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: scale(1.05);
+  border-color: #34D399 !important;
+  box-shadow: 0 0 0 3px #34D399, 0 0 25px rgba(16, 185, 129, 0.6);
   z-index: 30;
+}
+
+/* TV Nav Tab Focus */
+.tv-nav-focus {
+  transition: all 120ms ease;
+}
+.tv-nav-focus:hover,
+.tv-nav-focus:focus {
+  outline: none;
+  color: #FFFFFF !important;
+  transform: scale(1.08);
 }
 
 /* Mobile Touch Tap Highlight Removal */
