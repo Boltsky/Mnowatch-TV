@@ -132,6 +132,23 @@ export class StreamProxyService {
     }
   }
 
+  private static urlMatchesTitle(streamUrl: string, expectedTitle?: string): boolean {
+    if (!expectedTitle || expectedTitle.trim().length < 2) return true;
+    try {
+      const cleanUrl = decodeURIComponent(streamUrl).toLowerCase();
+      const words = expectedTitle
+        .toLowerCase()
+        .replace(/\[.*?\]|\(.*?\)/g, '')
+        .split(/[^a-z0-9]+/)
+        .filter(w => w.length >= 3 && !['part', 'the', 'movie', 'full', 'vj', 'series', 'season'].includes(w));
+
+      if (words.length === 0) return true;
+      return words.some(w => cleanUrl.includes(w));
+    } catch {
+      return true;
+    }
+  }
+
   /**
    * Resolves direct media streaming link for any movie or series title on demand
    */
@@ -142,7 +159,7 @@ export class StreamProxyService {
     // 1. If it's a numeric Twolekede ID (and NOT an UgaWatch row_id)
     if (isExplicitTwolekede && /^\d+$/.test(cleanId)) {
       const resolved = await this.resolveTwolekedeStreamById(cleanId);
-      if (resolved) return resolved;
+      if (resolved && this.urlMatchesTitle(resolved, title)) return resolved;
     }
 
     // 2. Search Twolekede by clean title if title is provided
@@ -185,7 +202,7 @@ export class StreamProxyService {
 
               if (normCard.includes(normSearch) || normSearch.includes(normCard) || normCard === normSearch) {
                 const stream = await this.resolveTwolekedeStreamById(matchedId);
-                if (stream) return stream;
+                if (stream && this.urlMatchesTitle(stream, title)) return stream;
               }
             }
 
@@ -193,7 +210,7 @@ export class StreamProxyService {
             const anyMatch = html.match(/href="(?:moviedetails|preview)\.php\?id=(\d+)"/);
             if (anyMatch && anyMatch[1]) {
               const stream = await this.resolveTwolekedeStreamById(anyMatch[1]);
-              if (stream) return stream;
+              if (stream && this.urlMatchesTitle(stream, title)) return stream;
             }
           }
         } catch {}
