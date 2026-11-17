@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Hls from 'hls.js';
 import { 
   Play, Pause, RotateCcw, RotateCw, Maximize, Minimize, 
-  ArrowLeft, Volume2, VolumeX, Server, Check 
+  ArrowLeft, Volume2, VolumeX, Server, Check, AlertCircle, RefreshCw
 } from 'lucide-react';
 import { MediaItem, Episode, PlaybackServer } from '../../types';
 import { api } from '../../services/api';
@@ -30,6 +30,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
   const [showServerMenu, setShowServerMenu] = useState<boolean>(false);
   const [seekRipple, setSeekRipple] = useState<{ text: string; side: 'left' | 'right' | 'center' } | null>(null);
 
+  const [hasError, setHasError] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
+  const [isResolving, setIsResolving] = useState<boolean>(false);
+
   // Available servers
   const availableServers: PlaybackServer[] = item.servers && item.servers.length > 0
     ? item.servers
@@ -43,23 +47,36 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
   );
 
   const [resolvedStreamUrl, setResolvedStreamUrl] = useState<string>('');
-  const [isResolving, setIsResolving] = useState<boolean>(false);
 
-  useEffect(() => {
+  const triggerStreamResolution = useCallback(async () => {
+    setHasError(false);
     const rawUrl = episode?.streamUrl || item.streamUrl;
-    if (rawUrl && rawUrl.length > 5) {
-      setResolvedStreamUrl(currentServer.isProxy ? api.getProxyStreamUrl(rawUrl) : rawUrl);
+    if (rawUrl && rawUrl.length > 10 && (rawUrl.includes('movviez.com') || rawUrl.includes('b-cdn.net') || rawUrl.includes('.mp4') || rawUrl.includes('.m3u8'))) {
+      const finalUrl = currentServer.isProxy ? api.getProxyStreamUrl(rawUrl) : rawUrl;
+      setResolvedStreamUrl(finalUrl);
     } else {
       setIsResolving(true);
-      api.resolveStream(item.id, item.title).then(res => {
+      try {
+        const res = await api.resolveStream(item.id, item.title);
         if (res.streamUrl) {
-          setResolvedStreamUrl(currentServer.isProxy ? res.streamUrl : (res.directUrl || res.streamUrl));
+          const finalUrl = currentServer.isProxy ? res.streamUrl : (res.directUrl || res.streamUrl);
+          setResolvedStreamUrl(finalUrl);
+        } else {
+          setHasError(true);
+          setErrorMessage('Streaming source is undergoing failover. Tap retry below.');
         }
-      }).finally(() => {
+      } catch (err: any) {
+        setHasError(true);
+        setErrorMessage(err.message || 'Stream connection timeout.');
+      } finally {
         setIsResolving(false);
-      });
+      }
     }
   }, [item.id, item.title, item.streamUrl, episode, currentServer]);
+
+  useEffect(() => {
+    triggerStreamResolution();
+  }, [triggerStreamResolution]);
 
   const activeStreamUrl = resolvedStreamUrl;
 
@@ -79,6 +96,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
     if (!video || !activeStreamUrl) return;
 
     setIsBuffering(true);
+    setHasError(false);
 
     if (hlsRef.current) {
       hlsRef.current.destroy();
@@ -111,6 +129,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
               break;
             default:
               hls.destroy();
+              setHasError(true);
+              setErrorMessage('HLS media stream encountered an error.');
               break;
           }
         }
@@ -144,20 +164,33 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
     const onLoadedMetadata = () => {
       setDuration(video.duration);
       setIsBuffering(false);
+      setHasError(false);
     };
 
     const onWaiting = () => setIsBuffering(true);
     const onPlaying = () => {
       setIsBuffering(false);
       setIsPlaying(true);
+      setHasError(false);
     };
     const onPause = () => setIsPlaying(false);
+
+    const onError = () => {
+      setIsBuffering(false);
+      setHasError(true);
+      setErrorMessage('Media connection stalled. Switching to secure CORS failover...');
+      // Automatically attempt proxy failover if direct failed
+      if (!currentServer.isProxy && activeStreamUrl) {
+        setResolvedStreamUrl(api.getProxyStreamUrl(activeStreamUrl));
+      }
+    };
 
     video.addEventListener('timeupdate', onTimeUpdate);
     video.addEventListener('loadedmetadata', onLoadedMetadata);
     video.addEventListener('waiting', onWaiting);
     video.addEventListener('playing', onPlaying);
     video.addEventListener('pause', onPause);
+    video.addEventListener('error', onError);
 
     return () => {
       video.removeEventListener('timeupdate', onTimeUpdate);
@@ -165,8 +198,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
       video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('playing', onPlaying);
       video.removeEventListener('pause', onPause);
+      video.removeEventListener('error', onError);
     };
-  }, []);
+  }, [currentServer, activeStreamUrl]);
 
   // Controls playback toggle
   const togglePlay = () => {
@@ -179,52 +213,43 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
       video.pause();
       setIsPlaying(false);
     }
-    resetHideTimer();
   };
 
   const seek = (seconds: number) => {
     const video = videoRef.current;
     if (!video) return;
-    video.currentTime = Math.max(0, Math.min(video.duration || 0, video.currentTime + seconds));
-    resetHideTimer();
+    video.currentTime = Math.max(0, Math.min(video.currentTime + seconds, duration));
   };
 
-  // Fullscreen toggle with orientation lock
-  const toggleFullscreen = async () => {
+  const handleSeekChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const video = videoRef.current;
+    if (!video) return;
+    const newTime = parseFloat(e.target.value);
+    video.currentTime = newTime;
+    setCurrentTime(newTime);
+  };
+
+  const toggleMute = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = !isMuted;
+    setIsMuted(!isMuted);
+  };
+
+  const toggleFullscreen = () => {
     const container = containerRef.current;
     if (!container) return;
 
     if (!document.fullscreenElement) {
-      try {
-        if (container.requestFullscreen) {
-          await container.requestFullscreen();
-        } else if ((container as any).webkitRequestFullscreen) {
-          await (container as any).webkitRequestFullscreen();
-        }
-        setIsFullscreen(true);
-        // Attempt landscape lock on mobile devices
-        if (screen.orientation && (screen.orientation as any).lock) {
-          try {
-            await (screen.orientation as any).lock('landscape');
-          } catch {}
-        }
-      } catch {}
+      container.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
     } else {
-      if (document.exitFullscreen) {
-        await document.exitFullscreen();
-      }
-      setIsFullscreen(false);
-      if (screen.orientation && screen.orientation.unlock) {
-        try {
-          screen.orientation.unlock();
-        } catch {}
-      }
+      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
     }
   };
 
-  // Mobile double-tap gesture handling
+  // Double tap gestures (±10s Seek, Double-tap center for Play/Pause)
   const lastTapRef = useRef<number>(0);
-  const handleTouchZone = (e: React.MouseEvent<HTMLElement> | React.TouchEvent<HTMLElement>) => {
+  const handleTouchZone = (e: React.TouchEvent | React.MouseEvent) => {
     const now = Date.now();
     const isDoubleTap = now - lastTapRef.current < 300;
     lastTapRef.current = now;
@@ -285,13 +310,61 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
         onClick={handleTouchZone}
       />
 
+      {/* Resolving Stream Overlay */}
+      {isResolving && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/85 z-40 p-6 text-center space-y-3">
+          <div className="w-14 h-14 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin" />
+          <p className="text-white font-bold text-base">Connecting to Ugandan media stream node...</p>
+          <p className="text-xs text-zinc-400">Resolving 1080p full stream for {item.title}</p>
+        </div>
+      )}
+
       {/* Buffering Indicator */}
-      {isBuffering && (
+      {isBuffering && !isResolving && !hasError && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 pointer-events-none">
           <div className="w-14 h-14 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin mb-3" />
           <span className="text-xs font-bold text-white tracking-wider bg-black/60 px-3 py-1 rounded-full">
             Buffering Stream ({currentServer.name})...
           </span>
+        </div>
+      )}
+
+      {/* Stream Error Fallback Screen */}
+      {hasError && !isResolving && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-50 p-6 text-center space-y-4">
+          <div className="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/40 flex items-center justify-center text-red-400">
+            <AlertCircle className="w-7 h-7" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-lg font-bold text-white">Playback Notice</h3>
+            <p className="text-xs text-zinc-400 max-w-md">{errorMessage || 'Unable to play this stream directly.'}</p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <button
+              onClick={triggerStreamResolution}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs transition-all shadow-lg shadow-emerald-500/30"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Retry Playback
+            </button>
+            <button
+              onClick={() => {
+                const proxyServer = availableServers.find(s => s.isProxy) || availableServers[0];
+                setCurrentServer(proxyServer);
+                triggerStreamResolution();
+              }}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs border border-white/20 transition-all"
+            >
+              <Server className="w-3.5 h-3.5 text-emerald-400" />
+              Switch to CORS Proxy
+            </button>
+            <button
+              onClick={onBack}
+              className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 font-semibold text-xs transition-all"
+            >
+              Back to Details
+            </button>
+          </div>
         </div>
       )}
 
@@ -319,50 +392,53 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
           <div className="flex items-center gap-3">
             <button
               onClick={onBack}
-              className="p-2.5 rounded-full bg-black/60 hover:bg-emerald-500 hover:text-black text-white border border-white/10 transition-all active:scale-95"
+              className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-all backdrop-blur-md active:scale-95"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <div className="flex flex-col">
-              <span className="text-sm sm:text-base font-bold text-white line-clamp-1">
-                {item.title} {episode ? `• Ep ${episode.episodeNumber}` : ''}
-              </span>
-              <span className="text-xs text-emerald-400 font-semibold">
-                {item.vj} • {currentServer.name}
-              </span>
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-white line-clamp-1">
+                {item.title}
+              </h2>
+              <p className="text-xs text-zinc-400 flex items-center gap-2">
+                <span className="text-emerald-400 font-bold">{item.vj}</span>
+                {episode && <span>• Episode {episode.episodeNumber}: {episode.title}</span>}
+              </p>
             </div>
           </div>
 
-          {/* Server Switcher Pill */}
+          {/* Server Selector Button */}
           <div className="relative">
             <button
               onClick={() => setShowServerMenu(!showServerMenu)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/70 hover:bg-black/90 text-zinc-300 hover:text-white border border-emerald-500/40 text-xs font-semibold shadow-lg active:scale-95"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-md border border-white/10 transition-all"
             >
               <Server className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Change Server</span>
+              <span className="hidden sm:inline">{currentServer.name}</span>
+              <span className="sm:hidden">Server</span>
             </button>
 
+            {/* Server Dropdown */}
             {showServerMenu && (
-              <div className="absolute right-0 mt-2 w-64 rounded-xl bg-muno-card border border-muno-border p-2 shadow-2xl space-y-1 z-40">
-                <span className="text-[11px] font-bold text-zinc-400 px-2 py-1 block uppercase">
-                  Available Media CDNs
-                </span>
-                {availableServers.map((srv) => (
+              <div className="absolute right-0 mt-2 w-56 rounded-xl bg-[#0a0f0d]/95 border border-emerald-500/30 p-2 shadow-2xl backdrop-blur-xl z-50 space-y-1">
+                <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-zinc-400 border-b border-white/10">
+                  Select Media Server
+                </div>
+                {availableServers.map(srv => (
                   <button
                     key={srv.id}
                     onClick={() => {
                       setCurrentServer(srv);
                       setShowServerMenu(false);
                     }}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-left transition-all ${
+                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium text-left transition-all ${
                       currentServer.id === srv.id
-                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                        ? 'bg-emerald-500/20 text-emerald-400 font-bold'
                         : 'text-zinc-300 hover:bg-white/5'
                     }`}
                   >
                     <span>{srv.name}</span>
-                    {currentServer.id === srv.id && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                    {currentServer.id === srv.id && <Check className="w-3.5 h-3.5" />}
                   </button>
                 ))}
               </div>
@@ -370,93 +446,69 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
           </div>
         </div>
 
-        {/* Center Quick Play/Pause Action */}
-        <div className="flex items-center justify-center gap-6 sm:gap-10">
-          <button
-            onClick={() => seek(-10)}
-            className="p-3 sm:p-4 rounded-full bg-black/60 hover:bg-white/20 text-white transition-all active:scale-90"
-          >
-            <RotateCcw className="w-6 h-6 sm:w-8 sm:h-8" />
-          </button>
-
+        {/* Center Big Play/Pause Button */}
+        <div className="self-center">
           <button
             onClick={togglePlay}
-            className="p-5 sm:p-6 rounded-full bg-emerald-500 hover:bg-emerald-400 text-black shadow-2xl shadow-emerald-500/50 transition-all active:scale-90"
+            className="p-5 sm:p-6 rounded-full bg-emerald-500/90 hover:bg-emerald-400 text-black shadow-2xl shadow-emerald-500/40 transition-all hover:scale-110 active:scale-95"
           >
-            {isPlaying ? (
-              <Pause className="w-8 h-8 sm:w-10 sm:h-10 fill-black" />
-            ) : (
-              <Play className="w-8 h-8 sm:w-10 sm:h-10 fill-black translate-x-0.5" />
-            )}
-          </button>
-
-          <button
-            onClick={() => seek(10)}
-            className="p-3 sm:p-4 rounded-full bg-black/60 hover:bg-white/20 text-white transition-all active:scale-90"
-          >
-            <RotateCw className="w-6 h-6 sm:w-8 sm:h-8" />
+            {isPlaying ? <Pause className="w-8 h-8 fill-black" /> : <Play className="w-8 h-8 fill-black translate-x-0.5" />}
           </button>
         </div>
 
-        {/* Bottom controls: Scrubber, Timer, Volume, Fullscreen */}
-        <div className="space-y-2">
-          {/* Timeline progress scrubber */}
-          <div
-            className="relative w-full h-3 flex items-center cursor-pointer group"
-            onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              const pos = (e.clientX - rect.left) / rect.width;
-              if (videoRef.current && duration) {
-                videoRef.current.currentTime = pos * duration;
-              }
-            }}
-          >
-            {/* Background track */}
-            <div className="w-full h-1.5 bg-white/20 rounded-full overflow-hidden">
-              {/* Buffered track */}
-              <div
-                className="h-full bg-white/30"
-                style={{ width: `${(buffered / (duration || 1)) * 100}%` }}
-              />
-            </div>
-            {/* Played track */}
+        {/* Bottom bar: Timeline scrubber & transport controls */}
+        <div className="space-y-3">
+          {/* Scrubber slider */}
+          <div className="relative flex items-center group">
+            {/* Buffered progress track */}
             <div
-              className="absolute left-0 h-1.5 bg-emerald-500 rounded-full"
+              className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-white/30 rounded-full pointer-events-none transition-all"
+              style={{ width: `${(buffered / (duration || 1)) * 100}%` }}
+            />
+            {/* Active playback progress track */}
+            <div
+              className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-emerald-500 rounded-full pointer-events-none transition-all"
               style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}
             />
-            {/* Scrubber thumb */}
-            <div
-              className="absolute w-4 h-4 rounded-full bg-white shadow-md transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
-              style={{ left: `${(currentTime / (duration || 1)) * 100}%` }}
+            <input
+              type="range"
+              min={0}
+              max={duration || 100}
+              value={currentTime}
+              onChange={handleSeekChange}
+              className="w-full h-1 bg-transparent appearance-none cursor-pointer accent-emerald-500 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
             />
           </div>
 
-          <div className="flex items-center justify-between text-xs sm:text-sm text-zinc-300">
-            <div className="flex items-center gap-3">
-              <span className="font-semibold text-white">
+          {/* Time & Action buttons */}
+          <div className="flex items-center justify-between text-xs font-medium text-zinc-300">
+            <div className="flex items-center gap-4">
+              <button onClick={togglePlay} className="hover:text-white transition-colors">
+                {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
+              </button>
+
+              <button onClick={() => seek(-10)} className="hover:text-white transition-colors" title="-10 Seconds">
+                <RotateCcw className="w-5 h-5" />
+              </button>
+
+              <button onClick={() => seek(10)} className="hover:text-white transition-colors" title="+10 Seconds">
+                <RotateCw className="w-5 h-5" />
+              </button>
+
+              <button onClick={toggleMute} className="hover:text-white transition-colors">
+                {isMuted ? <VolumeX className="w-5 h-5 text-red-400" /> : <Volume2 className="w-5 h-5" />}
+              </button>
+
+              <span className="font-mono text-zinc-400">
                 {formatTime(currentTime)} / {formatTime(duration)}
               </span>
-              <button
-                onClick={() => {
-                  if (videoRef.current) {
-                    videoRef.current.muted = !isMuted;
-                    setIsMuted(!isMuted);
-                  }
-                }}
-                className="p-1 hover:text-white"
-              >
-                {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-              </button>
             </div>
 
             <div className="flex items-center gap-3">
-              <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold text-[11px] border border-emerald-500/30">
-                1080p FHD
+              <span className="hidden sm:inline-block px-2 py-0.5 rounded bg-white/10 text-[10px] font-bold text-emerald-400">
+                1080p Full HD
               </span>
-              <button
-                onClick={toggleFullscreen}
-                className="p-1.5 rounded-lg hover:bg-white/10 text-white transition-all active:scale-95"
-              >
+              <button onClick={toggleFullscreen} className="hover:text-white transition-colors">
                 {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
               </button>
             </div>

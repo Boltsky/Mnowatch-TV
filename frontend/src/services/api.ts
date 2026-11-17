@@ -1,6 +1,7 @@
 import { MediaItem, CatalogRail, VjItem } from '../types';
 
-const API_BASE = (import.meta as any).env?.VITE_API_URL || 'https://munowatch-api.onrender.com/api/v1';
+const RAW_ENV = (import.meta as any).env?.VITE_API_URL || 'https://munowatch-api.onrender.com/api/v1';
+const API_BASE = RAW_ENV.endsWith('/api/v1') ? RAW_ENV : `${RAW_ENV.replace(/\/+$/, '')}/api/v1`;
 
 export const FALLBACK_VJS: VjItem[] = [
   { id: "vj_junior", name: "VJ Junior", icon: "🎬", count: 48 },

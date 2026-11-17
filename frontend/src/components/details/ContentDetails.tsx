@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Play, ArrowLeft, Star, Clock, Server, Check } from 'lucide-react';
 import { MediaItem, Episode, PlaybackServer } from '../../types';
+import { api } from '../../services/api';
 
 interface ContentDetailsProps {
   item: MediaItem;
@@ -9,8 +10,16 @@ interface ContentDetailsProps {
 }
 
 export const ContentDetails: React.FC<ContentDetailsProps> = ({ item, onPlay, onBack }) => {
-  const [selectedServer, setSelectedServer] = useState<PlaybackServer | undefined>(
-    item.servers?.[0]
+  const defaultProxyServer: PlaybackServer = {
+    id: 'server-proxy',
+    name: 'Server 2 (Munowatch Web Streamer - CORS Safe)',
+    quality: '1080p Full HD',
+    streamUrl: item.streamUrl ? api.getProxyStreamUrl(item.streamUrl) : '',
+    isProxy: true
+  };
+
+  const [selectedServer, setSelectedServer] = useState<PlaybackServer>(
+    item.servers?.find(s => s.isProxy) || item.servers?.[0] || defaultProxyServer
   );
   const [selectedSeason, setSelectedSeason] = useState<number>(1);
 

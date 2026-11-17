@@ -13,8 +13,9 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Mount API routes
+// Mount API routes (Both /api/v1 and root / for universal client compatibility)
 app.use('/api/v1', apiRoutes);
+app.use('/', apiRoutes);
 
 // Root fallback
 app.get('/', (req, res) => {

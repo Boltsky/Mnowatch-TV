@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { MediaItem, VjItem } from '../../types';
 import { TvMediaCard } from '../common/TvMediaCard';
-import { Clapperboard, Layers, Loader2 } from 'lucide-react';
+import { Clapperboard, Layers, Loader2, ArrowDownCircle } from 'lucide-react';
 import { api } from '../../services/api';
 
 interface CategoriesScreenProps {
@@ -21,34 +21,74 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
   const [selectedVj, setSelectedVj] = useState<string>(initialVj || vjs[0]?.name || 'VJ Junior');
   const [selectedGenre, setSelectedGenre] = useState<string>('Action');
   const [liveItems, setLiveItems] = useState<MediaItem[]>([]);
+  const [page, setPage] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(false);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const [hasMore, setHasMore] = useState<boolean>(true);
 
   const genres = [
     'Action', 'Sci-Fi', 'Adventure', 'Thriller', 'Horror', 'Crime', 'Comedy', 'Drama', 'Animation'
   ];
 
-  useEffect(() => {
-    let isCancelled = false;
+  const fetchCategoryPageOne = useCallback(async () => {
     setLoading(true);
-    if (activeTab === 'VJ') {
-      api.getMovies({ page: 1, perPage: 30, vj: selectedVj }).then(res => {
-        if (!isCancelled && res.items.length > 0) {
+    setPage(1);
+    try {
+      if (activeTab === 'VJ') {
+        const res = await api.getMovies({ page: 1, perPage: 30, vj: selectedVj });
+        if (res.items.length > 0) {
           setLiveItems(res.items);
+          setHasMore(res.items.length >= 15);
+        } else {
+          setLiveItems([]);
+          setHasMore(false);
         }
-      }).finally(() => {
-        if (!isCancelled) setLoading(false);
-      });
-    } else {
-      api.getMovies({ page: 1, perPage: 30, genre: selectedGenre }).then(res => {
-        if (!isCancelled && res.items.length > 0) {
+      } else {
+        const res = await api.getMovies({ page: 1, perPage: 30, genre: selectedGenre });
+        if (res.items.length > 0) {
           setLiveItems(res.items);
+          setHasMore(res.items.length >= 15);
+        } else {
+          setLiveItems([]);
+          setHasMore(false);
         }
-      }).finally(() => {
-        if (!isCancelled) setLoading(false);
-      });
+      }
+    } catch {
+      // Keep existing
+    } finally {
+      setLoading(false);
     }
-    return () => { isCancelled = true; };
   }, [activeTab, selectedVj, selectedGenre]);
+
+  useEffect(() => {
+    fetchCategoryPageOne();
+  }, [fetchCategoryPageOne]);
+
+  const handleLoadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    const nextPage = page + 1;
+    try {
+      const res = activeTab === 'VJ'
+        ? await api.getMovies({ page: nextPage, perPage: 30, vj: selectedVj })
+        : await api.getMovies({ page: nextPage, perPage: 30, genre: selectedGenre });
+
+      if (res.items && res.items.length > 0) {
+        setLiveItems(prev => {
+          const ids = new Set(prev.map(p => p.id));
+          return [...prev, ...res.items.filter(i => !ids.has(i.id))];
+        });
+        setPage(nextPage);
+        setHasMore(res.items.length >= 15);
+      } else {
+        setHasMore(false);
+      }
+    } catch {
+      setHasMore(false);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const displayItems = useMemo(() => {
     if (liveItems.length > 0) return liveItems;
@@ -92,7 +132,7 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
         </div>
 
         <span className="text-xs font-bold text-[#94A3B8]">
-          <strong className="text-white">{displayItems.length}</strong> Titles
+          <strong className="text-white">{displayItems.length}</strong> Titles Loaded
         </span>
       </div>
 
@@ -134,19 +174,46 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
       {loading && displayItems.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 space-y-2">
           <Loader2 className="w-8 h-8 text-[#10B981] animate-spin" />
-          <p className="text-xs text-[#94A3B8]">Loading titles...</p>
+          <p className="text-xs text-[#94A3B8]">Querying live index for {activeTab === 'VJ' ? selectedVj : selectedGenre}...</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4 pt-2">
-          {displayItems.map(item => (
-            <TvMediaCard
-              key={item.id}
-              item={item}
-              onClick={() => onItemClick(item)}
-              cardWidth="w-full"
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4 pt-2">
+            {displayItems.map(item => (
+              <TvMediaCard
+                key={item.id}
+                item={item}
+                onClick={() => onItemClick(item)}
+                cardWidth="w-full"
+              />
+            ))}
+          </div>
+
+          {hasMore && (
+            <div className="flex flex-col items-center justify-center pt-8 pb-4 space-y-2">
+              <button
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                className="flex items-center gap-2 px-6 py-3 bg-[#0A192F] hover:bg-[#132845] border border-[#10B981]/60 hover:border-[#10B981] text-white hover:text-[#34D399] font-bold text-sm rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50"
+              >
+                {loadingMore ? (
+                  <>
+                    <Loader2 className="w-4 h-4 text-[#10B981] animate-spin" />
+                    <span>Loading More Titles...</span>
+                  </>
+                ) : (
+                  <>
+                    <ArrowDownCircle className="w-4 h-4 text-[#10B981]" />
+                    <span>Load More {activeTab === 'VJ' ? selectedVj : selectedGenre} (Page {page + 1})</span>
+                  </>
+                )}
+              </button>
+              <span className="text-xs text-[#94A3B8]">
+                Accessing 17,000+ Ugandan translated movies index
+              </span>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
