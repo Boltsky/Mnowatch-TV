@@ -132,15 +132,20 @@ export class StreamProxyService {
     }
   }
 
-  private static urlMatchesTitle(streamUrl: string, expectedTitle?: string): boolean {
+  /**
+   * Validates that stream URL contains substantive keywords of expected title
+   */
+  public static urlMatchesTitle(streamUrl: string, expectedTitle?: string): boolean {
     if (!expectedTitle || expectedTitle.trim().length < 2) return true;
     try {
       const cleanUrl = decodeURIComponent(streamUrl).toLowerCase();
       const words = expectedTitle
         .toLowerCase()
         .replace(/\[.*?\]|\(.*?\)/g, '')
+        .replace(/\b(?:by\s+vj|vj)\s+[a-z0-9_.-]*.*$/gi, ' ')
         .split(/[^a-z0-9]+/)
-        .filter(w => w.length >= 3 && !['part', 'the', 'movie', 'full', 'vj', 'series', 'season'].includes(w));
+        .map(w => w.endsWith('s') && w.length > 3 ? w.slice(0, -1) : w)
+        .filter(w => w.length >= 3 && !['part', 'the', 'movie', 'full', 'vj', 'series', 'season', 'and'].includes(w));
 
       if (words.length === 0) return true;
       return words.some(w => cleanUrl.includes(w));
@@ -150,30 +155,107 @@ export class StreamProxyService {
   }
 
   /**
+   * Generates prioritized search query candidates for Twolekede matching
+   */
+  public static generateCandidateQueries(title: string): string[] {
+    let clean = title
+      .replace(/\[.*?\]|\(.*?\)/g, ' ')
+      .replace(/\b(?:by\s+vj|vj)\s+[a-z0-9_.-]*.*$/gi, ' ')
+      .replace(/\b(?:19\d{2}|20\d{2})\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const queries: string[] = [];
+    if (clean.length >= 2) queries.push(clean);
+
+    // Substitute 'and' <-> '&'
+    if (/\band\b/i.test(clean)) {
+      queries.push(clean.replace(/\band\b/gi, '&').replace(/\s+/g, ' ').trim());
+    }
+    if (clean.includes('&')) {
+      queries.push(clean.replace(/&/g, 'and').replace(/\s+/g, ' ').trim());
+    }
+
+    // Plural 's' fix (e.g. wolverines -> wolverine)
+    const words = clean.split(' ');
+    if (words.length > 0 && words[words.length - 1].endsWith('s') && words[words.length - 1].length > 3) {
+      const sing = [...words.slice(0, -1), words[words.length - 1].slice(0, -1)].join(' ');
+      queries.push(sing);
+      if (/\band\b/i.test(sing)) {
+        queries.push(sing.replace(/\band\b/gi, '&').replace(/\s+/g, ' ').trim());
+      }
+    }
+
+    // Primary substantive keywords (e.g. "Deadpool", "Wolverine", "Furiosa")
+    const stopWords = new Set(["the", "with", "from", "part", "this", "that", "movie", "full", "translated", "luganda", "saga", "and"]);
+    const substantive = clean
+      .split(' ')
+      .map(w => w.replace(/[^a-zA-Z0-9]/g, ''))
+      .filter(w => w.length >= 4 && !stopWords.has(w.toLowerCase()));
+
+    for (const sub of substantive.slice(0, 2)) {
+      if (sub && !queries.includes(sub)) {
+        queries.push(sub);
+      }
+    }
+
+    // Prefix before colon or dash
+    const pre = clean.split(/[:–-]/)[0].trim();
+    if (pre.length >= 3 && !queries.includes(pre)) {
+      queries.push(pre);
+    }
+
+    return queries.filter(q => q.length >= 2);
+  }
+
+  /**
+   * Robust comparison verifying that two titles represent the same movie
+   */
+  public static titlesMatch(searchTitle: string, candidateTitle: string): boolean {
+    const unescapeHtml = (str: string) => str.replace(/&amp;/g, '&').replace(/&#38;/g, '&').replace(/&quot;/g, '"');
+    const stopWords = new Set(["the", "with", "from", "part", "this", "that", "movie", "full", "translated", "luganda", "saga", "and"]);
+
+    const clean1 = unescapeHtml(searchTitle).toLowerCase().replace(/[^a-z0-9]/g, ' ');
+    const clean2 = unescapeHtml(candidateTitle).toLowerCase().replace(/[^a-z0-9]/g, ' ');
+
+    const tokens1 = clean1.split(/\s+/).map(w => w.endsWith('s') && w.length > 3 ? w.slice(0, -1) : w).filter(w => w.length >= 3 && !stopWords.has(w));
+    const tokens2 = clean2.split(/\s+/).map(w => w.endsWith('s') && w.length > 3 ? w.slice(0, -1) : w).filter(w => w.length >= 3 && !stopWords.has(w));
+
+    if (tokens1.length === 0 || tokens2.length === 0) return false;
+
+    const set1 = new Set(tokens1);
+    const set2 = new Set(tokens2);
+
+    const isSubset1 = tokens1.every(t => set2.has(t));
+    const isSubset2 = tokens2.every(t => set1.has(t));
+    if (isSubset1 || isSubset2) return true;
+
+    let overlap = 0;
+    for (const t of tokens1) {
+      if (set2.has(t)) overlap++;
+    }
+    return overlap >= 2;
+  }
+
+  /**
    * Resolves direct media streaming link for any movie or series title on demand
    */
   public static async resolveMediaStream(id: string, title?: string): Promise<string | null> {
     const isExplicitTwolekede = id.startsWith('tk_') || (!id.startsWith('myvj_') && /^\d+$/.test(id));
     const cleanId = id.replace(/^(myvj_|tk_)/, '');
 
-    // 1. If it's a numeric Twolekede ID (and NOT an UgaWatch row_id)
+    // 1. If it's a numeric Twolekede ID, resolve and verify title match
     if (isExplicitTwolekede && /^\d+$/.test(cleanId)) {
       const resolved = await this.resolveTwolekedeStreamById(cleanId);
-      if (resolved && this.urlMatchesTitle(resolved, title)) return resolved;
+      if (resolved && this.urlMatchesTitle(resolved, title)) {
+        return resolved;
+      }
+      // If direct ID returned mismatched movie, fall through to search by title
     }
 
-    // 2. Search Twolekede by clean title if title is provided
+    // 2. Search Twolekede using smart candidate query variations
     if (title && title.trim().length >= 2) {
-      const cleanTitle = title
-        .replace(/\[.*?\]|\(.*?\)/g, ' ')
-        .replace(/\b(?:vj\s+[a-z0-9_.-]+|by\s+vj.*)\b/gi, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      const candidateQueries = [
-        cleanTitle.substring(0, 30),
-        cleanTitle.split(/[:–-]/)[0].trim()
-      ].filter(q => q.length >= 3);
+      const candidateQueries = this.generateCandidateQueries(title);
 
       for (const q of candidateQueries) {
         try {
@@ -188,29 +270,34 @@ export class StreamProxyService {
           if (resp.ok) {
             const html = await resp.text();
 
-            // Match each content-item card and verify title
-            const cardRegex = /<a href="(?:moviedetails|preview)\.php\?id=(\d+)"[^>]*class="content-item"[\s\S]*?<img[^>]+alt="([^"]*)"[\s\S]*?<h3 class="content-title">([^<]*)<\/h3>/g;
+            // Match all content-items and unescape HTML titles
+            const cardRegex = /<a href="(?:moviedetails|preview)\.php\?id=(\d+)"[^>]*>[\s\S]*?<img[^>]+alt="([^"]*)"[\s\S]*?<h3 class="content-title">([^<]*)<\/h3>/g;
             let m: RegExpExecArray | null;
 
             while ((m = cardRegex.exec(html)) !== null) {
               const matchedId = m[1];
               const cardTitle = (m[3] || m[2] || '').trim();
 
-              // Check if titles match
-              const normCard = cardTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
-              const normSearch = cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-              if (normCard.includes(normSearch) || normSearch.includes(normCard) || normCard === normSearch) {
+              if (this.titlesMatch(title, cardTitle)) {
                 const stream = await this.resolveTwolekedeStreamById(matchedId);
-                if (stream && this.urlMatchesTitle(stream, title)) return stream;
+                if (stream && this.urlMatchesTitle(stream, title)) {
+                  return stream;
+                }
               }
             }
 
-            // Fallback: check any href if no cardRegex matched
-            const anyMatch = html.match(/href="(?:moviedetails|preview)\.php\?id=(\d+)"/);
-            if (anyMatch && anyMatch[1]) {
-              const stream = await this.resolveTwolekedeStreamById(anyMatch[1]);
-              if (stream && this.urlMatchesTitle(stream, title)) return stream;
+            // Fallback pattern matching
+            const altCardRegex = /<a href="(?:moviedetails|preview)\.php\?id=(\d+)"[^>]*alt="([^"]*)"/g;
+            let altM: RegExpExecArray | null;
+            while ((altM = altCardRegex.exec(html)) !== null) {
+              const matchedId = altM[1];
+              const cardTitle = (altM[2] || '').trim();
+              if (this.titlesMatch(title, cardTitle)) {
+                const stream = await this.resolveTwolekedeStreamById(matchedId);
+                if (stream && this.urlMatchesTitle(stream, title)) {
+                  return stream;
+                }
+              }
             }
           }
         } catch {}
@@ -248,40 +335,48 @@ export class StreamProxyService {
       const cleanSlug = title
         .toLowerCase()
         .replace(/\[.*?\]|\(.*?\)/g, '')
+        .replace(/\b(?:by\s+vj|vj)\s+[a-z0-9_.-]*.*$/gi, '')
         .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '');
+        .replace(/^-+|-+$/g, '');
 
       if (cleanSlug.length >= 2) {
-        const p = new URLSearchParams();
-        p.append('source', 'next_js');
-        p.append('movie_slug', cleanSlug);
-        attempts.push(p);
+        const p1 = new URLSearchParams();
+        p1.append('source', 'next_js');
+        p1.append('movie_slug', cleanSlug);
+        attempts.push(p1);
+
+        const p2 = new URLSearchParams();
+        p2.append('source', 'next_js');
+        p2.append('title', title.trim());
+        attempts.push(p2);
       }
     }
 
-    for (const url of endpoints) {
-      for (const body of attempts) {
+    for (const endpoint of endpoints) {
+      for (const params of attempts) {
         try {
-          const resp = await fetch(url, {
+          const resp = await fetch(endpoint, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/x-www-form-urlencoded',
-              'Referer': 'https://ugawatch.com/',
-              'User-Agent': this.DEFAULT_USER_AGENT
+              'User-Agent': this.DEFAULT_USER_AGENT,
+              'Referer': 'https://ugawatch.com/'
             },
-            body: body.toString(),
-            signal: AbortSignal.timeout(6000)
+            body: params.toString(),
+            signal: AbortSignal.timeout(5000)
           });
 
           if (resp.ok) {
-            const data: any = await resp.json();
-            const movie = data.movie || data.data;
-            if (movie) {
+            const data = await resp.json();
+            if (data && (data.status === 0 || data.status === '0') && (data.movie || data.data)) {
+              const movie = data.movie || data.data;
               const file = movie.bunny_file_name || movie.trailer || movie.video;
               if (file && typeof file === 'string' && file.trim().length > 3) {
                 const cleanFile = file.replace(/\\/g, '').trim();
-                if (cleanFile.startsWith('http')) return cleanFile;
-                return `https://trailer256.b-cdn.net/${cleanFile}`;
+                const stream = cleanFile.startsWith('http') ? cleanFile : `https://trailer256.b-cdn.net/${cleanFile}`;
+                if (this.urlMatchesTitle(stream, title)) {
+                  return stream;
+                }
               }
             }
           }
@@ -292,8 +387,8 @@ export class StreamProxyService {
     return null;
   }
 
-  private static async resolveTwolekedeStreamById(id: string): Promise<string | null> {
-    // Attempt 1: GET preview.php (fastest and most reliable direct 1080p stream source)
+  public static async resolveTwolekedeStreamById(id: string): Promise<string | null> {
+    // Attempt 1: GET preview.php (fastest direct stream source)
     try {
       const resp = await fetch(`https://twolekede.com/preview.php?id=${id}`, {
         headers: {

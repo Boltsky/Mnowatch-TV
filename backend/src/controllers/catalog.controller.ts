@@ -87,4 +87,20 @@ export class CatalogController {
       res.status(500).json({ error: "Search failed", message: e.message });
     }
   }
+
+  public static async getMovieDetails(req: Request, res: Response): Promise<void> {
+    try {
+      const baseUrl = CatalogController.getBaseUrl(req);
+      const id = req.params.id;
+      const title = (req.query.title as string) || '';
+      const item = await CatalogService.getMovieDetails(id, title, baseUrl);
+      if (!item) {
+        res.status(404).json({ error: "Movie details not found", id });
+        return;
+      }
+      res.json(item);
+    } catch (e: any) {
+      res.status(500).json({ error: "Failed to fetch movie details", message: e.message });
+    }
+  }
 }

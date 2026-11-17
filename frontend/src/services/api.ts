@@ -16,53 +16,61 @@ export const FALLBACK_VJS: VjItem[] = [
 
 export const FALLBACK_CATALOG: MediaItem[] = [
   {
-    id: "vj_jun_1",
-    title: "Deadpool & Wolverine (VJ Junior)",
+    id: "tk_2667",
+    title: "Deadpool & Wolverine",
     type: "movie",
-    vj: "VJ Junior",
+    vj: "VJ ICEP",
     genre: "Action / Comedy / Sci-Fi",
     year: "2024",
     rating: "8.8",
     duration: "2h 08m",
-    description: "Wolverine is recovering from his injuries when he crosses paths with the loudmouth, Deadpool. They team up to defeat a common enemy in classic VJ Junior translated hype.",
-    posterUrl: "https://image.tmdb.org/t/p/w500/8cdWjvZQUExUUTzyp4t6EDMubfO.jpg",
+    description: "A listless Wade Wilson toils away in civilian life with his days as the morally flexible mercenary, Deadpool, behind him. But when his homeworld faces an existential threat, Wade must reluctantly suit-up again with an even more reluctant Wolverine.",
+    posterUrl: "https://twolekede.com/mv-admin/uploads/posters/1750261808_6852e03050f1b.webp",
     backdropUrl: "https://image.tmdb.org/t/p/original/yDHYTfA3R0jFYba16jBB1jv8v2C.jpg",
-    streamUrl: "https://cdn.movviez.com/secure.php?file=Deadpool_And_Wolverine_2024_VJ_Junior.mp4",
+    streamUrl: "https://twolekede.com/preview.php?id=2667",
     isSeries: false,
     servers: [
-      { id: "s1", name: "Server 1 (BunnyCDN High-Speed)", quality: "1080p Full HD", streamUrl: "https://res-watch.b-cdn.net/1/Deadpool_Wolverine_Junior.mp4", isProxy: false },
-      { id: "s2", name: "Server 2 (Twolekede Media)", quality: "720p HD", streamUrl: "https://twolekede.com/preview.php?id=8291", isProxy: false }
+      { id: "s2", name: "Server 2 (Munowatch Web Streamer - CORS Safe)", quality: "1080p Full HD", streamUrl: "https://twolekede.com/preview.php?id=2667", isProxy: true },
+      { id: "s1", name: "Server 1 (High-Speed Direct)", quality: "1080p FHD", streamUrl: "https://twolekede.com/preview.php?id=2667", isProxy: false }
     ]
   },
   {
-    id: "vj_jun_2",
-    title: "Bad Boys: Ride or Die (VJ Junior)",
+    id: "tk_12950",
+    title: "Bad Boys: Ride or Die",
     type: "movie",
     vj: "VJ Junior",
     genre: "Action / Comedy / Crime",
     year: "2024",
     rating: "8.5",
     duration: "1h 55m",
-    description: "Miami's favorite detectives Mike Lowrey and Marcus Burnett find themselves on the run after their late captain is framed in a cartel conspiracy.",
-    posterUrl: "https://image.tmdb.org/t/p/w500/nP6RliHjxsz4irTKsxe8FRhKZYl.jpg",
+    description: "After their late former Captain is framed, Lowrey and Burnett try to clear his name, only to end up on the run themselves in classic VJ Junior hype.",
+    posterUrl: "https://twolekede.com/mv-admin/uploads/posters/1774293983_69c193df07154.jpg",
     backdropUrl: "https://image.tmdb.org/t/p/original/ga4OLm4qLx69To6JnVsj24bswwF.jpg",
-    streamUrl: "https://cdn.movviez.com/secure.php?file=Bad_Boys_Ride_Or_Die_2024_VJ_Junior.mp4",
-    isSeries: false
+    streamUrl: "https://twolekede.com/preview.php?id=12950",
+    isSeries: false,
+    servers: [
+      { id: "s2", name: "Server 2 (Munowatch Web Streamer - CORS Safe)", quality: "1080p Full HD", streamUrl: "https://twolekede.com/preview.php?id=12950", isProxy: true },
+      { id: "s1", name: "Server 1 (High-Speed Direct)", quality: "1080p FHD", streamUrl: "https://twolekede.com/preview.php?id=12950", isProxy: false }
+    ]
   },
   {
-    id: "vj_jun_3",
-    title: "Furiosa: A Mad Max Saga (VJ Junior)",
+    id: "tk_1421",
+    title: "Furiosa: A Mad Max Saga Part 1",
     type: "movie",
-    vj: "VJ Junior",
+    vj: "VJ ICEP",
     genre: "Action / Sci-Fi / Adventure",
     year: "2024",
     rating: "8.7",
     duration: "2h 28m",
-    description: "As the world falls, young Furiosa is snatched from the Green Place of Many Mothers into the hands of a great Biker Horde led by the Warlord Dementus.",
-    posterUrl: "https://image.tmdb.org/t/p/w500/iADOJ8Zymht2JPMoy3R7xceZprc.jpg",
+    description: "After being snatched from the Green Place of Many Mothers, young Furiosa falls into the hands of a great Biker Horde led by the Warlord Dementus.",
+    posterUrl: "https://twolekede.com/mv-admin/uploads/posters/1748196262_mad max.jpg",
     backdropUrl: "https://image.tmdb.org/t/p/original/wNAhuOZ3Zf84jCI5TeTVxoQ1OT.jpg",
-    streamUrl: "https://cdn.movviez.com/secure.php?file=Furiosa_A_Mad_Max_Saga_2024_VJ_Junior.mp4",
-    isSeries: false
+    streamUrl: "https://twolekede.com/preview.php?id=1421",
+    isSeries: false,
+    servers: [
+      { id: "s2", name: "Server 2 (Munowatch Web Streamer - CORS Safe)", quality: "1080p Full HD", streamUrl: "https://twolekede.com/preview.php?id=1421", isProxy: true },
+      { id: "s1", name: "Server 1 (High-Speed Direct)", quality: "1080p FHD", streamUrl: "https://twolekede.com/preview.php?id=1421", isProxy: false }
+    ]
   },
   {
     id: "vj_emmy_1",
@@ -258,6 +266,17 @@ export const api = {
       }
     } catch {}
     return FALLBACK_CATALOG.find(i => i.id === id) || null;
+  },
+
+  async getMovieDetails(id: string, title?: string): Promise<MediaItem | null> {
+    try {
+      const qs = title ? `?title=${encodeURIComponent(title)}` : '';
+      const res = await fetch(`${API_BASE}/catalog/details/${id}${qs}`, { signal: AbortSignal.timeout(6000) });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {}
+    return null;
   },
 
   getProxyStreamUrl(streamUrl: string): string {

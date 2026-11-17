@@ -50,27 +50,39 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
 
   const triggerStreamResolution = useCallback(async () => {
     setHasError(false);
-    const rawUrl = episode?.streamUrl || item.streamUrl;
-    if (rawUrl && rawUrl.length > 10 && (rawUrl.includes('movviez.com') || rawUrl.includes('b-cdn.net') || rawUrl.includes('.mp4') || rawUrl.includes('.m3u8'))) {
-      const finalUrl = currentServer.isProxy ? api.getProxyStreamUrl(rawUrl) : rawUrl;
+    setIsResolving(true);
+
+    // 1. If series episode has explicit stream URL
+    if (episode?.streamUrl && episode.streamUrl.length > 10) {
+      const finalUrl = currentServer.isProxy ? api.getProxyStreamUrl(episode.streamUrl) : episode.streamUrl;
       setResolvedStreamUrl(finalUrl);
-    } else {
-      setIsResolving(true);
-      try {
-        const res = await api.resolveStream(item.id, item.title);
-        if (res.streamUrl) {
-          const finalUrl = currentServer.isProxy ? res.streamUrl : (res.directUrl || res.streamUrl);
-          setResolvedStreamUrl(finalUrl);
-        } else {
-          setHasError(true);
-          setErrorMessage('Streaming source is undergoing failover. Tap retry below.');
-        }
-      } catch (err: any) {
+      setIsResolving(false);
+      return;
+    }
+
+    // 2. Always query verified stream resolver to validate title match and avoid wrong movie playback
+    try {
+      const res = await api.resolveStream(item.id, item.title);
+      if (res.streamUrl) {
+        const finalUrl = currentServer.isProxy ? res.streamUrl : (res.directUrl || res.streamUrl);
+        setResolvedStreamUrl(finalUrl);
+      } else if (item.streamUrl && (item.streamUrl.includes('movviez.com') || item.streamUrl.includes('b-cdn.net'))) {
+        const finalUrl = currentServer.isProxy ? api.getProxyStreamUrl(item.streamUrl) : item.streamUrl;
+        setResolvedStreamUrl(finalUrl);
+      } else {
+        setHasError(true);
+        setErrorMessage('Streaming source is undergoing failover. Tap retry below.');
+      }
+    } catch (err: any) {
+      if (item.streamUrl) {
+        const finalUrl = currentServer.isProxy ? api.getProxyStreamUrl(item.streamUrl) : item.streamUrl;
+        setResolvedStreamUrl(finalUrl);
+      } else {
         setHasError(true);
         setErrorMessage(err.message || 'Stream connection timeout.');
-      } finally {
-        setIsResolving(false);
       }
+    } finally {
+      setIsResolving(false);
     }
   }, [item.id, item.title, item.streamUrl, episode, currentServer]);
 

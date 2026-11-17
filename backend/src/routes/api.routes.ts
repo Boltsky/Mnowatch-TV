@@ -13,6 +13,8 @@ router.get('/catalog/vjs', CatalogController.getVjs);
 router.get('/catalog/genres', CatalogController.getGenres);
 router.get('/catalog/movies', CatalogController.getMovies);
 router.get('/catalog/series', CatalogController.getSeries);
+router.get('/catalog/details/:id', CatalogController.getMovieDetails);
+router.get('/catalog/title/:id', CatalogController.getMovieDetails);
 router.get('/catalog/search', CatalogController.search);
 
 // Media Streaming Proxy with HTTP 206 Range support
