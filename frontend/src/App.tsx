@@ -163,8 +163,12 @@ export const App: React.FC = () => {
     return (
       <ContentDetails
         item={selectedItem}
+        allMovies={[...allMovies, ...allSeries]}
         onPlay={handlePlay}
         onBack={handleBack}
+        onSelectMovie={handleItemClick}
+        onToggleWatchlist={toggleFavorite}
+        isInWatchlist={watchlist.some(w => w.id === selectedItem.id)}
       />
     );
   }

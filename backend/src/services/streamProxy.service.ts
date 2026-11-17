@@ -200,6 +200,78 @@ export class StreamProxyService {
       }
     }
 
+    // 3. Fallback: Query UgaWatch API for BunnyCDN video stream (e.g. Indian movies / MK Kisuule / exclusive uploads)
+    const ugaStream = await this.resolveUgaWatchStream(cleanId, title);
+    if (ugaStream) return ugaStream;
+
+    return null;
+  }
+
+  /**
+   * Resolves BunnyCDN MP4 stream from UgaWatch API v3 for titles not indexed on Twolekede
+   */
+  private static async resolveUgaWatchStream(id: string, title?: string): Promise<string | null> {
+    const cleanId = id.replace(/^(myvj_|tk_)/, '');
+    const endpoints = [
+      'https://ugawatch.com/api-v3/mobile/get-movie-details-min.php',
+      'https://myvj.net/api-v3/mobile/get-movie-details-min.php'
+    ];
+
+    const attempts: URLSearchParams[] = [];
+
+    if (/^\d+$/.test(cleanId)) {
+      const p = new URLSearchParams();
+      p.append('source', 'next_js');
+      p.append('movie_id', cleanId);
+      p.append('id', cleanId);
+      attempts.push(p);
+    }
+
+    if (title && title.trim().length >= 2) {
+      const cleanSlug = title
+        .toLowerCase()
+        .replace(/\[.*?\]|\(.*?\)/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+
+      if (cleanSlug.length >= 2) {
+        const p = new URLSearchParams();
+        p.append('source', 'next_js');
+        p.append('movie_slug', cleanSlug);
+        attempts.push(p);
+      }
+    }
+
+    for (const url of endpoints) {
+      for (const body of attempts) {
+        try {
+          const resp = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Referer': 'https://ugawatch.com/',
+              'User-Agent': this.DEFAULT_USER_AGENT
+            },
+            body: body.toString(),
+            signal: AbortSignal.timeout(6000)
+          });
+
+          if (resp.ok) {
+            const data: any = await resp.json();
+            const movie = data.movie || data.data;
+            if (movie) {
+              const file = movie.bunny_file_name || movie.trailer || movie.video;
+              if (file && typeof file === 'string' && file.trim().length > 3) {
+                const cleanFile = file.replace(/\\/g, '').trim();
+                if (cleanFile.startsWith('http')) return cleanFile;
+                return `https://trailer256.b-cdn.net/${cleanFile}`;
+              }
+            }
+          }
+        } catch {}
+      }
+    }
+
     return null;
   }
 
