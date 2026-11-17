@@ -26,8 +26,10 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [hasMore, setHasMore] = useState<boolean>(true);
 
+  const [totalTitles, setTotalTitles] = useState<number>(0);
+
   const genres = [
-    'Action', 'Sci-Fi', 'Adventure', 'Thriller', 'Horror', 'Crime', 'Comedy', 'Drama', 'Animation'
+    'Action', 'Sci-Fi', 'Adventure', 'Thriller', 'Horror', 'Crime', 'Comedy', 'Drama', 'Animation', 'Korean', 'Indian Movie', 'Kinigeria'
   ];
 
   const fetchCategoryPageOne = useCallback(async () => {
@@ -38,7 +40,8 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
         const res = await api.getMovies({ page: 1, perPage: 30, vj: selectedVj });
         if (res.items.length > 0) {
           setLiveItems(res.items);
-          setHasMore(res.items.length >= 15);
+          setTotalTitles(res.total || res.items.length);
+          setHasMore(res.hasMore ?? (res.items.length >= 25));
         } else {
           setLiveItems([]);
           setHasMore(false);
@@ -47,7 +50,8 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
         const res = await api.getMovies({ page: 1, perPage: 30, genre: selectedGenre });
         if (res.items.length > 0) {
           setLiveItems(res.items);
-          setHasMore(res.items.length >= 15);
+          setTotalTitles(res.total || res.items.length);
+          setHasMore(res.hasMore ?? (res.items.length >= 15));
         } else {
           setLiveItems([]);
           setHasMore(false);
@@ -79,7 +83,8 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
           return [...prev, ...res.items.filter(i => !ids.has(i.id))];
         });
         setPage(nextPage);
-        setHasMore(res.items.length >= 15);
+        if (res.total) setTotalTitles(res.total);
+        setHasMore(res.hasMore ?? (res.items.length >= 15));
       } else {
         setHasMore(false);
       }
@@ -132,7 +137,7 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
         </div>
 
         <span className="text-xs font-bold text-[#94A3B8]">
-          <strong className="text-white">{displayItems.length}</strong> Titles Loaded
+          Showing <strong className="text-white">{displayItems.length}</strong>{totalTitles > displayItems.length ? ` of ${totalTitles}` : ''} Titles
         </span>
       </div>
 

@@ -167,6 +167,163 @@ export class CatalogService {
     return [];
   }
 
+  private static mapVjToTwolekedeName(vjName: string): string {
+    const clean = vjName.trim();
+    const knownMap: Record<string, string> = {
+      'vj ice p': 'VJ ICEP',
+      'vj icep': 'VJ ICEP',
+      'vj uncle t': 'Uncle T',
+      'uncle t': 'Uncle T',
+      'vj shao khan': 'Shao Khan',
+      'shao khan': 'Shao Khan',
+      'vj martin k': 'Martin K',
+      'martin k': 'Martin K',
+      'vj aaron': 'VJ Aron',
+      'vj aron': 'VJ Aron',
+      'vj fredy': 'VJ Freddie',
+      'vj freddie': 'VJ Freddie',
+      'vj ashim': 'VJ Hashim',
+      'vj hashim': 'VJ Hashim',
+      'vj dan de': 'VJ Dan Dee',
+      'vj dan dee': 'VJ Dan Dee',
+      'vj ivo': 'VJ IVO Kakorea',
+      'vj ivo kakorea': 'VJ IVO Kakorea'
+    };
+    const lower = clean.toLowerCase();
+    return knownMap[lower] || clean;
+  }
+
+  /**
+   * Fetches the complete catalog for a specific VJ from Twolekede (e.g. 1,156+ movies for VJ Junior)
+   */
+  public static async fetchTwolekedeByVj(vjName: string): Promise<MediaItem[]> {
+    const mappedVj = this.mapVjToTwolekedeName(vjName);
+    const cacheKey = `twolekede:vj:${mappedVj.toLowerCase()}`;
+    const cached = this.getFromCache<MediaItem[]>(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const url = `https://twolekede.com/categories.php?name=${encodeURIComponent(mappedVj)}`;
+      const resp = await fetch(url, {
+        headers: {
+          'Referer': 'https://twolekede.com/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+        },
+        signal: AbortSignal.timeout(10000)
+      });
+
+      if (!resp.ok) return [];
+      const html = await resp.text();
+      const items: MediaItem[] = [];
+
+      // Resilient card extraction
+      const cardRegex = /<div class="grid-item">[\s\S]*?<a href="(?:moviedetails|preview)\.php\?id=(\d+)"[\s\S]*?<img[^>]+src="([^"]+)"[\s\S]*?<h3>([^<]+)<\/h3>[\s\S]*?<p>([^<]*)<\/p>(?:[\s\S]*?<span class="category">([^<]*)<\/span>)?/g;
+      let match: RegExpExecArray | null;
+
+      while ((match = cardRegex.exec(html)) !== null) {
+        const id = match[1];
+        let poster = match[2];
+        const title = match[3].trim();
+        const year = match[4]?.trim() || '2024';
+        const cardVj = match[5]?.trim() || mappedVj;
+
+        if (!poster.startsWith('http')) {
+          poster = `https://twolekede.com/${poster.replace(/^\/+/, '')}`;
+        }
+
+        items.push({
+          id: `tk_${id}`,
+          title: title,
+          type: 'movie',
+          vj: cardVj.toLowerCase().includes('vj') ? cardVj : `VJ ${cardVj}`,
+          genre: 'Action / Drama',
+          year: year,
+          rating: '8.9',
+          duration: '2h 05m',
+          description: `${title} translated into Luganda by ${cardVj}. Available in 1080p Full HD on Munowatch.`,
+          posterUrl: poster,
+          backdropUrl: poster,
+          streamUrl: '',
+          isSeries: false
+        });
+      }
+
+      if (items.length > 0) {
+        // Cache full VJ catalog for 30 minutes
+        this.setInCache(cacheKey, items, 30 * 60 * 1000);
+        return items;
+      }
+    } catch {}
+
+    return [];
+  }
+
+  /**
+   * Fetches movies by genre from Twolekede (e.g. Action, Horror, Comedy, Indian Movie)
+   */
+  public static async fetchTwolekedeByGenre(genreName: string, page: number = 1): Promise<MediaItem[]> {
+    const cacheKey = `twolekede:genre:${genreName.toLowerCase()}:${page}`;
+    const cached = this.getFromCache<MediaItem[]>(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const encoded = encodeURIComponent(genreName);
+      const url = page <= 1
+        ? `https://twolekede.com/genres.php?genre=${encoded}`
+        : `https://twolekede.com/genres.php?genre=${encoded}&page=${page}`;
+
+      const resp = await fetch(url, {
+        headers: {
+          'Referer': 'https://twolekede.com/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+        },
+        signal: AbortSignal.timeout(8000)
+      });
+
+      if (!resp.ok) return [];
+      const html = await resp.text();
+      const items: MediaItem[] = [];
+
+      const cardRegex = /<div class="grid-item">[\s\S]*?<a href="(?:moviedetails|preview)\.php\?id=(\d+)"[\s\S]*?<img[^>]+src="([^"]+)"[\s\S]*?<h3>([^<]+)<\/h3>[\s\S]*?<p>([^<]*)<\/p>(?:[\s\S]*?<span class="category">([^<]*)<\/span>)?/g;
+      let match: RegExpExecArray | null;
+
+      while ((match = cardRegex.exec(html)) !== null) {
+        const id = match[1];
+        let poster = match[2];
+        const title = match[3].trim();
+        const year = match[4]?.trim() || '2024';
+        const cardVj = match[5]?.trim() || 'VJ Junior';
+
+        if (!poster.startsWith('http')) {
+          poster = `https://twolekede.com/${poster.replace(/^\/+/, '')}`;
+        }
+
+        items.push({
+          id: `tk_${id}`,
+          title: title,
+          type: 'movie',
+          vj: cardVj.toLowerCase().includes('vj') ? cardVj : `VJ ${cardVj}`,
+          genre: genreName,
+          year: year,
+          rating: '8.8',
+          duration: '2h 10m',
+          description: `${title} translated into Luganda by ${cardVj} in ${genreName}. Available in 1080p FHD.`,
+          posterUrl: poster,
+          backdropUrl: poster,
+          streamUrl: '',
+          isSeries: false
+        });
+      }
+
+      if (items.length > 0) {
+        this.setInCache(cacheKey, items);
+        return items;
+      }
+    } catch {}
+
+    return [];
+  }
+
   /**
    * Scrapes Twolekede live catalog (movies.php / series.php)
    */
@@ -193,14 +350,15 @@ export class CatalogService {
       const items: MediaItem[] = [];
 
       // Extract grid-item / content-item links
-      const itemRegex = /<div class="grid-item">[\s\S]*?<a href="(moviedetails|seriesdetails)\.php\?id=(\d+)"[\s\S]*?<img src="([^"]+)"\s+alt="([^"]+)"[\s\S]*?<div class="item-info">[\s\S]*?<h3>([^<]+)<\/h3>[\s\S]*?<span class="category">([^<]+)<\/span>/g;
+      const itemRegex = /<div class="grid-item">[\s\S]*?<a href="(?:moviedetails|seriesdetails|preview)\.php\?id=(\d+)"[\s\S]*?<img[^>]+src="([^"]+)"[\s\S]*?<div class="item-info">[\s\S]*?<h3>([^<]+)<\/h3>(?:[\s\S]*?<p>([^<]*)<\/p>)?(?:[\s\S]*?<span class="category">([^<]*)<\/span>)?/g;
       let match: RegExpExecArray | null;
 
       while ((match = itemRegex.exec(html)) !== null) {
-        const id = match[2];
-        let poster = match[3];
-        const title = match[5].trim();
-        let vj = match[6].trim() || 'VJ Junior';
+        const id = match[1];
+        let poster = match[2];
+        const title = match[3].trim();
+        const year = match[4]?.trim() || '2024';
+        let vj = match[5]?.trim() || 'VJ Junior';
         if (!vj.toLowerCase().includes('vj')) vj = `VJ ${vj}`;
 
         if (!poster.startsWith('http')) {
@@ -213,7 +371,7 @@ export class CatalogService {
           type: isSeries ? 'series' : 'movie',
           vj: vj,
           genre: 'Action / Adventure',
-          year: '2024',
+          year: year,
           rating: '8.7',
           duration: isSeries ? 'TV Series' : '2h 10m',
           description: `Luganda translation by ${vj} available on Twolekede.`,
@@ -236,58 +394,106 @@ export class CatalogService {
   }
 
   /**
-   * High-level getMovies with dynamic pagination and filtering
+   * High-level getMovies with dynamic pagination and multi-source filtering
    */
-  public static async getMovies(options: QueryOptions, baseUrl: string): Promise<{ items: MediaItem[]; count: number; page: number }> {
+  public static async getMovies(options: QueryOptions, baseUrl: string): Promise<{ items: MediaItem[]; count: number; total?: number; page: number; hasMore?: boolean }> {
     const page = options.page || 1;
-    const perPage = options.perPage || 24;
+    const perPage = options.perPage || 30;
 
-    // Concurrently fetch from UgaWatch API v3 and Twolekede
-    let [liveUga, liveTwolekede] = await Promise.all([
-      this.fetchUgaWatchCatalog(1, options),
-      !options.year && !options.vj && !options.genre ? this.fetchTwolekedeCatalog(false, page) : Promise.resolve([])
-    ]);
+    let combined: MediaItem[] = [];
+    let totalEstimated: number = 0;
 
-    let combined = [...liveUga, ...liveTwolekede];
+    if (options.vj) {
+      // Priority 1: Direct Twolekede VJ catalog (1,156+ movies for Junior, 444+ for Emmy, etc.)
+      const [twolekedeVjMovies, ugaVjMovies] = await Promise.all([
+        this.fetchTwolekedeByVj(options.vj),
+        this.fetchUgaWatchCatalog(1, options)
+      ]);
+
+      // Deduplicate
+      const seen = new Set<string>();
+      const allVjItems: MediaItem[] = [];
+
+      for (const item of [...twolekedeVjMovies, ...ugaVjMovies]) {
+        const norm = item.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (!seen.has(norm)) {
+          seen.add(norm);
+          allVjItems.push(item);
+        }
+      }
+
+      totalEstimated = allVjItems.length;
+      const start = (page - 1) * perPage;
+      combined = allVjItems.slice(start, start + perPage);
+
+    } else if (options.genre) {
+      // Priority 2: Direct Twolekede genre catalog
+      const [twolekedeGenreMovies, ugaGenreMovies] = await Promise.all([
+        this.fetchTwolekedeByGenre(options.genre, page),
+        this.fetchUgaWatchCatalog(1, options)
+      ]);
+
+      const seen = new Set<string>();
+      for (const item of [...twolekedeGenreMovies, ...ugaGenreMovies]) {
+        const norm = item.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (!seen.has(norm)) {
+          seen.add(norm);
+          combined.push(item);
+        }
+      }
+      totalEstimated = combined.length * 10; // multiple pages available
+
+    } else {
+      // Priority 3: General movies catalog across Twolekede (178 pages) and UgaWatch (17,000+ titles)
+      const [liveTwolekede, liveUga] = await Promise.all([
+        this.fetchTwolekedeCatalog(false, page),
+        this.fetchUgaWatchCatalog(1, options)
+      ]);
+
+      const seen = new Set<string>();
+      for (const item of [...liveTwolekede, ...liveUga]) {
+        const norm = item.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (!seen.has(norm)) {
+          seen.add(norm);
+          combined.push(item);
+        }
+      }
+      totalEstimated = 17000;
+    }
 
     // Fallback to rich catalog if both live upstream servers are unreachable
-    if (combined.length === 0) {
-      combined = [...RICH_CATALOG.filter(i => !i.isSeries)];
+    if (combined.length === 0 && page === 1) {
+      let fb = [...RICH_CATALOG.filter(i => !i.isSeries)];
       if (options.year && options.year !== 'all') {
-        combined = combined.filter(i => i.year === options.year);
+        fb = fb.filter(i => i.year === options.year);
       }
       if (options.vj) {
         const cleanVj = options.vj.toLowerCase().replace('vj-', '').replace('vj', '').trim();
-        combined = combined.filter(i => i.vj.toLowerCase().includes(cleanVj));
+        fb = fb.filter(i => i.vj.toLowerCase().includes(cleanVj));
       }
       if (options.genre) {
         const cleanG = options.genre.toLowerCase().trim();
-        combined = combined.filter(i => i.genre.toLowerCase().includes(cleanG));
+        fb = fb.filter(i => i.genre.toLowerCase().includes(cleanG));
       }
-    }
-
-    // Deduplicate by normalized title
-    const seen = new Set<string>();
-    const deduplicated: MediaItem[] = [];
-    for (const item of combined) {
-      const norm = item.title.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (!seen.has(norm)) {
-        seen.add(norm);
-        deduplicated.push(this.enrichWithServers(item, baseUrl));
-      }
+      combined = fb;
+      totalEstimated = fb.length;
     }
 
     // Apply sort if requested
     if (options.sort === 'OLD_MOVIES') {
-      deduplicated.sort((a, b) => parseInt(a.year || '2024') - parseInt(b.year || '2024'));
+      combined.sort((a, b) => parseInt(a.year || '2024') - parseInt(b.year || '2024'));
     } else if (options.sort === 'RANDOM') {
-      deduplicated.sort((a, b) => a.title.localeCompare(b.title));
+      combined.sort((a, b) => a.title.localeCompare(b.title));
     }
 
+    const enrichedItems = combined.map(item => this.enrichWithServers(item, baseUrl));
+
     return {
-      items: deduplicated,
-      count: deduplicated.length,
-      page: page
+      items: enrichedItems,
+      count: enrichedItems.length,
+      total: totalEstimated || enrichedItems.length,
+      page: page,
+      hasMore: totalEstimated > (page * perPage) || enrichedItems.length >= perPage
     };
   }
 
@@ -333,38 +539,50 @@ export class CatalogService {
     const cached = this.getFromCache<CatalogRail[]>(cacheKey);
     if (cached) return cached;
 
-    // Fetch page 1 of latest uploads & series
-    const [latestMovies, seriesList, vjJunior, vjEmmy] = await Promise.all([
-      this.fetchUgaWatchCatalog(1, { page: 1, perPage: 18 }),
-      this.fetchUgaWatchCatalog(2, { page: 1, perPage: 12 }),
-      this.fetchUgaWatchCatalog(1, { page: 1, perPage: 12, vj: 'vj-junior' }),
-      this.fetchUgaWatchCatalog(1, { page: 1, perPage: 12, vj: 'vj-emmy' })
+    // Concurrently fetch latest uploads & VJ specials across Twolekede and UgaWatch
+    const [twolekedeLatest, twolekedeJunior, twolekedeEmmy, seriesList, ugaLatest] = await Promise.all([
+      this.fetchTwolekedeCatalog(false, 1),
+      this.fetchTwolekedeByVj('VJ Junior'),
+      this.fetchTwolekedeByVj('VJ Emmy'),
+      this.fetchTwolekedeCatalog(true, 1),
+      this.fetchUgaWatchCatalog(1, { page: 1, perPage: 12 })
     ]);
 
     const attachProxy = (items: MediaItem[]) => items.map(i => this.enrichWithServers(i, baseUrl));
+
+    // Combine trending
+    const trendingCombined: MediaItem[] = [];
+    const seen = new Set<string>();
+    for (const item of [...twolekedeLatest, ...ugaLatest]) {
+      const norm = item.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!seen.has(norm)) {
+        seen.add(norm);
+        trendingCombined.push(item);
+      }
+    }
 
     const rails: CatalogRail[] = [
       {
         id: "rail_trending",
         title: "🔥 Newly Uploaded Translated Movies",
-        items: attachProxy(latestMovies.length > 0 ? latestMovies.slice(0, 12) : RICH_CATALOG.filter(i => !i.isSeries).slice(0, 8))
+        items: attachProxy(trendingCombined.length > 0 ? trendingCombined.slice(0, 16) : RICH_CATALOG.filter(i => !i.isSeries).slice(0, 8))
       },
       {
         id: "rail_junior",
         title: "🎬 VJ Junior Exclusive Translations",
         vj: "VJ Junior",
-        items: attachProxy(vjJunior.length > 0 ? vjJunior : RICH_CATALOG.filter(i => i.vj.includes("Junior")))
+        items: attachProxy(twolekedeJunior.length > 0 ? twolekedeJunior.slice(0, 16) : RICH_CATALOG.filter(i => i.vj.includes("Junior")))
       },
       {
         id: "rail_emmy",
         title: "💥 VJ Emmy Cinematic Hits",
         vj: "VJ Emmy",
-        items: attachProxy(vjEmmy.length > 0 ? vjEmmy : RICH_CATALOG.filter(i => i.vj.includes("Emmy")))
+        items: attachProxy(twolekedeEmmy.length > 0 ? twolekedeEmmy.slice(0, 16) : RICH_CATALOG.filter(i => i.vj.includes("Emmy")))
       },
       {
         id: "rail_series",
         title: "📺 Ugandan Translated TV Series (Multi-Season)",
-        items: attachProxy(seriesList.length > 0 ? seriesList : RICH_CATALOG.filter(i => i.isSeries))
+        items: attachProxy(seriesList.length > 0 ? seriesList.slice(0, 16) : RICH_CATALOG.filter(i => i.isSeries))
       },
       {
         id: "rail_jingo",
@@ -376,11 +594,11 @@ export class CatalogService {
         id: "rail_action",
         title: "🥊 High-Octane Action & Thrillers",
         genre: "Action",
-        items: attachProxy(latestMovies.length > 12 ? latestMovies.slice(12, 18) : RICH_CATALOG.filter(i => i.genre.includes("Action")))
+        items: attachProxy(twolekedeLatest.length > 10 ? twolekedeLatest.slice(10, 22) : RICH_CATALOG.filter(i => i.genre.includes("Action")))
       }
     ];
 
-    this.setInCache(cacheKey, rails, 10 * 60 * 1000); // 10 min cache
+    this.setInCache(cacheKey, rails, 15 * 60 * 1000); // 15 min cache
     return rails;
   }
 

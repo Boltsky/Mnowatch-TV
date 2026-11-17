@@ -169,7 +169,7 @@ export const api = {
     return FALLBACK_VJS;
   },
 
-  async getMovies(options: { page?: number; perPage?: number; year?: string; vj?: string; genre?: string; sort?: string } = {}): Promise<{ items: MediaItem[]; count: number; page: number }> {
+  async getMovies(options: { page?: number; perPage?: number; year?: string; vj?: string; genre?: string; sort?: string } = {}): Promise<{ items: MediaItem[]; count: number; total?: number; page: number; hasMore?: boolean }> {
     try {
       const params = new URLSearchParams();
       if (options.page) params.append('page', options.page.toString());
@@ -180,21 +180,23 @@ export const api = {
       if (options.sort) params.append('sort', options.sort);
 
       const qs = params.toString() ? `?${params.toString()}` : '';
-      const res = await fetch(`${API_BASE}/catalog/movies${qs}`, { signal: AbortSignal.timeout(6000) });
+      const res = await fetch(`${API_BASE}/catalog/movies${qs}`, { signal: AbortSignal.timeout(12000) });
       if (res.ok) {
         const data = await res.json();
         return {
           items: data.items || [],
           count: data.count || data.items?.length || 0,
+          total: data.total || data.count || data.items?.length || 0,
+          hasMore: data.hasMore ?? (data.items?.length >= (options.perPage || 30)),
           page: data.page || options.page || 1
         };
       }
     } catch {}
     const filtered = FALLBACK_CATALOG.filter(i => !i.isSeries);
-    return { items: filtered, count: filtered.length, page: 1 };
+    return { items: filtered, count: filtered.length, total: filtered.length, page: 1, hasMore: false };
   },
 
-  async getSeries(options: { page?: number; perPage?: number; vj?: string; genre?: string } = {}): Promise<{ items: MediaItem[]; count: number; page: number }> {
+  async getSeries(options: { page?: number; perPage?: number; vj?: string; genre?: string } = {}): Promise<{ items: MediaItem[]; count: number; total?: number; page: number; hasMore?: boolean }> {
     try {
       const params = new URLSearchParams();
       if (options.page) params.append('page', options.page.toString());
@@ -203,20 +205,21 @@ export const api = {
       if (options.genre) params.append('genre', options.genre);
 
       const qs = params.toString() ? `?${params.toString()}` : '';
-      const res = await fetch(`${API_BASE}/catalog/series${qs}`, { signal: AbortSignal.timeout(6000) });
+      const res = await fetch(`${API_BASE}/catalog/series${qs}`, { signal: AbortSignal.timeout(12000) });
       if (res.ok) {
         const data = await res.json();
         return {
           items: data.items || [],
           count: data.count || data.items?.length || 0,
+          total: data.total || data.count || data.items?.length || 0,
+          hasMore: data.hasMore ?? (data.items?.length >= (options.perPage || 30)),
           page: data.page || options.page || 1
         };
       }
     } catch {}
     const filtered = FALLBACK_CATALOG.filter(i => i.isSeries);
-    return { items: filtered, count: filtered.length, page: 1 };
+    return { items: filtered, count: filtered.length, total: filtered.length, page: 1, hasMore: false };
   },
-
   async resolveStream(id: string, title?: string): Promise<{ streamUrl: string; directUrl: string; servers?: any[] }> {
     try {
       const params = new URLSearchParams();

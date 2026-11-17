@@ -136,15 +136,16 @@ export class StreamProxyService {
    * Resolves direct media streaming link for any movie or series title on demand
    */
   public static async resolveMediaStream(id: string, title?: string): Promise<string | null> {
+    const isExplicitTwolekede = id.startsWith('tk_') || (!id.startsWith('myvj_') && /^\d+$/.test(id));
     const cleanId = id.replace(/^(myvj_|tk_)/, '');
 
-    // 1. If it's a numeric Twolekede ID
-    if (/^\d+$/.test(cleanId)) {
+    // 1. If it's a numeric Twolekede ID (and NOT an UgaWatch row_id)
+    if (isExplicitTwolekede && /^\d+$/.test(cleanId)) {
       const resolved = await this.resolveTwolekedeStreamById(cleanId);
       if (resolved) return resolved;
     }
 
-    // 2. If title is provided, search Twolekede for matching movie / series
+    // 2. Search Twolekede by clean title if title is provided
     if (title && title.trim().length >= 2) {
       const cleanTitle = title
         .replace(/\[.*?\]|\(.*?\)/g, ' ')
@@ -164,14 +165,34 @@ export class StreamProxyService {
               'Referer': 'https://twolekede.com/',
               'User-Agent': this.DEFAULT_USER_AGENT
             },
-            signal: AbortSignal.timeout(5000)
+            signal: AbortSignal.timeout(6000)
           });
 
           if (resp.ok) {
             const html = await resp.text();
-            const idMatch = html.match(/href="(?:moviedetails|preview)\.php\?id=(\d+)"/);
-            if (idMatch && idMatch[1]) {
-              const stream = await this.resolveTwolekedeStreamById(idMatch[1]);
+
+            // Match each content-item card and verify title
+            const cardRegex = /<a href="(?:moviedetails|preview)\.php\?id=(\d+)"[^>]*class="content-item"[\s\S]*?<img[^>]+alt="([^"]*)"[\s\S]*?<h3 class="content-title">([^<]*)<\/h3>/g;
+            let m: RegExpExecArray | null;
+
+            while ((m = cardRegex.exec(html)) !== null) {
+              const matchedId = m[1];
+              const cardTitle = (m[3] || m[2] || '').trim();
+
+              // Check if titles match
+              const normCard = cardTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+              const normSearch = cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+              if (normCard.includes(normSearch) || normSearch.includes(normCard) || normCard === normSearch) {
+                const stream = await this.resolveTwolekedeStreamById(matchedId);
+                if (stream) return stream;
+              }
+            }
+
+            // Fallback: check any href if no cardRegex matched
+            const anyMatch = html.match(/href="(?:moviedetails|preview)\.php\?id=(\d+)"/);
+            if (anyMatch && anyMatch[1]) {
+              const stream = await this.resolveTwolekedeStreamById(anyMatch[1]);
               if (stream) return stream;
             }
           }
@@ -183,7 +204,30 @@ export class StreamProxyService {
   }
 
   private static async resolveTwolekedeStreamById(id: string): Promise<string | null> {
-    // Attempt A: POST download.php
+    // Attempt 1: GET preview.php (fastest and most reliable direct 1080p stream source)
+    try {
+      const resp = await fetch(`https://twolekede.com/preview.php?id=${id}`, {
+        headers: {
+          'Referer': 'https://twolekede.com/',
+          'User-Agent': this.DEFAULT_USER_AGENT
+        },
+        signal: AbortSignal.timeout(6000)
+      });
+
+      if (resp.ok) {
+        const html = await resp.text();
+        const srcMatch = html.match(/<source\s+[^>]*src=["']([^"']+)["']/i) ||
+                         html.match(/https?:\/\/(?:cdn|dl)\.movviez\.com\/secure\.php\?[^\s"'<>]+/);
+        if (srcMatch) {
+          const rawUrl = (srcMatch[1] || srcMatch[0]).replace(/&amp;/g, '&');
+          if (rawUrl && !rawUrl.includes('index.php')) {
+            return rawUrl;
+          }
+        }
+      }
+    } catch {}
+
+    // Attempt 2: POST download.php
     try {
       const body = new URLSearchParams({ submit: 'Download', download: 'Download' });
       const resp = await fetch(`https://twolekede.com/download.php?id=${id}`, {
@@ -199,30 +243,8 @@ export class StreamProxyService {
       });
 
       const loc = resp.headers.get('location');
-      if (loc && (loc.includes('secure.php') || loc.includes('.mp4') || loc.includes('movviez.com'))) {
+      if (loc && (loc.includes('secure.php') || loc.includes('.mp4') || loc.includes('movviez.com')) && !loc.includes('index.php')) {
         return loc;
-      }
-    } catch {}
-
-    // Attempt B: GET preview.php and extract source tag
-    try {
-      const resp = await fetch(`https://twolekede.com/preview.php?id=${id}`, {
-        headers: {
-          'Referer': 'https://twolekede.com/',
-          'User-Agent': this.DEFAULT_USER_AGENT
-        },
-        signal: AbortSignal.timeout(6000)
-      });
-
-      if (resp.ok) {
-        const html = await resp.text();
-        const srcMatch = html.match(/<source\s+[^>]*src=["']([^"']+)["']/i) ||
-                         html.match(/https?:\/\/(?:cdn|dl)\.movviez\.com\/secure\.php\?[^\s"'<>]+/);
-        if (srcMatch && srcMatch[1]) {
-          return srcMatch[1].replace(/&amp;/g, '&');
-        } else if (srcMatch && srcMatch[0]) {
-          return srcMatch[0].replace(/&amp;/g, '&');
-        }
       }
     } catch {}
 
