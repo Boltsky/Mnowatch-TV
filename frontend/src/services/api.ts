@@ -73,7 +73,7 @@ export const FALLBACK_CATALOG: MediaItem[] = [
     ]
   },
   {
-    id: "vj_emmy_1",
+    id: "tk_2668",
     title: "Dune: Part Two (VJ Emmy)",
     type: "movie",
     vj: "VJ Emmy",
@@ -84,60 +84,72 @@ export const FALLBACK_CATALOG: MediaItem[] = [
     description: "Paul Atreides unites with Chani and the Fremen while seeking revenge against the conspirators who destroyed his family.",
     posterUrl: "https://image.tmdb.org/t/p/w500/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg",
     backdropUrl: "https://image.tmdb.org/t/p/original/xOMo8BRK7PfcJv9JCnx7s520DRq.jpg",
-    streamUrl: "https://cdn.movviez.com/secure.php?file=Dune_Part_Two_2024_VJ_Emmy.mp4",
-    isSeries: false
+    streamUrl: "https://twolekede.com/preview.php?id=2668",
+    isSeries: false,
+    servers: [
+      { id: "s2", name: "Server 2 (Munowatch Web Streamer - CORS Safe)", quality: "1080p Full HD", streamUrl: "https://twolekede.com/preview.php?id=2668", isProxy: true },
+      { id: "s1", name: "Server 1 (High-Speed Direct)", quality: "1080p FHD", streamUrl: "https://twolekede.com/preview.php?id=2668", isProxy: false }
+    ]
   },
   {
-    id: "vj_jingo_1",
-    title: "Monkey Man (VJ Jingo)",
+    id: "tk_12952",
+    title: "Road House (VJ Jingo)",
     type: "movie",
     vj: "VJ Jingo",
-    genre: "Action / Thriller / Crime",
+    genre: "Action / Thriller",
+    year: "2024",
+    rating: "8.1",
+    duration: "2h 01m",
+    description: "Ex-UFC fighter Dalton takes a job as a bouncer at a Florida Keys roadhouse, only to discover that this paradise is not all it seems.",
+    posterUrl: "https://image.tmdb.org/t/p/w500/bXi6IQiCuHD00X977x9GNDurAoq.jpg",
+    backdropUrl: "https://image.tmdb.org/t/p/original/oe7mWXYY9jkT4v47qLA8vD6sLw9.jpg",
+    streamUrl: "https://twolekede.com/preview.php?id=12952",
+    isSeries: false,
+    servers: [
+      { id: "s2", name: "Server 2 (Munowatch Web Streamer - CORS Safe)", quality: "1080p Full HD", streamUrl: "https://twolekede.com/preview.php?id=12952", isProxy: true },
+      { id: "s1", name: "Server 1 (High-Speed Direct)", quality: "1080p FHD", streamUrl: "https://twolekede.com/preview.php?id=12952", isProxy: false }
+    ]
+  },
+  {
+    id: "tk_12955",
+    title: "The Beekeeper (VJ Junior)",
+    type: "movie",
+    vj: "VJ Junior",
+    genre: "Action / Thriller",
     year: "2024",
     rating: "8.6",
-    duration: "2h 01m",
-    description: "Kid unleashes an explosive campaign of retribution against the corrupt leaders who murdered his mother and systematically victimize the powerless.",
-    posterUrl: "https://image.tmdb.org/t/p/w500/4lhR49nmvFd17ZqT54p4U3b7j8p.jpg",
-    backdropUrl: "https://image.tmdb.org/t/p/original/w4p8b0Z8bZgNq7gT6wF2t9xL3r.jpg",
-    streamUrl: "https://cdn.movviez.com/secure.php?file=Monkey_Man_2024_VJ_Jingo.mp4",
-    isSeries: false
+    duration: "1h 45m",
+    description: "One man's brutal campaign for vengeance takes on national stakes after he is revealed to be a former operative of a powerful and clandestine organization known as 'Beekeepers'.",
+    posterUrl: "https://image.tmdb.org/t/p/w500/A7EByudX0eOzlkQ2FIbogzyazm2.jpg",
+    backdropUrl: "https://image.tmdb.org/t/p/original/4woSOUD0equAYzvwhWBHIJDCM88.jpg",
+    streamUrl: "https://twolekede.com/preview.php?id=12955",
+    isSeries: false,
+    servers: [
+      { id: "s2", name: "Server 2 (Munowatch Web Streamer - CORS Safe)", quality: "1080p Full HD", streamUrl: "https://twolekede.com/preview.php?id=12955", isProxy: true },
+      { id: "s1", name: "Server 1 (High-Speed Direct)", quality: "1080p FHD", streamUrl: "https://twolekede.com/preview.php?id=12955", isProxy: false }
+    ]
   },
   {
-    id: "vj_icep_1",
-    title: "Alien: Romulus (VJ Ice P)",
-    type: "movie",
-    vj: "VJ Ice P",
-    genre: "Sci-Fi / Horror / Thriller",
-    year: "2024",
-    rating: "8.7",
-    duration: "1h 59m",
-    description: "While scavenging the deep ends of a derelict space station, a group of young space colonists come face to face with the most terrifying life form.",
-    posterUrl: "https://image.tmdb.org/t/p/w500/b33nnKl1GSFbao8l3Pgs4sd4vLJ.jpg",
-    backdropUrl: "https://image.tmdb.org/t/p/original/9SSEUrSqhljBMzRe4aBTh17r0qC.jpg",
-    streamUrl: "https://cdn.movviez.com/secure.php?file=Alien_Romulus_2024_VJ_Ice_P.mp4",
-    isSeries: false
-  },
-  {
-    id: "vj_series_shogun",
-    title: "Shōgun (VJ Junior)",
+    id: "tk_series_hotd",
+    title: "House of the Dragon (VJ Bonny / VJ Junior)",
     type: "series",
     vj: "VJ Junior",
-    genre: "Drama / History / War",
+    genre: "Fantasy / Drama / Action",
     year: "2024",
     rating: "9.3",
-    duration: "10 Episodes",
-    description: "When a mysterious European ship is found marooned in a nearby fishing village, Lord Yoshii Toranaga discovers secrets that could tip the scales of power in feudal Japan.",
-    posterUrl: "https://image.tmdb.org/t/p/w500/7O4iVfOMQmdCSxhOg1WnzG1AgYT.jpg",
-    backdropUrl: "https://image.tmdb.org/t/p/original/5zmiBoMzeW1U70e2p5V2zO8x8.jpg",
-    streamUrl: "https://cdn.movviez.com/secure.php?file=Shogun_S01E01_VJ_Junior.mp4",
+    duration: "3 Seasons",
+    description: "The Targaryen civil war begins. Rhaenyra and Daemon clash with the Greens in a devastating clash of blood and dragons.",
+    posterUrl: "https://image.tmdb.org/t/p/w500/1X4h40fcB4WWUmIBK0auT4z9vub.jpg",
+    backdropUrl: "https://image.tmdb.org/t/p/original/etj5CuMuamfdIip3Q8G60Hg0Y.jpg",
+    streamUrl: "https://twolekede.com/preview.php?id=125784",
     isSeries: true,
     seasons: [
       {
         seasonNumber: 1,
         episodes: [
-          { episodeNumber: 1, title: "Chapter One: Anjin", duration: "1h 05m", streamUrl: "https://cdn.movviez.com/secure.php?file=Shogun_S01E01_VJ_Junior.mp4", thumbnailUrl: "https://image.tmdb.org/t/p/w500/7O4iVfOMQmdCSxhOg1WnzG1AgYT.jpg" },
-          { episodeNumber: 2, title: "Chapter Two: Servants of Two Masters", duration: "58m", streamUrl: "https://cdn.movviez.com/secure.php?file=Shogun_S01E02_VJ_Junior.mp4", thumbnailUrl: "https://image.tmdb.org/t/p/w500/7O4iVfOMQmdCSxhOg1WnzG1AgYT.jpg" },
-          { episodeNumber: 3, title: "Chapter Three: Tomorrow is Tomorrow", duration: "56m", streamUrl: "https://cdn.movviez.com/secure.php?file=Shogun_S01E03_VJ_Junior.mp4", thumbnailUrl: "https://image.tmdb.org/t/p/w500/7O4iVfOMQmdCSxhOg1WnzG1AgYT.jpg" }
+          { episodeNumber: 1, title: "The Heirs of the Dragon", duration: "1h 06m", streamUrl: "https://twolekede.com/preview.php?id=125784", thumbnailUrl: "https://image.tmdb.org/t/p/w500/1X4h40fcB4WWUmIBK0auT4z9vub.jpg" },
+          { episodeNumber: 2, title: "The Rogue Prince", duration: "54m", streamUrl: "https://twolekede.com/preview.php?id=125785", thumbnailUrl: "https://image.tmdb.org/t/p/w500/1X4h40fcB4WWUmIBK0auT4z9vub.jpg" },
+          { episodeNumber: 3, title: "Second of His Name", duration: "1h 03m", streamUrl: "https://twolekede.com/preview.php?id=125786", thumbnailUrl: "https://image.tmdb.org/t/p/w500/1X4h40fcB4WWUmIBK0auT4z9vub.jpg" }
         ]
       }
     ]

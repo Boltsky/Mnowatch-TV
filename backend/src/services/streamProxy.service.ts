@@ -9,7 +9,7 @@ export class StreamProxyService {
   /**
    * Proxies media video stream with HTTP 206 Partial Content and Range headers
    */
-  public static handleProxyStream(req: Request, res: Response): void {
+  public static async handleProxyStream(req: Request, res: Response): Promise<void> {
     let targetUrl = '';
 
     // Safely extract from raw req.url to avoid Express parameter splitting & double-decoding
@@ -33,6 +33,17 @@ export class StreamProxyService {
     targetUrl = targetUrl.trim();
     if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
       targetUrl = 'https://' + targetUrl.replace(/^\/+/, '');
+    }
+
+    // Auto-resolve Twolekede preview HTML pages to genuine media stream URLs
+    if (targetUrl.includes('preview.php?id=') || targetUrl.includes('twolekede.com/preview')) {
+      const match = targetUrl.match(/id=(\d+)/);
+      if (match) {
+        const direct = await this.resolveTwolekedeStreamById(match[1]);
+        if (direct) {
+          targetUrl = direct;
+        }
+      }
     }
 
     this.pipeStream(targetUrl, req, res, 0);
@@ -139,16 +150,29 @@ export class StreamProxyService {
     if (!expectedTitle || expectedTitle.trim().length < 2) return true;
     try {
       const cleanUrl = decodeURIComponent(streamUrl).toLowerCase();
-      const words = expectedTitle
-        .toLowerCase()
-        .replace(/\[.*?\]|\(.*?\)/g, '')
-        .replace(/\b(?:by\s+vj|vj)\s+[a-z0-9_.-]*.*$/gi, ' ')
-        .split(/[^a-z0-9]+/)
-        .map(w => w.endsWith('s') && w.length > 3 ? w.slice(0, -1) : w)
-        .filter(w => w.length >= 3 && !['part', 'the', 'movie', 'full', 'vj', 'series', 'season', 'and'].includes(w));
 
-      if (words.length === 0) return true;
-      return words.some(w => cleanUrl.includes(w));
+      // Generic stop words that should NEVER be used alone to match a video URL
+      const stopWords = new Set([
+        'part', 'the', 'movie', 'full', 'vj', 'series', 'season', 'and', 'with', 'from',
+        'this', 'that', 'translated', 'luganda', 'twolekede', 'secure', 'php', 'file',
+        'movies', 'x264', '1080p', '720p', '480p', 'mp4', 'm3u8', 'all', 'about', 'a', 'an',
+        'love', 'story', 'nice', 'girl', 'girls', 'jr', 'junior', 'emmy', 'icep', 'jingo'
+      ]);
+
+      const substantiveWords = expectedTitle
+        .toLowerCase()
+        .replace(/\[.*?\]|\(.*?\)/g, ' ')
+        .replace(/\b(?:by\s+vj|vj)\s+[a-z0-9_.-]*.*$/gi, ' ')
+        .replace(/\b(?:19\d{2}|20\d{2})\b/g, ' ')
+        .replace(/\b(?:jr|junior|icep|emmy|jingo|ulio|mark|nelly|kimuli)\b/g, ' ')
+        .split(/[^a-z0-9]+/)
+        .map(w => (w.endsWith('s') && w.length > 3 && !w.endsWith('ss')) ? w.slice(0, -1) : w)
+        .filter(w => w.length >= 3 && !stopWords.has(w));
+
+      if (substantiveWords.length === 0) return true;
+
+      // Ensure that at least one distinct, substantive token appears in the video URL
+      return substantiveWords.some(w => cleanUrl.includes(w));
     } catch {
       return true;
     }
@@ -178,7 +202,7 @@ export class StreamProxyService {
 
     // Plural 's' fix (e.g. wolverines -> wolverine)
     const words = clean.split(' ');
-    if (words.length > 0 && words[words.length - 1].endsWith('s') && words[words.length - 1].length > 3) {
+    if (words.length > 0 && words[words.length - 1].endsWith('s') && words[words.length - 1].length > 3 && !words[words.length - 1].endsWith('ss')) {
       const sing = [...words.slice(0, -1), words[words.length - 1].slice(0, -1)].join(' ');
       queries.push(sing);
       if (/\band\b/i.test(sing)) {
@@ -209,32 +233,98 @@ export class StreamProxyService {
   }
 
   /**
-   * Robust comparison verifying that two titles represent the same movie
+   * Battle-tested comparison verifying that two titles represent the same movie
+   * Ported from MunowatchHtmlParser.kt in Android TV to eliminate all mismatches
    */
-  public static titlesMatch(searchTitle: string, candidateTitle: string): boolean {
-    const unescapeHtml = (str: string) => str.replace(/&amp;/g, '&').replace(/&#38;/g, '&').replace(/&quot;/g, '"');
-    const stopWords = new Set(["the", "with", "from", "part", "this", "that", "movie", "full", "translated", "luganda", "saga", "and"]);
+  public static titlesMatch(a: string, b: string): boolean {
+    const unescapeHtml = (str: string) =>
+      str.replace(/&amp;/g, '&').replace(/&#38;/g, '&').replace(/&quot;/g, '"');
 
-    const clean1 = unescapeHtml(searchTitle).toLowerCase().replace(/[^a-z0-9]/g, ' ');
-    const clean2 = unescapeHtml(candidateTitle).toLowerCase().replace(/[^a-z0-9]/g, ' ');
+    const cleanForMatching = (t: string): string => {
+      let s = unescapeHtml(t).toLowerCase();
+      s = s.replace(/\[.*?\]|\(.*?\)/g, ' ');
+      s = s.replace(/\b(?:by\s+vj|vj)\s+[a-z0-9_.-]*.*$/gi, ' ');
+      s = s.replace(/\b(?:19\d{2}|20\d{2})\b/g, ' ');
+      s = s.replace(/\b(?:jr|junior|icep|emmy|jingo|ulio|mark|nelly|kimuli)\b/g, ' ');
+      s = s.replace(/[:–—|]/g, ' ');
+      // Standardize Roman numerals at word boundaries
+      s = s.replace(/\biv\b/g, '4');
+      s = s.replace(/\biii\b/g, '3');
+      s = s.replace(/\bii\b/g, '2');
+      s = s.replace(/\bi\b/g, '1');
+      s = s.replace(/[^a-z0-9]+/g, ' ');
 
-    const tokens1 = clean1.split(/\s+/).map(w => w.endsWith('s') && w.length > 3 ? w.slice(0, -1) : w).filter(w => w.length >= 3 && !stopWords.has(w));
-    const tokens2 = clean2.split(/\s+/).map(w => w.endsWith('s') && w.length > 3 ? w.slice(0, -1) : w).filter(w => w.length >= 3 && !stopWords.has(w));
+      const words = s.split(/\s+/).filter(Boolean).map(w => {
+        if (w.endsWith('s') && w.length > 3 && !w.endsWith('ss')) {
+          return w.slice(0, -1);
+        }
+        return w;
+      });
+      return words.join(' ').trim();
+    };
 
-    if (tokens1.length === 0 || tokens2.length === 0) return false;
+    const ca = cleanForMatching(a);
+    const cb = cleanForMatching(b);
+    if (!ca || !cb) return false;
+    if (ca === cb) return true;
 
-    const set1 = new Set(tokens1);
-    const set2 = new Set(tokens2);
+    // Compressed match (handles spacing differences: spiderman vs spider man)
+    if (ca.replace(/\s+/g, '') === cb.replace(/\s+/g, '')) return true;
 
-    const isSubset1 = tokens1.every(t => set2.has(t));
-    const isSubset2 = tokens2.every(t => set1.has(t));
-    if (isSubset1 || isSubset2) return true;
-
-    let overlap = 0;
-    for (const t of tokens1) {
-      if (set2.has(t)) overlap++;
+    // Article-stripped match (e.g. "The Beast" vs "Beast")
+    const noArtA = ca.replace(/^(?:the|a|an)\s+/, '');
+    const noArtB = cb.replace(/^(?:the|a|an)\s+/, '');
+    if (noArtA && (noArtA === noArtB || noArtA.replace(/\s+/g, '') === noArtB.replace(/\s+/g, ''))) {
+      return true;
     }
-    return overlap >= 2;
+
+    // Strict numeric check: if one title has sequel / part numbers and other differs, REJECT!
+    const numRegex = /\b(?:pt\s*)?(\d+)\b/g;
+    const numsA = Array.from(ca.matchAll(numRegex), m => m[1]);
+    const numsB = Array.from(cb.matchAll(numRegex), m => m[1]);
+    const isPart1Match = (numsA.length === 1 && numsA[0] === '1' && numsB.length === 0) ||
+                         (numsB.length === 1 && numsB[0] === '1' && numsA.length === 0);
+    if (!isPart1Match && numsA.join(',') !== numsB.join(',')) {
+      return false;
+    }
+
+    const tokensA = ca.split(/\s+/).filter(Boolean);
+    const tokensB = cb.split(/\s+/).filter(Boolean);
+    const setA = new Set(tokensA);
+    const setB = new Set(tokensB);
+
+    if (tokensA.length === tokensB.length && tokensA.every(t => setB.has(t))) {
+      return true;
+    }
+
+    const ignorableExtras = new Set([
+      "the", "of", "and", "a", "an", "in", "on", "at", "for", "from", "to",
+      "pt", "part", "1", "hd", "full", "movie", "translated", "luganda", "vj",
+      "jr", "twolekede"
+    ]);
+
+    let intersectionCount = 0;
+    for (const t of setA) {
+      if (setB.has(t)) intersectionCount++;
+    }
+
+    const minSize = Math.min(setA.size, setB.size);
+    if (minSize >= 1 && intersectionCount === minSize) {
+      // One is a strict subset: ONLY accept if EVERY extra token is ignorable!
+      const union = new Set([...setA, ...setB]);
+      let allExtrasIgnorable = true;
+      for (const t of union) {
+        if (!setA.has(t) || !setB.has(t)) {
+          if (!ignorableExtras.has(t)) {
+            allExtrasIgnorable = false;
+            break;
+          }
+        }
+      }
+      if (allExtrasIgnorable) return true;
+    }
+
+    return false;
   }
 
   /**
@@ -242,15 +332,23 @@ export class StreamProxyService {
    */
   public static async resolveMediaStream(id: string, title?: string): Promise<string | null> {
     const isExplicitTwolekede = id.startsWith('tk_') || (!id.startsWith('myvj_') && /^\d+$/.test(id));
-    const cleanId = id.replace(/^(myvj_|tk_)/, '');
+    const cleanId = id.replace(/^(myvj_|tk_|ep_)/, '');
 
-    // 1. If it's a numeric Twolekede ID, resolve and verify title match
+    // 1. If it's a numeric Twolekede ID (including episode IDs), resolve and verify title match
     if (isExplicitTwolekede && /^\d+$/.test(cleanId)) {
       const resolved = await this.resolveTwolekedeStreamById(cleanId);
       if (resolved && this.urlMatchesTitle(resolved, title)) {
         return resolved;
       }
       // If direct ID returned mismatched movie, fall through to search by title
+    }
+
+    // 1.5. If cleanId itself is numeric and resolves to Twolekede preview, try it
+    if (/^\d+$/.test(cleanId)) {
+      const resolved = await this.resolveTwolekedeStreamById(cleanId);
+      if (resolved && this.urlMatchesTitle(resolved, title)) {
+        return resolved;
+      }
     }
 
     // 2. Search Twolekede using smart candidate query variations
@@ -315,10 +413,12 @@ export class StreamProxyService {
    * Resolves BunnyCDN MP4 stream from UgaWatch API v3 for titles not indexed on Twolekede
    */
   private static async resolveUgaWatchStream(id: string, title?: string): Promise<string | null> {
-    const cleanId = id.replace(/^(myvj_|tk_)/, '');
+    const cleanId = id.replace(/^(myvj_|tk_|ep_)/, '');
     const endpoints = [
       'https://ugawatch.com/api-v3/mobile/get-movie-details-min.php',
-      'https://myvj.net/api-v3/mobile/get-movie-details-min.php'
+      'https://myvj.net/api-v3/mobile/get-movie-details-min.php',
+      'https://ugawatch.com/api-v3/mobile/get-serie-details-min.php',
+      'https://myvj.net/api-v3/mobile/get-serie-details-min.php'
     ];
 
     const attempts: URLSearchParams[] = [];
@@ -327,6 +427,7 @@ export class StreamProxyService {
       const p = new URLSearchParams();
       p.append('source', 'next_js');
       p.append('movie_id', cleanId);
+      p.append('serie_id', cleanId);
       p.append('id', cleanId);
       attempts.push(p);
     }
@@ -343,6 +444,7 @@ export class StreamProxyService {
         const p1 = new URLSearchParams();
         p1.append('source', 'next_js');
         p1.append('movie_slug', cleanSlug);
+        p1.append('serie_slug', cleanSlug);
         attempts.push(p1);
 
         const p2 = new URLSearchParams();
@@ -368,9 +470,13 @@ export class StreamProxyService {
 
           if (resp.ok) {
             const data = await resp.json();
-            if (data && (data.status === 0 || data.status === '0') && (data.movie || data.data)) {
-              const movie = data.movie || data.data;
-              const file = movie.bunny_file_name || movie.trailer || movie.video;
+            if (data && (data.status === 0 || data.status === '0')) {
+              const movie = data.movie || data.serie || data.data || {};
+              const file = movie.bunny_file_name ||
+                (Array.isArray(data.episodes) && data.episodes[0]?.bunny_file_name) ||
+                movie.trailer ||
+                movie.video;
+
               if (file && typeof file === 'string' && file.trim().length > 3) {
                 const cleanFile = file.replace(/\\/g, '').trim();
                 const stream = cleanFile.startsWith('http') ? cleanFile : `https://trailer256.b-cdn.net/${cleanFile}`;

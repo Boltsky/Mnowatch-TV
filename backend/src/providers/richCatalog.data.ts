@@ -98,7 +98,7 @@ export const RICH_CATALOG: MediaItem[] = [
     ]
   },
   {
-    id: "vj_jun_4",
+    id: "tk_10959",
     title: "Rebel Ridge (VJ Junior)",
     type: "movie",
     vj: "VJ Junior",
@@ -113,7 +113,7 @@ export const RICH_CATALOG: MediaItem[] = [
     isSeries: false
   },
   {
-    id: "vj_jun_5",
+    id: "tk_12955",
     title: "The Beekeeper (VJ Junior)",
     type: "movie",
     vj: "VJ Junior",
@@ -128,7 +128,7 @@ export const RICH_CATALOG: MediaItem[] = [
     isSeries: false
   },
   {
-    id: "vj_jun_6",
+    id: "tk_5171",
     title: "John Wick: Chapter 4 (VJ Junior)",
     type: "movie",
     vj: "VJ Junior",
@@ -218,7 +218,7 @@ export const RICH_CATALOG: MediaItem[] = [
     isSeries: false
   },
   {
-    id: "vj_jingo_2",
+    id: "tk_12952",
     title: "Road House (VJ Jingo)",
     type: "movie",
     vj: "VJ Jingo",
@@ -328,27 +328,98 @@ export const RICH_CATALOG: MediaItem[] = [
     ]
   },
   {
-    id: "vj_series_house_of_dragon",
-    title: "House of the Dragon Season 2 (VJ Junior)",
+    id: "tk_series_hotd",
+    title: "House of the Dragon (VJ Bonny / VJ Junior)",
     type: "series",
     vj: "VJ Junior",
     genre: "Fantasy / Drama / Action",
     year: "2024",
-    rating: "9.2",
-    duration: "8 Episodes",
+    rating: "9.3",
+    duration: "3 Seasons",
     description: "The Targaryen civil war begins. Rhaenyra and Daemon clash with the Greens in a devastating clash of blood and dragons.",
     posterUrl: "https://image.tmdb.org/t/p/w500/1X4h40fcB4WWUmIBK0auT4z9vub.jpg",
-    backdropUrl: "https://image.tmdb.org/t/p/original/etj5CuMuamhioR4MaqZ.jpg",
-    streamUrl: "",
+    backdropUrl: "https://image.tmdb.org/t/p/original/etj5CuMuamfdIip3Q8G60Hg0Y.jpg",
+    streamUrl: "https://twolekede.com/preview.php?id=125784",
     isSeries: true,
     seasons: [
       {
+        seasonNumber: 1,
+        episodes: [
+          { episodeNumber: 1, title: "The Heirs of the Dragon", duration: "1h 06m", streamUrl: "https://twolekede.com/preview.php?id=125784" },
+          { episodeNumber: 2, title: "The Rogue Prince", duration: "54m", streamUrl: "https://twolekede.com/preview.php?id=125785" },
+          { episodeNumber: 3, title: "Second of His Name", duration: "1h 03m", streamUrl: "https://twolekede.com/preview.php?id=125786" },
+          { episodeNumber: 4, title: "King of the Narrow Sea", duration: "1h 02m", streamUrl: "https://twolekede.com/preview.php?id=125787" },
+          { episodeNumber: 5, title: "We Light the Way", duration: "1h 00m", streamUrl: "https://twolekede.com/preview.php?id=125788" },
+          { episodeNumber: 6, title: "The Princess and the Queen", duration: "1h 08m", streamUrl: "https://twolekede.com/preview.php?id=125789" },
+          { episodeNumber: 7, title: "Driftmark", duration: "59m", streamUrl: "https://twolekede.com/preview.php?id=125790" },
+          { episodeNumber: 8, title: "The Lord of the Tides", duration: "1h 07m", streamUrl: "https://twolekede.com/preview.php?id=125791" },
+          { episodeNumber: 9, title: "The Green Council", duration: "58m", streamUrl: "https://twolekede.com/preview.php?id=125792" },
+          { episodeNumber: 10, title: "The Black Queen", duration: "1h 06m", streamUrl: "https://twolekede.com/preview.php?id=125793" }
+        ]
+      },
+      {
         seasonNumber: 2,
         episodes: [
-          { episodeNumber: 1, title: "A Son for a Son", duration: "1h 01m", streamUrl: "" },
-          { episodeNumber: 2, title: "Rhaenyra the Cruel", duration: "1h 09m", streamUrl: "" },
-          { episodeNumber: 3, title: "The Burning Mill", duration: "1h 06m", streamUrl: "" },
-          { episodeNumber: 4, title: "The Red Dragon and the Gold", duration: "54m", streamUrl: "" }
+          { episodeNumber: 1, title: "A Son for a Son", duration: "1h 01m", streamUrl: "https://twolekede.com/preview.php?id=125794" },
+          { episodeNumber: 2, title: "Rhaenyra the Cruel", duration: "1h 09m", streamUrl: "https://twolekede.com/preview.php?id=125795" },
+          { episodeNumber: 3, title: "The Burning Mill", duration: "1h 06m", streamUrl: "https://twolekede.com/preview.php?id=125796" }
+        ]
+      }
+    ]
+  },
+  {
+    id: "tk_series_lotr",
+    title: "The Lord of the Rings: The Rings of Power (VJ Junior)",
+    type: "series",
+    vj: "VJ Junior",
+    genre: "Fantasy / Action / Adventure",
+    year: "2024",
+    rating: "9.1",
+    duration: "2 Seasons",
+    description: "Epic drama set thousands of years before the events of J.R.R. Tolkien's The Hobbit and The Lord of the Rings follows an ensemble cast facing the long-feared re-emergence of evil to Middle-earth.",
+    posterUrl: "https://image.tmdb.org/t/p/w500/mYLOqiStMxDK3fYZFirgrMt8z5d.jpg",
+    backdropUrl: "https://image.tmdb.org/t/p/original/1rO4xoCo4cyqpWNm9Gg8iBsjN.jpg",
+    streamUrl: "https://twolekede.com/preview.php?id=126013",
+    isSeries: true,
+    seasons: [
+      {
+        seasonNumber: 1,
+        episodes: [
+          { episodeNumber: 1, title: "Shadow of the Past", duration: "1h 05m", streamUrl: "https://twolekede.com/preview.php?id=126013" },
+          { episodeNumber: 2, title: "Adrift", duration: "1h 07m", streamUrl: "https://twolekede.com/preview.php?id=126014" },
+          { episodeNumber: 3, title: "Adar", duration: "1h 09m", streamUrl: "https://twolekede.com/preview.php?id=126015" }
+        ]
+      },
+      {
+        seasonNumber: 2,
+        episodes: [
+          { episodeNumber: 1, title: "Elven Kings Under the Sky", duration: "1h 16m", streamUrl: "https://twolekede.com/preview.php?id=126021" },
+          { episodeNumber: 2, title: "Where the Stars Are Strange", duration: "1h 04m", streamUrl: "https://twolekede.com/preview.php?id=126022" },
+          { episodeNumber: 3, title: "The Eagle and the Sceptre", duration: "1h 01m", streamUrl: "https://twolekede.com/preview.php?id=126023" }
+        ]
+      }
+    ]
+  },
+  {
+    id: "myvj_5040",
+    title: "Superman & Lois (VJ Translated)",
+    type: "series",
+    vj: "VJ Junior",
+    genre: "Action / Sci-Fi / Drama",
+    year: "2024",
+    rating: "8.9",
+    duration: "15 Episodes",
+    description: "After years of facing supervillains and alien invaders, the world's most famous superhero and comic books' most famous journalist deal with the stress and pressures of being working parents.",
+    posterUrl: "https://image.tmdb.org/t/p/w500/vlv1gn98GqMnKHLSh0dNTeWQrq5.jpg",
+    backdropUrl: "https://image.tmdb.org/t/p/original/p7f7mS24rOqF42i3wF1p5GzV9.jpg",
+    streamUrl: "https://trailer256.b-cdn.net/s0_sr_superman-lois_eps_S01E01.mp4",
+    isSeries: true,
+    seasons: [
+      {
+        seasonNumber: 1,
+        episodes: [
+          { episodeNumber: 1, title: "Pilot", duration: "1h 04m", streamUrl: "https://trailer256.b-cdn.net/s0_sr_superman-lois_eps_S01E01.mp4" },
+          { episodeNumber: 2, title: "Heritage", duration: "43m", streamUrl: "https://trailer256.b-cdn.net/s0_sr_superman-lois_eps_S01E02.mp4" }
         ]
       }
     ]

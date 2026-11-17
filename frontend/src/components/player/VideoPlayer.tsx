@@ -54,6 +54,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
 
     // 1. If series episode has explicit stream URL
     if (episode?.streamUrl && episode.streamUrl.length > 10) {
+      if (episode.streamUrl.includes('preview.php') || episode.streamUrl.includes('id=')) {
+        try {
+          const res = await api.resolveStream(episode.id || item.id, episode.title || item.title);
+          if (res.streamUrl) {
+            const finalUrl = currentServer.isProxy ? res.streamUrl : (res.directUrl || res.streamUrl);
+            setResolvedStreamUrl(finalUrl);
+            setIsResolving(false);
+            return;
+          }
+        } catch {}
+      }
       const finalUrl = currentServer.isProxy ? api.getProxyStreamUrl(episode.streamUrl) : episode.streamUrl;
       setResolvedStreamUrl(finalUrl);
       setIsResolving(false);
@@ -189,12 +200,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
 
     const onError = () => {
       setIsBuffering(false);
+      // Automatically attempt proxy failover if direct playback failed (e.g. CORS restriction)
+      if (!currentServer.isProxy && activeStreamUrl) {
+        const proxyServer = availableServers.find(s => s.isProxy);
+        if (proxyServer) {
+          setCurrentServer(proxyServer);
+          setResolvedStreamUrl(api.getProxyStreamUrl(activeStreamUrl));
+          return;
+        }
+      }
       setHasError(true);
       setErrorMessage('Media connection stalled. Switching to secure CORS failover...');
-      // Automatically attempt proxy failover if direct failed
-      if (!currentServer.isProxy && activeStreamUrl) {
-        setResolvedStreamUrl(api.getProxyStreamUrl(activeStreamUrl));
-      }
     };
 
     video.addEventListener('timeupdate', onTimeUpdate);

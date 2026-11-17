@@ -39,3 +39,6 @@ brain_test.py
 api_*.json
 logcat_*.txt
 uidump*.xml
+
+__pycache__/
+*.pyc

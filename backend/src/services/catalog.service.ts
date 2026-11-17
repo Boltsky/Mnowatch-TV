@@ -799,11 +799,13 @@ export class CatalogService {
           const html = await resp.text();
           const unescape = (s: string) => s.replace(/&amp;/g, '&').replace(/&#38;/g, '&').replace(/&quot;/g, '"');
           const titleMatch = (html.match(/<div class="details-section">\s*<h1>([^<]*)<\/h1>/) || html.match(/<h1[^>]*>([^<]*)<\/h1>/));
-          const descMatch = html.match(/<div class="description">\s*([\s\S]*?)\s*<\/div>/);
+          const descMatch = html.match(/<div class="description">\s*([\s\S]*?)\s*<\/div>/) ||
+                            html.match(/<div class="overview">\s*([\s\S]*?)\s*<\/div>/) ||
+                            html.match(/<p class="description[^"]*">\s*([\s\S]*?)\s*<\/p>/);
 
-          if (titleMatch && descMatch) {
+          if (titleMatch) {
             const movieTitle = unescape(titleMatch[1]).trim();
-            const desc = unescape(descMatch[1]).trim();
+            const desc = descMatch ? unescape(descMatch[1]).trim() : '';
 
             const yearMatch = html.match(/<span class="year">([^<]*)<\/span>/);
             const year = yearMatch ? yearMatch[1].trim() : '2024';
@@ -812,7 +814,8 @@ export class CatalogService {
             let vj = vjMatch ? vjMatch[1].trim() : 'VJ Junior';
             if (!vj.toLowerCase().includes('vj')) vj = `VJ ${vj}`;
 
-            const posterMatch = html.match(/<img[^>]+src="([^"]*)"[^>]+class="movie-poster"/);
+            const posterMatch = html.match(/<img[^>]+src="([^"]*)"[^>]+class="movie-poster"/) ||
+                                html.match(/<img[^>]+class="movie-poster"[^>]+src="([^"]*)"/);
             let posterUrl = posterMatch ? posterMatch[1].trim() : '';
             if (posterUrl && !posterUrl.startsWith('http')) {
               posterUrl = `https://twolekede.com/${posterUrl.replace(/^\/+/, '')}`;
@@ -830,7 +833,7 @@ export class CatalogService {
               year: year,
               rating: '8.8',
               duration: '2h 05m',
-              description: desc,
+              description: desc || `Luganda translation by ${vj} available on Munowatch TV.`,
               posterUrl: posterUrl,
               backdropUrl: posterUrl,
               streamUrl: streamUrl,
@@ -848,74 +851,114 @@ export class CatalogService {
       } catch {}
     }
 
-    // 2. If it's an UgaWatch / MyVJ item
+    // 2. If it's an UgaWatch / MyVJ item (movie or series)
     if (id.startsWith('myvj_') || /^\d+$/.test(cleanId)) {
       try {
         const bodyParams = new URLSearchParams({
           source: 'next_js',
           id: cleanId,
-          movie_id: cleanId
-        });
-        const resp = await fetch('https://ugawatch.com/api-v3/mobile/get-movie-details-min.php', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': 'https://ugawatch.com/'
-          },
-          body: bodyParams.toString(),
-          signal: AbortSignal.timeout(6000)
+          movie_id: cleanId,
+          serie_id: cleanId
         });
 
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data && (data.status === 0 || data.status === '0') && (data.movie || data.data)) {
-            const m = data.movie || data.data;
-            const file = m.bunny_file_name || m.trailer || m.video || '';
-            const cleanFile = typeof file === 'string' ? file.replace(/\\/g, '').trim() : '';
-            const directStream = cleanFile.startsWith('http') ? cleanFile : (cleanFile ? `https://trailer256.b-cdn.net/${cleanFile}` : '');
-            const proxyUrl = directStream ? `${baseUrl}/api/v1/stream/proxy?url=${encodeURIComponent(directStream)}` : '';
+        // Try movie details first, then series details
+        const endpoints = [
+          'https://ugawatch.com/api-v3/mobile/get-movie-details-min.php',
+          'https://ugawatch.com/api-v3/mobile/get-serie-details-min.php'
+        ];
 
-            const munoImg = m.img_port_muno_file_name || '';
-            const tmdbPoster = m.tmdb_poster_path || '';
-            let posterUrl = '';
-            if (tmdbPoster && tmdbPoster !== 'null') {
-              posterUrl = `https://image.tmdb.org/t/p/w500${tmdbPoster.startsWith('/') ? tmdbPoster : `/${tmdbPoster}`}`;
-            } else if (munoImg && munoImg !== 'null') {
-              posterUrl = munoImg.startsWith('http') ? munoImg : `https://res-watch.b-cdn.net/1/${munoImg}`;
+        for (const epUrl of endpoints) {
+          const resp = await fetch(epUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              'Referer': 'https://ugawatch.com/'
+            },
+            body: bodyParams.toString(),
+            signal: AbortSignal.timeout(6000)
+          });
+
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data && (data.status === 0 || data.status === '0') && (data.movie || data.serie || data.data)) {
+              const m = data.movie || data.serie || data.data;
+              const isSeriesItem = Array.isArray(data.episodes) && data.episodes.length > 0;
+              const file = m.bunny_file_name || (isSeriesItem ? data.episodes[0]?.bunny_file_name : null) || m.trailer || m.video || '';
+              const cleanFile = typeof file === 'string' ? file.replace(/\\/g, '').trim() : '';
+              const directStream = cleanFile.startsWith('http') ? cleanFile : (cleanFile ? `https://trailer256.b-cdn.net/${cleanFile}` : '');
+              const proxyUrl = directStream ? `${baseUrl}/api/v1/stream/proxy?url=${encodeURIComponent(directStream)}` : '';
+
+              const munoImg = m.img_port_muno_file_name || '';
+              const tmdbPoster = m.tmdb_poster_path || '';
+              let posterUrl = '';
+              if (tmdbPoster && tmdbPoster !== 'null') {
+                posterUrl = `https://image.tmdb.org/t/p/w500${tmdbPoster.startsWith('/') ? tmdbPoster : `/${tmdbPoster}`}`;
+              } else if (munoImg && munoImg !== 'null') {
+                posterUrl = munoImg.startsWith('http') ? munoImg : `https://res-watch.b-cdn.net/1/${munoImg}`;
+              }
+
+              const tmdbBackdrop = m.tmdb_backdrop_path || '';
+              let backdropUrl = posterUrl;
+              if (tmdbBackdrop && tmdbBackdrop !== 'null') {
+                backdropUrl = `https://image.tmdb.org/t/p/original${tmdbBackdrop.startsWith('/') ? tmdbBackdrop : `/${tmdbBackdrop}`}`;
+              }
+
+              let vj = m.vj && m.vj !== '-' && m.vj !== 'null' ? m.vj : 'VJ Junior';
+              if (!vj.toLowerCase().includes('vj')) vj = `VJ ${vj}`;
+
+              // Map episodes for series
+              let seasons: any[] | undefined = undefined;
+              if (isSeriesItem) {
+                const seasonsMap = new Map<number, any[]>();
+                for (const ep of data.episodes) {
+                  const sNum = ep.season || 1;
+                  const epFile = ep.bunny_file_name || ep.video || ep.trailer || '';
+                  const epStream = epFile.startsWith('http') ? epFile : (epFile ? `https://trailer256.b-cdn.net/${epFile}` : '');
+
+                  const episodeObj = {
+                    id: `ep_${ep.id || ep.episode_number}`,
+                    episodeNumber: ep.episode_number || 1,
+                    title: ep.title || `Episode ${ep.episode_number}`,
+                    duration: ep.duration ? `${ep.duration}m` : '45m',
+                    streamUrl: epStream,
+                    thumbnailUrl: backdropUrl
+                  };
+
+                  if (!seasonsMap.has(sNum)) seasonsMap.set(sNum, []);
+                  seasonsMap.get(sNum)!.push(episodeObj);
+                }
+
+                seasons = Array.from(seasonsMap.entries()).map(([seasonNumber, episodes]) => ({
+                  seasonNumber,
+                  episodes
+                }));
+              }
+
+              const item: MediaItem = {
+                id: `myvj_${cleanId}`,
+                title: m.title || title || 'Movie',
+                type: isSeriesItem ? 'series' : 'movie',
+                vj: vj,
+                genre: m.categories || 'Action / Drama',
+                year: m.release_year || '2024',
+                rating: '8.8',
+                duration: isSeriesItem ? `${data.episodes.length} Episodes` : '2h 05m',
+                description: m.about || m.overview || `Luganda translated blockbuster brought to you by ${vj} on Munowatch TV.`,
+                posterUrl: posterUrl,
+                backdropUrl: backdropUrl,
+                streamUrl: directStream,
+                isSeries: isSeriesItem,
+                seasons: seasons,
+                servers: directStream ? [
+                  { id: 's2', name: 'Server 2 (Munowatch Web Streamer - CORS Safe)', quality: '1080p Full HD', streamUrl: proxyUrl, isProxy: true },
+                  { id: 's1', name: 'Server 1 (BunnyCDN High-Speed)', quality: '1080p FHD', streamUrl: directStream, isProxy: false }
+                ] : []
+              };
+
+              this.setInCache(cacheKey, item, 60 * 60 * 1000);
+              return item;
             }
-
-            const tmdbBackdrop = m.tmdb_backdrop_path || '';
-            let backdropUrl = posterUrl;
-            if (tmdbBackdrop && tmdbBackdrop !== 'null') {
-              backdropUrl = `https://image.tmdb.org/t/p/original${tmdbBackdrop.startsWith('/') ? tmdbBackdrop : `/${tmdbBackdrop}`}`;
-            }
-
-            let vj = m.vj && m.vj !== '-' && m.vj !== 'null' ? m.vj : 'VJ Junior';
-            if (!vj.toLowerCase().includes('vj')) vj = `VJ ${vj}`;
-
-            const item: MediaItem = {
-              id: `myvj_${cleanId}`,
-              title: m.title || title || 'Movie',
-              type: 'movie',
-              vj: vj,
-              genre: m.categories || 'Action / Drama',
-              year: m.release_year || '2024',
-              rating: '8.8',
-              duration: '2h 05m',
-              description: m.about || m.overview || 'Luganda translated blockbuster brought to you on Munowatch TV.',
-              posterUrl: posterUrl,
-              backdropUrl: backdropUrl,
-              streamUrl: directStream,
-              isSeries: false,
-              servers: directStream ? [
-                { id: 's2', name: 'Server 2 (Munowatch Web Streamer - CORS Safe)', quality: '1080p Full HD', streamUrl: proxyUrl, isProxy: true },
-                { id: 's1', name: 'Server 1 (BunnyCDN High-Speed)', quality: '1080p FHD', streamUrl: directStream, isProxy: false }
-              ] : []
-            };
-
-            this.setInCache(cacheKey, item, 60 * 60 * 1000);
-            return item;
           }
         }
       } catch {}
