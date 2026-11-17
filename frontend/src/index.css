@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #0a0f0d;
+    color: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    touch-action: manipulation;
+  }
+}
+
+/* Hide scrollbars for clean TV & mobile browsing */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* TV & Keyboard Focus styling */
+.focus-glow:focus,
+.focus-glow.focused {
+  outline: none;
+  box-shadow: 0 0 0 3px #10b981, 0 0 25px rgba(16, 185, 129, 0.6);
+  transform: scale(1.04);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 30;
+}
+
+/* Mobile Touch Tap Highlight Removal */
+* {
+  -webkit-tap-highlight-color: transparent;
+}

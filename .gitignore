@@ -18,6 +18,13 @@ local.properties
 .env
 debug.keystore
 
+# Web dependencies and build outputs
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+backend/node_modules/
+backend/dist/
+
 # Temporary debug dumps, screenshots, and scratch files
 scratch/
 .agents/
@@ -32,4 +39,3 @@ brain_test.py
 api_*.json
 logcat_*.txt
 uidump*.xml
-
