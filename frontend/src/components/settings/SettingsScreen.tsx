@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Server, Trash2, Cpu, CheckCircle2, RotateCcw, Monitor } from 'lucide-react';
+import { ShieldCheck, Server, Trash2, Cpu, CheckCircle2, RotateCcw, Monitor, Crown } from 'lucide-react';
 
 export const SettingsScreen: React.FC = () => {
   const [preferredServer, setPreferredServer] = useState<'s1' | 's2'>('s2');
@@ -13,7 +13,7 @@ export const SettingsScreen: React.FC = () => {
   };
 
   return (
-    <div className="p-4 sm:p-9 max-w-4xl mx-auto space-y-6 animate-fadeIn">
+    <div className="p-4 sm:p-9 max-w-4xl mx-auto space-y-6 animate-fadeIn pb-24 md:pb-12">
       {/* Title */}
       <div className="border-b border-[#132845] pb-4">
         <h1 className="text-xl sm:text-2xl font-black text-white">Settings & Playback</h1>
@@ -22,21 +22,22 @@ export const SettingsScreen: React.FC = () => {
 
       {/* 1. Subscription Status Card matching Android TV Settings */}
       <div className="p-5 rounded-2xl bg-[#0A192F] border border-[#10B981]/40 shadow-xl space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#10B981]/20 border border-[#10B981] flex items-center justify-center">
+            <div className="w-10 h-10 rounded-full bg-[#10B981]/20 border border-[#10B981] flex items-center justify-center flex-shrink-0">
               <ShieldCheck className="w-6 h-6 text-[#10B981]" />
             </div>
             <div>
-              <h2 className="text-sm sm:text-base font-bold text-white">Munowatch VIP Subscription</h2>
+              <h2 className="text-sm sm:text-base font-bold text-white">Munowatch VIP Membership</h2>
               <span className="text-xs text-[#10B981] font-semibold flex items-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 Active Premium VIP Member
               </span>
             </div>
           </div>
-          <div className="px-3 py-1.5 rounded-full bg-[#132845] border border-[#10B981]/50 text-xs font-bold text-white">
-            28 Days Remaining
+          <div className="self-start sm:self-auto flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#10B981]/15 border border-[#10B981] text-xs font-black text-[#10B981] tracking-wide uppercase shadow-sm">
+            <Crown className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+            <span>munowatch VIP</span>
           </div>
         </div>
       </div>
@@ -91,7 +92,7 @@ export const SettingsScreen: React.FC = () => {
           <Monitor className="w-4 h-4 text-[#34D399]" />
           Default Video Resolution
         </h2>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {[
             { id: '1080p', label: '1080p Full HD' },
             { id: '720p', label: '720p HD' },
@@ -113,14 +114,14 @@ export const SettingsScreen: React.FC = () => {
       </div>
 
       {/* 4. Local Watch Cache & History */}
-      <div className="p-5 rounded-2xl bg-[#0A192F] border border-[#132845] shadow-xl space-y-3 flex items-center justify-between">
+      <div className="p-5 rounded-2xl bg-[#0A192F] border border-[#132845] shadow-xl space-y-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-bold text-white">Watch History & Local Cache</h2>
           <p className="text-xs text-[#94A3B8]">Clear remembered positions and continue watching cards</p>
         </div>
         <button
           onClick={clearHistory}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white border border-red-500/30 text-xs font-bold transition-all active:scale-95"
+          className="self-start sm:self-auto flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white border border-red-500/30 text-xs font-bold transition-all active:scale-95"
         >
           <Trash2 className="w-3.5 h-3.5" />
           <span>{historyCleared ? 'Cleared!' : 'Clear History'}</span>
@@ -131,12 +132,12 @@ export const SettingsScreen: React.FC = () => {
       <div className="p-5 rounded-2xl bg-[#0A192F] border border-[#132845] shadow-xl space-y-2 text-xs text-[#94A3B8]">
         <div className="flex items-center gap-2 text-white font-bold mb-1">
           <Cpu className="w-4 h-4 text-[#10B981]" />
-          Munowatch TV Web Edition Specification
+          Munowatch Cross-Platform Specification
         </div>
-        <p>• <strong>App Version:</strong> v1.2.0 (Leanback TV & Mobile Clone)</p>
+        <p>• <strong>App Edition:</strong> Universal Web & Android TV Leanback (Mobile, Tablet, Desktop, TV)</p>
         <p>• <strong>Player Pipeline:</strong> HLS.js 1.5.18 + HTML5 Media Source Extensions</p>
         <p>• <strong>CORS Bridge:</strong> munowatch-api.onrender.com (Node.js/Express)</p>
-        <p>• <strong>Android TV Host:</strong> Cleanly decoupled in app/ module</p>
+        <p>• <strong>Android TV Host:</strong> Decoupled in app/ module</p>
       </div>
     </div>
   );

@@ -145,7 +145,7 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-8 -mt-32 sm:-mt-44 relative z-10 space-y-10">
         <div className="flex flex-col md:flex-row gap-6 sm:gap-10 items-start">
           {/* Main Elevated Poster */}
-          <div className="w-44 sm:w-56 md:w-72 aspect-[2/3] rounded-2xl overflow-hidden shadow-2xl shadow-black/80 border-2 border-emerald-500/40 flex-shrink-0 bg-[#0A192F] relative group">
+          <div className="w-48 sm:w-56 md:w-72 aspect-[2/3] rounded-2xl overflow-hidden shadow-2xl shadow-black/80 border-2 border-emerald-500/40 flex-shrink-0 bg-[#0A192F] relative group mx-auto md:mx-0">
             <img src={item.posterUrl} alt={item.title} className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
               <span className="text-xs font-bold text-emerald-400">Ugandan Translated</span>
@@ -231,11 +231,11 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
             )}
 
             {/* Primary Actions: Start Watching & Watchlist */}
-            <div className="pt-4 flex flex-wrap items-center gap-3">
+            <div className="pt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
               {!item.isSeries && (
                 <button
                   onClick={() => onPlay(item, undefined, selectedServer)}
-                  className="flex items-center gap-3 px-8 py-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-base shadow-xl shadow-emerald-500/30 transition-all hover:scale-105 active:scale-95"
+                  className="flex items-center justify-center gap-3 px-8 py-3.5 sm:py-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-sm sm:text-base shadow-xl shadow-emerald-500/30 transition-all hover:scale-105 active:scale-95"
                 >
                   <Play className="w-5 h-5 fill-black" />
                   <span>Start Watching</span>
@@ -245,7 +245,7 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
               {onToggleWatchlist && (
                 <button
                   onClick={() => onToggleWatchlist(item)}
-                  className={`flex items-center gap-2.5 px-5 py-4 rounded-xl text-sm font-bold border transition-all ${
+                  className={`flex items-center justify-center gap-2.5 px-5 py-3.5 sm:py-4 rounded-xl text-sm font-bold border transition-all ${
                     isInWatchlist
                       ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500'
                       : 'bg-[#0A192F] text-zinc-300 border-[#132845] hover:border-zinc-500 hover:text-white'
@@ -344,13 +344,13 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
             </div>
 
             {/* Horizontal Scrolling Row of Recommended Movies */}
-            <div className="flex items-center gap-4 overflow-x-auto no-scrollbar py-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+            <div className="flex items-center gap-3 sm:gap-4 overflow-x-auto no-scrollbar py-2 -mx-4 px-4 sm:mx-0 sm:px-0">
               {recommendations.map((recMovie) => (
                 <TvMediaCard
                   key={recMovie.id}
                   item={recMovie}
                   onClick={() => handleCardClick(recMovie)}
-                  cardWidth="w-36 sm:w-44 md:w-48"
+                  cardWidth="w-32 sm:w-40 md:w-48"
                 />
               ))}
             </div>

@@ -174,12 +174,11 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#010318] text-[#F8FAFC] pb-16 md:pb-8 flex flex-col">
-      {/* Exact Android TvTopBar */}
+    <div className="min-h-screen bg-[#010318] text-[#F8FAFC] pb-20 md:pb-8 flex flex-col">
+      {/* Universal TopBar with munowatch VIP & responsive navigation */}
       <TvTopBar
         currentRoute={currentScreen}
         onNavigate={navigateTo}
-        subscriptionDays={28}
       />
 
       {/* Main Screen Views */}
