@@ -168,26 +168,69 @@ export const api = {
     return FALLBACK_VJS;
   },
 
-  async getMovies(): Promise<MediaItem[]> {
+  async getMovies(options: { page?: number; perPage?: number; year?: string; vj?: string; genre?: string; sort?: string } = {}): Promise<{ items: MediaItem[]; count: number; page: number }> {
     try {
-      const res = await fetch(`${API_BASE}/catalog/movies`, { signal: AbortSignal.timeout(4000) });
+      const params = new URLSearchParams();
+      if (options.page) params.append('page', options.page.toString());
+      if (options.perPage) params.append('perPage', options.perPage.toString());
+      if (options.year) params.append('year', options.year);
+      if (options.vj) params.append('vj', options.vj);
+      if (options.genre) params.append('genre', options.genre);
+      if (options.sort) params.append('sort', options.sort);
+
+      const qs = params.toString() ? `?${params.toString()}` : '';
+      const res = await fetch(`${API_BASE}/catalog/movies${qs}`, { signal: AbortSignal.timeout(6000) });
       if (res.ok) {
         const data = await res.json();
-        return data.items || [];
+        return {
+          items: data.items || [],
+          count: data.count || data.items?.length || 0,
+          page: data.page || options.page || 1
+        };
       }
     } catch {}
-    return FALLBACK_CATALOG.filter(i => !i.isSeries);
+    const filtered = FALLBACK_CATALOG.filter(i => !i.isSeries);
+    return { items: filtered, count: filtered.length, page: 1 };
   },
 
-  async getSeries(): Promise<MediaItem[]> {
+  async getSeries(options: { page?: number; perPage?: number; vj?: string; genre?: string } = {}): Promise<{ items: MediaItem[]; count: number; page: number }> {
     try {
-      const res = await fetch(`${API_BASE}/catalog/series`, { signal: AbortSignal.timeout(4000) });
+      const params = new URLSearchParams();
+      if (options.page) params.append('page', options.page.toString());
+      if (options.perPage) params.append('perPage', options.perPage.toString());
+      if (options.vj) params.append('vj', options.vj);
+      if (options.genre) params.append('genre', options.genre);
+
+      const qs = params.toString() ? `?${params.toString()}` : '';
+      const res = await fetch(`${API_BASE}/catalog/series${qs}`, { signal: AbortSignal.timeout(6000) });
       if (res.ok) {
         const data = await res.json();
-        return data.items || [];
+        return {
+          items: data.items || [],
+          count: data.count || data.items?.length || 0,
+          page: data.page || options.page || 1
+        };
       }
     } catch {}
-    return FALLBACK_CATALOG.filter(i => i.isSeries);
+    const filtered = FALLBACK_CATALOG.filter(i => i.isSeries);
+    return { items: filtered, count: filtered.length, page: 1 };
+  },
+
+  async resolveStream(id: string, title?: string): Promise<{ streamUrl: string; directUrl: string; servers?: any[] }> {
+    try {
+      const params = new URLSearchParams();
+      params.append('id', id);
+      if (title) params.append('title', title);
+
+      const res = await fetch(`${API_BASE}/stream/resolve?${params.toString()}`, { signal: AbortSignal.timeout(7000) });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.streamUrl) {
+          return { streamUrl: data.streamUrl, directUrl: data.directUrl, servers: data.servers };
+        }
+      }
+    } catch {}
+    return { streamUrl: '', directUrl: '' };
   },
 
   async search(query: string): Promise<MediaItem[]> {

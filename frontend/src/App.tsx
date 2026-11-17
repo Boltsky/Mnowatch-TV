@@ -43,11 +43,11 @@ export const App: React.FC = () => {
       const vjs = await api.getVjs();
       setVjList(vjs);
 
-      const movies = await api.getMovies();
-      setAllMovies(movies);
+      const moviesRes = await api.getMovies();
+      setAllMovies(moviesRes.items);
 
-      const series = await api.getSeries();
-      setAllSeries(series);
+      const seriesRes = await api.getSeries();
+      setAllSeries(seriesRes.items);
 
       // Load saved watchlist from localStorage
       try {

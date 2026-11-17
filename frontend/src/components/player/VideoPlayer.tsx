@@ -42,9 +42,26 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
     initialServer || availableServers.find(s => s.isProxy) || availableServers[0]
   );
 
-  const activeStreamUrl = episode?.streamUrl
-    ? (currentServer.isProxy ? api.getProxyStreamUrl(episode.streamUrl) : episode.streamUrl)
-    : currentServer.streamUrl;
+  const [resolvedStreamUrl, setResolvedStreamUrl] = useState<string>('');
+  const [isResolving, setIsResolving] = useState<boolean>(false);
+
+  useEffect(() => {
+    const rawUrl = episode?.streamUrl || item.streamUrl;
+    if (rawUrl && rawUrl.length > 5) {
+      setResolvedStreamUrl(currentServer.isProxy ? api.getProxyStreamUrl(rawUrl) : rawUrl);
+    } else {
+      setIsResolving(true);
+      api.resolveStream(item.id, item.title).then(res => {
+        if (res.streamUrl) {
+          setResolvedStreamUrl(currentServer.isProxy ? res.streamUrl : (res.directUrl || res.streamUrl));
+        }
+      }).finally(() => {
+        setIsResolving(false);
+      });
+    }
+  }, [item.id, item.title, item.streamUrl, episode, currentServer]);
+
+  const activeStreamUrl = resolvedStreamUrl;
 
   const hideControlsTimer = useRef<any>(null);
 
@@ -59,7 +76,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
   // Video stream initialization
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !activeStreamUrl) return;
 
     setIsBuffering(true);
 

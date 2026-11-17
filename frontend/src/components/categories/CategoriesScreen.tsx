@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { MediaItem, VjItem } from '../../types';
 import { TvMediaCard } from '../common/TvMediaCard';
-import { Clapperboard, Film, Layers } from 'lucide-react';
+import { Clapperboard, Layers, Loader2 } from 'lucide-react';
+import { api } from '../../services/api';
 
 interface CategoriesScreenProps {
   movies: MediaItem[];
@@ -19,12 +20,38 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
   const [activeTab, setActiveTab] = useState<'VJ' | 'GENRE'>('VJ');
   const [selectedVj, setSelectedVj] = useState<string>(initialVj || vjs[0]?.name || 'VJ Junior');
   const [selectedGenre, setSelectedGenre] = useState<string>('Action');
+  const [liveItems, setLiveItems] = useState<MediaItem[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
 
   const genres = [
     'Action', 'Sci-Fi', 'Adventure', 'Thriller', 'Horror', 'Crime', 'Comedy', 'Drama', 'Animation'
   ];
 
-  const filteredItems = useMemo(() => {
+  useEffect(() => {
+    let isCancelled = false;
+    setLoading(true);
+    if (activeTab === 'VJ') {
+      api.getMovies({ page: 1, perPage: 30, vj: selectedVj }).then(res => {
+        if (!isCancelled && res.items.length > 0) {
+          setLiveItems(res.items);
+        }
+      }).finally(() => {
+        if (!isCancelled) setLoading(false);
+      });
+    } else {
+      api.getMovies({ page: 1, perPage: 30, genre: selectedGenre }).then(res => {
+        if (!isCancelled && res.items.length > 0) {
+          setLiveItems(res.items);
+        }
+      }).finally(() => {
+        if (!isCancelled) setLoading(false);
+      });
+    }
+    return () => { isCancelled = true; };
+  }, [activeTab, selectedVj, selectedGenre]);
+
+  const displayItems = useMemo(() => {
+    if (liveItems.length > 0) return liveItems;
     if (activeTab === 'VJ') {
       const cleanVj = selectedVj.toLowerCase().replace('vj', '').trim();
       return movies.filter(m => m.vj.toLowerCase().includes(cleanVj));
@@ -32,7 +59,7 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
       const cleanGenre = selectedGenre.toLowerCase().trim();
       return movies.filter(m => m.genre.toLowerCase().includes(cleanGenre));
     }
-  }, [movies, activeTab, selectedVj, selectedGenre]);
+  }, [liveItems, movies, activeTab, selectedVj, selectedGenre]);
 
   return (
     <div className="p-4 sm:p-9 max-w-7xl mx-auto space-y-6 animate-fadeIn">
@@ -65,7 +92,7 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
         </div>
 
         <span className="text-xs font-bold text-[#94A3B8]">
-          <strong className="text-white">{filteredItems.length}</strong> Titles
+          <strong className="text-white">{displayItems.length}</strong> Titles
         </span>
       </div>
 
@@ -104,16 +131,23 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
       </div>
 
       {/* Grid of movies matching Android Categories grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4 pt-2">
-        {filteredItems.map(item => (
-          <TvMediaCard
-            key={item.id}
-            item={item}
-            onClick={() => onItemClick(item)}
-            cardWidth="w-full"
-          />
-        ))}
-      </div>
+      {loading && displayItems.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 space-y-2">
+          <Loader2 className="w-8 h-8 text-[#10B981] animate-spin" />
+          <p className="text-xs text-[#94A3B8]">Loading titles...</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4 pt-2">
+          {displayItems.map(item => (
+            <TvMediaCard
+              key={item.id}
+              item={item}
+              onClick={() => onItemClick(item)}
+              cardWidth="w-full"
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 };

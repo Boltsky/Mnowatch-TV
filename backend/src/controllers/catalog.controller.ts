@@ -18,13 +18,17 @@ export class CatalogController {
     });
   }
 
-  public static getHome(req: Request, res: Response): void {
-    const baseUrl = CatalogController.getBaseUrl(req);
-    const rails = CatalogService.getHomeRails(baseUrl);
-    res.json({
-      rails: rails,
-      featured: rails[0]?.items[0] || null
-    });
+  public static async getHome(req: Request, res: Response): Promise<void> {
+    try {
+      const baseUrl = CatalogController.getBaseUrl(req);
+      const rails = await CatalogService.getHomeRails(baseUrl);
+      res.json({
+        rails: rails,
+        featured: rails[0]?.items[0] || null
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: "Failed to load home rails", message: e.message });
+    }
   }
 
   public static getVjs(req: Request, res: Response): void {
@@ -35,47 +39,52 @@ export class CatalogController {
     res.json({ genres: CatalogService.getGenres() });
   }
 
-  public static getByVj(req: Request, res: Response): void {
-    const baseUrl = CatalogController.getBaseUrl(req);
-    const { name } = req.params;
-    const items = CatalogService.getByVj(name, baseUrl);
-    res.json({ vj: name, count: items.length, items });
-  }
+  public static async getMovies(req: Request, res: Response): Promise<void> {
+    try {
+      const baseUrl = CatalogController.getBaseUrl(req);
+      const page = parseInt(req.query.page as string) || 1;
+      const perPage = parseInt(req.query.perPage as string) || 24;
+      const year = req.query.year as string;
+      const vj = req.query.vj as string;
+      const genre = req.query.genre as string;
+      const sort = req.query.sort as string;
 
-  public static getByGenre(req: Request, res: Response): void {
-    const baseUrl = CatalogController.getBaseUrl(req);
-    const { name } = req.params;
-    const items = CatalogService.getByGenre(name, baseUrl);
-    res.json({ genre: name, count: items.length, items });
-  }
-
-  public static getMovies(req: Request, res: Response): void {
-    const baseUrl = CatalogController.getBaseUrl(req);
-    const items = CatalogService.getAllMovies(baseUrl);
-    res.json({ count: items.length, items });
-  }
-
-  public static getSeries(req: Request, res: Response): void {
-    const baseUrl = CatalogController.getBaseUrl(req);
-    const items = CatalogService.getAllSeries(baseUrl);
-    res.json({ count: items.length, items });
-  }
-
-  public static getItem(req: Request, res: Response): void {
-    const baseUrl = CatalogController.getBaseUrl(req);
-    const { id } = req.params;
-    const item = CatalogService.getItemById(id, baseUrl);
-    if (!item) {
-      res.status(404).json({ error: "Title not found" });
-      return;
+      const result = await CatalogService.getMovies(
+        { page, perPage, year, vj, genre, sort },
+        baseUrl
+      );
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: "Failed to fetch movies", message: e.message });
     }
-    res.json(item);
   }
 
-  public static search(req: Request, res: Response): void {
-    const baseUrl = CatalogController.getBaseUrl(req);
-    const query = req.query.q as string || '';
-    const results = CatalogService.search(query, baseUrl);
-    res.json({ query, count: results.length, items: results });
+  public static async getSeries(req: Request, res: Response): Promise<void> {
+    try {
+      const baseUrl = CatalogController.getBaseUrl(req);
+      const page = parseInt(req.query.page as string) || 1;
+      const perPage = parseInt(req.query.perPage as string) || 24;
+      const vj = req.query.vj as string;
+      const genre = req.query.genre as string;
+
+      const result = await CatalogService.getSeries(
+        { page, perPage, vj, genre },
+        baseUrl
+      );
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: "Failed to fetch series", message: e.message });
+    }
+  }
+
+  public static async search(req: Request, res: Response): Promise<void> {
+    try {
+      const baseUrl = CatalogController.getBaseUrl(req);
+      const query = (req.query.q as string) || '';
+      const results = await CatalogService.search(query, baseUrl);
+      res.json({ query, count: results.length, items: results });
+    } catch (e: any) {
+      res.status(500).json({ error: "Search failed", message: e.message });
+    }
   }
 }
