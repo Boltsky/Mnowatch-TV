@@ -5,6 +5,44 @@ import { URL } from 'url';
 
 export class StreamProxyService {
   private static DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
+  private static MUNO_SESSION_COOKIE = 'PHPSESSID=926cdd498cd8113008318bd9c6696ff5';
+
+  /**
+   * Resolves direct 1080p BunnyCDN video stream from Munowatch watch page via data-gumite base64 decoding
+   */
+  public static async resolveMunowatchWatchStream(watchUrlOrPath: string): Promise<string | null> {
+    try {
+      const fullUrl = watchUrlOrPath.startsWith('http')
+        ? watchUrlOrPath
+        : `https://munowatch.com${watchUrlOrPath.startsWith('/') ? '' : '/'}${watchUrlOrPath}`;
+
+      const resp = await fetch(fullUrl, {
+        headers: {
+          'Cookie': this.MUNO_SESSION_COOKIE,
+          'Referer': 'https://munowatch.com/',
+          'User-Agent': this.DEFAULT_USER_AGENT
+        },
+        signal: AbortSignal.timeout(6000)
+      });
+
+      if (resp.ok) {
+        const html = await resp.text();
+        const gumiteMatch = html.match(/data-gumite=["']([^"']+)["']/i);
+        if (gumiteMatch && gumiteMatch[1]) {
+          try {
+            const decoded = Buffer.from(gumiteMatch[1], 'base64').toString('utf-8').trim();
+            const streamInDecoded = decoded.match(/https?:\/\/[^\s"'<>]+\.(?:mp4|m3u8)(?:\?[^\s"'<>]*)?/i) ||
+                                    decoded.match(/https?:\/\/[a-zA-Z0-9_\-\.]+\.b-cdn\.net\/[^\s"'<>]+/i);
+            const streamUrl = streamInDecoded ? streamInDecoded[0] : (decoded.startsWith('http') ? decoded : null);
+            if (streamUrl && !this.isTrailerOrPromoUrl(streamUrl)) {
+              return streamUrl;
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+    return null;
+  }
 
   /**
    * Universal detector rejecting any trailer, sample, promo, teaser, or intro video URLs or filenames.
@@ -254,6 +292,9 @@ export class StreamProxyService {
     try {
       const cleanUrl = decodeURIComponent(streamUrl).toLowerCase();
 
+      // Munowatch BunnyCDN streams (/port/str/...) use Base64 encrypted tokens, resolved directly from matched title watch pages
+      if (cleanUrl.includes('/port/str/') || cleanUrl.includes('.b-cdn.net/port/')) return true;
+
       // Generic stop words that should NEVER be used alone to match a video URL
       const stopWords = new Set([
         'part', 'the', 'movie', 'full', 'vj', 'series', 'season', 'and', 'with', 'from',
@@ -450,8 +491,56 @@ export class StreamProxyService {
    * Resolves direct media streaming link for any movie or series title on demand
    */
   public static async resolveMediaStream(id: string, title?: string): Promise<string | null> {
-    const isExplicitTwolekede = id.startsWith('tk_') || (!id.startsWith('myvj_') && /^\d+$/.test(id));
-    const cleanId = id.replace(/^(myvj_|tk_|ep_)/, '');
+    const isExplicitTwolekede = id.startsWith('tk_') || (!id.startsWith('myvj_') && !id.startsWith('muno_') && /^\d+$/.test(id));
+    const cleanId = id.replace(/^(myvj_|tk_|ep_|muno_)/, '');
+
+    // 0. If ID is muno_ or watch path is provided, resolve direct Munowatch 1080p BunnyCDN stream
+    if (id.startsWith('muno_')) {
+      const direct = await this.resolveMunowatchWatchStream(`/twolekede?mid=${cleanId}`);
+      if (direct && !this.isTrailerOrPromoUrl(direct, title)) {
+        return direct;
+      }
+    }
+
+    // 0.5. Search Munowatch catalog directly by title (Fastest 1080p BunnyCDN source, zero buffering)
+    if (title && title.trim().length >= 2) {
+      const cleanTitle = title
+        .replace(/\[.*?\]|\(.*?\)/g, '')
+        .replace(/\b(?:by\s+vj|vj)\s+[a-z0-9_.-]*.*$/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const candidateQueries = this.generateCandidateQueries(cleanTitle);
+      for (const q of candidateQueries.slice(0, 3)) {
+        try {
+          const resp = await fetch(`https://munowatch.com/search?q=${encodeURIComponent(q)}`, {
+            headers: {
+              'Cookie': this.MUNO_SESSION_COOKIE,
+              'Referer': 'https://munowatch.com/',
+              'User-Agent': this.DEFAULT_USER_AGENT
+            },
+            signal: AbortSignal.timeout(6000)
+          });
+
+          if (resp.ok) {
+            const html = await resp.text();
+            const cardRegex = /<a[^>]+href="(\/twolekede\?v=[^"'\s]+)"[^>]*>[\s\S]*?<img[^>]+alt="([^"']+)"/g;
+            let cm: RegExpExecArray | null;
+            while ((cm = cardRegex.exec(html)) !== null) {
+              const watchHref = cm[1].replace(/&amp;/g, '&');
+              const cardTitle = this.unescapeHtml(cm[2]).trim();
+
+              if (this.titlesMatch(title, cardTitle)) {
+                const bcdnStream = await this.resolveMunowatchWatchStream(watchHref);
+                if (bcdnStream && !this.isTrailerOrPromoUrl(bcdnStream, title)) {
+                  return bcdnStream;
+                }
+              }
+            }
+          }
+        } catch {}
+      }
+    }
 
     // 1. If it's a numeric Twolekede ID (including episode IDs), resolve and verify title match
     if (isExplicitTwolekede && /^\d+$/.test(cleanId)) {

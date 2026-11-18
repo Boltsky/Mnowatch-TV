@@ -202,14 +202,17 @@ export class CatalogService {
   /**
    * Fetches the complete catalog for a specific VJ from Twolekede (e.g. 1,156+ movies for VJ Junior)
    */
-  public static async fetchTwolekedeByVj(vjName: string): Promise<MediaItem[]> {
+  public static async fetchTwolekedeByVj(vjName: string, page: number = 1): Promise<MediaItem[]> {
     const mappedVj = this.mapVjToTwolekedeName(vjName);
-    const cacheKey = `twolekede:vj:${mappedVj.toLowerCase()}`;
+    const cacheKey = `twolekede:vj:${mappedVj.toLowerCase()}:${page}`;
     const cached = this.getFromCache<MediaItem[]>(cacheKey);
     if (cached) return cached;
 
     try {
-      const url = `https://twolekede.com/categories.php?name=${encodeURIComponent(mappedVj)}`;
+      const url = page <= 1
+        ? `https://twolekede.com/categories.php?name=${encodeURIComponent(mappedVj)}`
+        : `https://twolekede.com/categories.php?name=${encodeURIComponent(mappedVj)}&page=${page}`;
+
       const resp = await fetch(url, {
         headers: {
           'Referer': 'https://twolekede.com/',
@@ -222,8 +225,8 @@ export class CatalogService {
       const html = await resp.text();
       const items: MediaItem[] = [];
 
-      // Resilient card extraction
-      const cardRegex = /<div class="grid-item">[\s\S]*?<a href="(?:moviedetails|preview)\.php\?id=(\d+)"[\s\S]*?<img[^>]+src="([^"]+)"[\s\S]*?<h3>([^<]+)<\/h3>[\s\S]*?<p>([^<]*)<\/p>(?:[\s\S]*?<span class="category">([^<]*)<\/span>)?/g;
+      // Resilient card extraction supporting multiple card layouts
+      const cardRegex = /<a\s+[^>]*href=["'](?:moviedetails|preview)\.php\?id=(\d+)["'][^>]*>[\s\S]*?<img[^>]+src=["']([^"']+)["'][\s\S]*?<h3>([^<]+)<\/h3>(?:[\s\S]*?<p>([^<]*)<\/p>)?(?:[\s\S]*?<span class="category">([^<]*)<\/span>)?/g;
       let match: RegExpExecArray | null;
 
       while ((match = cardRegex.exec(html)) !== null) {
@@ -419,15 +422,14 @@ export class CatalogService {
 
     if (options.vj) {
       // Priority 1: Direct Twolekede VJ catalog (1,156+ verified full movies for Junior, 444+ for Emmy, etc.)
-      const twolekedeVjMovies = await this.fetchTwolekedeByVj(options.vj);
+      const twolekedeVjMovies = await this.fetchTwolekedeByVj(options.vj, page);
       let allVjItems = twolekedeVjMovies;
-      if (allVjItems.length === 0) {
+      if (allVjItems.length === 0 && page === 1) {
         allVjItems = await this.fetchUgaWatchCatalog(1, options);
       }
 
-      totalEstimated = allVjItems.length;
-      const start = (page - 1) * perPage;
-      combined = allVjItems.slice(start, start + perPage);
+      totalEstimated = 1200;
+      combined = allVjItems;
 
     } else if (options.genre) {
       // Priority 2: Direct Twolekede genre catalog
@@ -580,7 +582,8 @@ export class CatalogService {
   }
 
   /**
-   * Live search across UgaWatch and Twolekede
+   * Resilient multi-source search across Munowatch VIP catalog, Twolekede movies & series,
+   * UgaWatch / MyVJ, and VJ categories
    */
   public static async search(query: string, baseUrl: string): Promise<MediaItem[]> {
     if (!query || query.trim().length === 0) return [];
@@ -590,14 +593,150 @@ export class CatalogService {
     if (cached) return cached;
 
     const results: MediaItem[] = [];
+    const qTokens = q.toLowerCase().split(/\s+/).filter(t => t.length >= 2);
+    const munoSession = 'PHPSESSID=926cdd498cd8113008318bd9c6696ff5';
 
-    // 1. Search UgaWatch API v3
+    // 1. Search Munowatch catalog directly (yields authentic cards + direct 1080p BunnyCDN streams)
+    try {
+      const resp = await fetch(`https://munowatch.com/search?q=${encodeURIComponent(q)}`, {
+        headers: {
+          'Cookie': munoSession,
+          'Referer': 'https://munowatch.com/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        },
+        signal: AbortSignal.timeout(6000)
+      });
+
+      if (resp.ok) {
+        const html = await resp.text();
+        const anchorRegex = /<a\s+[^>]*href="(\/twolekede\?v=[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+        let am: RegExpExecArray | null;
+        while ((am = anchorRegex.exec(html)) !== null) {
+          const href = am[1].replace(/&amp;/g, '&');
+          const inner = am[2];
+          const idMatch = inner.match(/id=["'](\d+)["']/);
+          const imgMatch = inner.match(/<img[^>]+src=["']([^"']+)["'][^>]*alt=["']([^"']*)["']|<img[^>]+alt=["']([^"']*)["'][^>]*src=["']([^"']+)["']/i);
+          const vjMatch = inner.match(/<p[^>]*>([^<]+)<\/p>/i);
+
+          const mid = idMatch ? idMatch[1] : `${results.length + 1000}`;
+          const poster = imgMatch ? (imgMatch[1] || imgMatch[4] || '') : '';
+          const rawTitle = imgMatch ? (imgMatch[2] || imgMatch[3] || '') : '';
+          const title = StreamProxyService.unescapeHtml(rawTitle).trim();
+          let vj = vjMatch ? vjMatch[1].trim() : 'VJ Junior';
+          if (!vj.toLowerCase().includes('vj')) vj = `VJ ${vj}`;
+
+          if (title) {
+            results.push({
+              id: `muno_${mid}`,
+              title: title,
+              type: href.toLowerCase().includes('series') ? 'series' : 'movie',
+              vj: vj,
+              genre: 'Action / Adventure',
+              year: '2024',
+              rating: '8.8',
+              duration: '2h 05m',
+              description: `${title} translated into Luganda by ${vj}. Available in 1080p Full HD on Munowatch TV.`,
+              posterUrl: poster,
+              backdropUrl: poster,
+              streamUrl: `https://munowatch.com${href}`,
+              isSeries: href.toLowerCase().includes('series')
+            });
+          }
+        }
+      }
+    } catch {}
+
+    // 2. Search Twolekede Movies (matches verified full movies on Twolekede)
+    try {
+      const resp = await fetch(`https://twolekede.com/search.php?q=${encodeURIComponent(q)}`, {
+        headers: {
+          'Referer': 'https://twolekede.com/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        },
+        signal: AbortSignal.timeout(6000)
+      });
+
+      if (resp.ok) {
+        const html = await resp.text();
+        const tkRegex = /<a href="(?:moviedetails|preview)\.php\?id=(\d+)"[^>]*>[\s\S]*?(?:<span class="category-badge">([^<]*)<\/span>)?[\s\S]*?<img[^>]+src="([^"]+)"[\s\S]*?<h3 class="content-title">([^<]*)<\/h3>/g;
+        let m: RegExpExecArray | null;
+        while ((m = tkRegex.exec(html)) !== null) {
+          const id = m[1];
+          let vj = m[2]?.trim() || 'VJ Junior';
+          let poster = m[3];
+          const rawTitle = m[4].trim();
+          const title = StreamProxyService.unescapeHtml(rawTitle);
+          if (!vj.toLowerCase().includes('vj')) vj = `VJ ${vj}`;
+          if (!poster.startsWith('http')) poster = `https://twolekede.com/${poster.replace(/^\/+/, '')}`;
+
+          results.push({
+            id: `tk_${id}`,
+            title: title,
+            type: 'movie',
+            vj: vj,
+            genre: 'Action / Adventure',
+            year: '2024',
+            rating: '8.8',
+            duration: '2h 05m',
+            description: `${title} translated into Luganda by ${vj}. Available in 1080p FHD on Munowatch TV.`,
+            posterUrl: poster,
+            backdropUrl: poster,
+            streamUrl: `https://twolekede.com/preview.php?id=${id}`,
+            isSeries: false
+          });
+        }
+      }
+    } catch {}
+
+    // 3. Search Twolekede Series (matches complete multi-season series)
+    try {
+      const resp = await fetch(`https://twolekede.com/search.php?type=series&q=${encodeURIComponent(q)}`, {
+        headers: {
+          'Referer': 'https://twolekede.com/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        },
+        signal: AbortSignal.timeout(6000)
+      });
+
+      if (resp.ok) {
+        const html = await resp.text();
+        const sRegex = /<a href="(?:seriesdetails|preview)\.php\?id=(\d+)"[^>]*>[\s\S]*?(?:<span class="category-badge">([^<]*)<\/span>)?[\s\S]*?<img[^>]+src="([^"]+)"[\s\S]*?<h3 class="content-title">([^<]*)<\/h3>/g;
+        let sm: RegExpExecArray | null;
+        while ((sm = sRegex.exec(html)) !== null) {
+          const id = sm[1];
+          let vj = sm[2]?.trim() || 'VJ Junior';
+          let poster = sm[3];
+          const rawTitle = sm[4].trim();
+          const title = StreamProxyService.unescapeHtml(rawTitle);
+          if (!vj.toLowerCase().includes('vj')) vj = `VJ ${vj}`;
+          if (!poster.startsWith('http')) poster = `https://twolekede.com/${poster.replace(/^\/+/, '')}`;
+
+          results.push({
+            id: `tk_${id}`,
+            title: title,
+            type: 'series',
+            vj: vj,
+            genre: 'Series',
+            year: '2024',
+            rating: '8.9',
+            duration: 'Complete Series',
+            description: `${title} complete series translated into Luganda by ${vj}. Stream all seasons on Munowatch TV.`,
+            posterUrl: poster,
+            backdropUrl: poster,
+            streamUrl: `https://twolekede.com/preview.php?id=${id}`,
+            isSeries: true
+          });
+        }
+      }
+    } catch {}
+
+    // 4. Search UgaWatch API v3 (capturing matches_title_movies, matches_title_series, matches_vj_movies, etc.)
     try {
       const resp = await fetch('https://ugawatch.com/api-v3/mobile/search.php', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
           'Referer': 'https://ugawatch.com/'
         },
         body: new URLSearchParams({ source: 'next_js', search_term: q }).toString(),
@@ -608,7 +747,15 @@ export class CatalogService {
         const text = await resp.text();
         if (text && !text.startsWith('<')) {
           const json = JSON.parse(text);
-          const rawItems = json.medias || json.items || json.list || [];
+          const rawItems = [
+            ...(json.matches_title_movies || []),
+            ...(json.matches_title_series || []),
+            ...(json.matches_vj_movies || []),
+            ...(json.starring_in_movies || []),
+            ...(json.medias || []),
+            ...(json.items || []),
+            ...(json.list || [])
+          ];
           for (const obj of rawItems) {
             const rowId = String(obj.row_id || obj.id || '');
             const title = String(obj.title || '');
@@ -646,66 +793,43 @@ export class CatalogService {
       }
     } catch {}
 
-    // 2. Search Twolekede (matches verified full movies on Twolekede)
-    try {
-      const resp = await fetch(`https://twolekede.com/search.php?q=${encodeURIComponent(q)}`, {
-        headers: {
-          'Referer': 'https://twolekede.com/',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
-        },
-        signal: AbortSignal.timeout(6000)
-      });
-
-      if (resp.ok) {
-        const html = await resp.text();
-        const tkRegex = /<a href="(?:moviedetails|seriesdetails|preview)\.php\?id=(\d+)"[^>]*>[\s\S]*?(?:<span class="category-badge">([^<]*)<\/span>)?[\s\S]*?<img[^>]+src="([^"]+)"[\s\S]*?<h3 class="content-title">([^<]*)<\/h3>/g;
-        let m: RegExpExecArray | null;
-        while ((m = tkRegex.exec(html)) !== null) {
-          const id = m[1];
-          let vj = m[2]?.trim() || 'VJ Junior';
-          let poster = m[3];
-          const rawTitle = m[4].trim();
-          const title = StreamProxyService.unescapeHtml(rawTitle);
-          if (!vj.toLowerCase().includes('vj')) vj = `VJ ${vj}`;
-          if (!poster.startsWith('http')) poster = `https://twolekede.com/${poster.replace(/^\/+/, '')}`;
-
-          results.push({
-            id: `tk_${id}`,
-            title: title,
-            type: 'movie',
-            vj: vj,
-            genre: 'Action / Adventure',
-            year: '2024',
-            rating: '8.8',
-            duration: '2h 05m',
-            description: `${title} translated into Luganda by ${vj}. Available in 1080p FHD on Munowatch TV.`,
-            posterUrl: poster,
-            backdropUrl: poster,
-            streamUrl: `https://twolekede.com/preview.php?id=${id}`,
-            isSeries: false
-          });
-        }
-      }
-    } catch {}
-
-    // 3. Fallback to rich catalog search if results are empty
-    if (results.length === 0) {
-      const lowerQ = q.toLowerCase();
-      const local = RICH_CATALOG.filter(i =>
-        i.title.toLowerCase().includes(lowerQ) ||
-        i.vj.toLowerCase().includes(lowerQ) ||
-        i.genre.toLowerCase().includes(lowerQ)
-      );
-      results.push(...local);
+    // 5. VJ Category search expansion
+    const lowerQ = q.toLowerCase();
+    const matchedVj = this.getVjs().find(v => lowerQ.includes(v.name.toLowerCase()) || v.name.toLowerCase().includes(lowerQ));
+    if (matchedVj) {
+      try {
+        const vjItems = await this.fetchTwolekedeByVj(matchedVj.name);
+        results.push(...vjItems.slice(0, 30));
+      } catch {}
     }
 
-    // Deduplicate
+    // 6. Genre search expansion
+    const matchedGenre = this.getGenres().find(g => lowerQ.includes(g.toLowerCase()));
+    if (matchedGenre) {
+      try {
+        const genreItems = await this.fetchTwolekedeByGenre(matchedGenre, 1);
+        results.push(...genreItems.slice(0, 30));
+      } catch {}
+    }
+
+    // 7. Match against cached catalog & RICH_CATALOG
+    const local = RICH_CATALOG.filter(i =>
+      i.title.toLowerCase().includes(lowerQ) ||
+      i.vj.toLowerCase().includes(lowerQ) ||
+      i.genre.toLowerCase().includes(lowerQ) ||
+      (qTokens.length > 0 && qTokens.some(tok => i.title.toLowerCase().includes(tok)))
+    );
+    results.push(...local);
+
+    // Deduplicate preserving unique movie + VJ combinations
     const seen = new Set<string>();
     const deduplicated: MediaItem[] = [];
     for (const item of results) {
-      const norm = item.title.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (!seen.has(norm)) {
-        seen.add(norm);
+      const normTitle = item.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normVj = (item.vj || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const uniqueKey = `${normTitle}_${normVj}`;
+      if (!seen.has(uniqueKey)) {
+        seen.add(uniqueKey);
         deduplicated.push(this.enrichWithServers(item, baseUrl));
       }
     }

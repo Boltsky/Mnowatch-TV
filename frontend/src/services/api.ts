@@ -319,7 +319,7 @@ export const api = {
       params.append('id', id);
       if (title) params.append('title', title);
 
-      const res = await fetch(`${API_BASE}/stream/resolve?${params.toString()}`, { signal: AbortSignal.timeout(7000) });
+      const res = await fetch(`${API_BASE}/stream/resolve?${params.toString()}`, { signal: AbortSignal.timeout(12000) });
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.streamUrl && !isTrailerOrIntroUrl(data.streamUrl, title) && !isTrailerOrIntroUrl(data.directUrl, title)) {
@@ -341,7 +341,7 @@ export const api = {
   async search(query: string): Promise<MediaItem[]> {
     if (!query.trim()) return [];
     try {
-      const res = await fetch(`${API_BASE}/catalog/search?q=${encodeURIComponent(query)}`, { signal: AbortSignal.timeout(3000) });
+      const res = await fetch(`${API_BASE}/catalog/search?q=${encodeURIComponent(query)}`, { signal: AbortSignal.timeout(9000) });
       if (res.ok) {
         const data = await res.json();
         return data.items || [];
@@ -353,7 +353,7 @@ export const api = {
 
   async getTitle(id: string): Promise<MediaItem | null> {
     try {
-      const res = await fetch(`${API_BASE}/catalog/title/${id}`, { signal: AbortSignal.timeout(3000) });
+      const res = await fetch(`${API_BASE}/catalog/title/${id}`, { signal: AbortSignal.timeout(6000) });
       if (res.ok) {
         return await res.json();
       }
