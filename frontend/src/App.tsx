@@ -154,6 +154,7 @@ export const App: React.FC = () => {
         episode={playerTarget.episode}
         initialServer={playerTarget.server}
         onBack={handleBack}
+        onSelectMovie={handleItemClick}
       />
     );
   }

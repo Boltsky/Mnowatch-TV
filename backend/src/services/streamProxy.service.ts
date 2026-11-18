@@ -335,13 +335,24 @@ export class StreamProxyService {
     return queries.filter(q => q.length >= 2);
   }
 
+  public static unescapeHtml(str: string): string {
+    if (!str) return '';
+    return str
+      .replace(/&amp;/g, '&')
+      .replace(/&#38;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#039;/g, "'")
+      .replace(/&apos;/g, "'")
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>');
+  }
+
   /**
    * Battle-tested comparison verifying that two titles represent the same movie
    * Ported from MunowatchHtmlParser.kt in Android TV to eliminate all mismatches
    */
   public static titlesMatch(a: string, b: string): boolean {
-    const unescapeHtml = (str: string) =>
-      str.replace(/&amp;/g, '&').replace(/&#38;/g, '&').replace(/&quot;/g, '"');
+    const unescapeHtml = this.unescapeHtml;
 
     const cleanForMatching = (t: string): string => {
       let s = unescapeHtml(t).toLowerCase();
@@ -477,12 +488,12 @@ export class StreamProxyService {
             const html = await resp.text();
 
             // Match all content-items and unescape HTML titles
-            const cardRegex = /<a href="(?:moviedetails|preview)\.php\?id=(\d+)"[^>]*>[\s\S]*?<img[^>]+alt="([^"]*)"[\s\S]*?<h3 class="content-title">([^<]*)<\/h3>/g;
+            const cardRegex = /<a href="(?:moviedetails|seriesdetails|preview)\.php\?id=(\d+)"[^>]*>[\s\S]*?<h3 class="content-title">([^<]*)<\/h3>/g;
             let m: RegExpExecArray | null;
 
             while ((m = cardRegex.exec(html)) !== null) {
               const matchedId = m[1];
-              const cardTitle = (m[3] || m[2] || '').trim();
+              const cardTitle = this.unescapeHtml(m[2]).trim();
 
               if (this.titlesMatch(title, cardTitle)) {
                 const stream = await this.resolveTwolekedeStreamById(matchedId, title);
@@ -497,7 +508,7 @@ export class StreamProxyService {
             let altM: RegExpExecArray | null;
             while ((altM = altCardRegex.exec(html)) !== null) {
               const matchedId = altM[1];
-              const cardTitle = (altM[2] || '').trim();
+              const cardTitle = this.unescapeHtml(altM[2]).trim();
               if (this.titlesMatch(title, cardTitle)) {
                 const stream = await this.resolveTwolekedeStreamById(matchedId, title);
                 if (stream && !this.isTrailerOrPromoUrl(stream, title) && this.urlMatchesTitle(stream, title)) {
@@ -652,6 +663,40 @@ export class StreamProxyService {
       }
     } catch {}
 
+    return null;
+  }
+
+  /**
+   * Discovers the closest available verified full Ugandan translated release when a sequel/variant is unavailable
+   */
+  public static async findAlternativeMovie(title: string): Promise<{ id: string; title: string } | null> {
+    if (!title || title.trim().length < 2) return null;
+    const clean = title.replace(/\[.*?\]|\(.*?\)/g, '').trim();
+    // Try base title, e.g. "Jumanji: The Next Level" -> "Jumanji"
+    const baseTitle = clean.split(/[:\-–—]/)[0].trim();
+    if (baseTitle && baseTitle.length >= 3 && baseTitle.toLowerCase() !== clean.toLowerCase()) {
+      try {
+        const resp = await fetch(`https://twolekede.com/search.php?q=${encodeURIComponent(baseTitle)}`, {
+          headers: {
+            'Referer': 'https://twolekede.com/',
+            'User-Agent': this.DEFAULT_USER_AGENT
+          },
+          signal: AbortSignal.timeout(5000)
+        });
+        if (resp.ok) {
+          const html = await resp.text();
+          const cardRegex = /<a href="(?:moviedetails|seriesdetails|preview)\.php\?id=(\d+)"[^>]*>[\s\S]*?<h3 class="content-title">([^<]*)<\/h3>/g;
+          let m: RegExpExecArray | null;
+          while ((m = cardRegex.exec(html)) !== null) {
+            const matchedId = m[1];
+            const cardTitle = this.unescapeHtml(m[2]).trim();
+            if (cardTitle.toLowerCase().includes(baseTitle.toLowerCase())) {
+              return { id: `tk_${matchedId}`, title: cardTitle };
+            }
+          }
+        }
+      } catch {}
+    }
     return null;
   }
 }

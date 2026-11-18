@@ -12,9 +12,10 @@ interface VideoPlayerProps {
   episode?: Episode;
   initialServer?: PlaybackServer;
   onBack: () => void;
+  onSelectMovie?: (item: MediaItem) => void;
 }
 
-export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initialServer, onBack }) => {
+export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initialServer, onBack, onSelectMovie }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -32,6 +33,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
 
   const [hasError, setHasError] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [alternative, setAlternative] = useState<{ id: string; title: string } | null>(null);
   const [isResolving, setIsResolving] = useState<boolean>(false);
 
   // Available servers (strictly filtered to eliminate trailers and promos)
@@ -84,6 +86,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
     // 2. Always query verified stream resolver to validate title match and avoid wrong movie playback
     try {
       const res = await api.resolveStream(item.id, item.title);
+      if (res.alternative) {
+        setAlternative(res.alternative);
+      }
       if (res.streamUrl && !isTrailerOrIntroUrl(res.streamUrl, item.title) && !isTrailerOrIntroUrl(res.directUrl, item.title)) {
         const finalUrl = currentServer.isProxy ? res.streamUrl : (res.directUrl || res.streamUrl);
         setResolvedStreamUrl(finalUrl);
@@ -388,9 +393,34 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            {alternative && onSelectMovie && (
+              <button
+                onClick={() => {
+                  onSelectMovie({
+                    id: alternative.id,
+                    title: alternative.title,
+                    type: 'movie',
+                    vj: item.vj || 'VJ Junior',
+                    genre: item.genre || 'Action / Adventure',
+                    year: '2024',
+                    rating: '8.8',
+                    duration: '2h 05m',
+                    description: `Watch ${alternative.title} translated into Luganda by ${item.vj || 'popular VJs'} on Munowatch TV.`,
+                    posterUrl: item.posterUrl,
+                    backdropUrl: item.backdropUrl,
+                    streamUrl: '',
+                    isSeries: false
+                  });
+                }}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs transition-all shadow-lg shadow-emerald-500/30 active:scale-95"
+              >
+                <Play className="w-4 h-4 fill-black" />
+                Play Available Ugandan Version: {alternative.title}
+              </button>
+            )}
             <button
               onClick={triggerStreamResolution}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs transition-all shadow-lg shadow-emerald-500/30"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs border border-white/20 transition-all"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               Retry Playback

@@ -313,7 +313,7 @@ export const api = {
     const filtered = FALLBACK_CATALOG.filter(i => i.isSeries);
     return { items: filtered, count: filtered.length, total: filtered.length, page: 1, hasMore: false };
   },
-  async resolveStream(id: string, title?: string): Promise<{ streamUrl: string; directUrl: string; servers?: any[]; error?: string; unavailable?: boolean }> {
+  async resolveStream(id: string, title?: string): Promise<{ streamUrl: string; directUrl: string; servers?: any[]; error?: string; unavailable?: boolean; alternative?: { id: string; title: string } }> {
     try {
       const params = new URLSearchParams();
       params.append('id', id);
@@ -329,7 +329,8 @@ export const api = {
             streamUrl: '',
             directUrl: '',
             unavailable: true,
-            error: data.error || 'Full Ugandan translated movie is currently unavailable. No trailer playback permitted.'
+            error: data.error || 'Full Ugandan translated movie is currently unavailable. No trailer playback permitted.',
+            alternative: data.alternative || undefined
           };
         }
       }

@@ -45,12 +45,16 @@ export class StreamController {
           ]
         });
       } else {
+        const alternative = title ? await StreamProxyService.findAlternativeMovie(title) : null;
         res.json({
           success: false,
           unavailable: true,
           streamUrl: '',
           directUrl: '',
-          error: 'Full Ugandan translated movie is currently unavailable. No trailer playback permitted.'
+          error: title
+            ? `A full Ugandan translated release for "${title}" is not currently available. We strictly stream genuine full movies, not promotional trailers.`
+            : 'Full Ugandan translated movie is currently unavailable. No trailer playback permitted.',
+          alternative: alternative || undefined
         });
       }
     } catch (e: any) {
