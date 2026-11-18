@@ -2,7 +2,12 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { MediaItem } from '../../types';
 import { TvMediaCard } from '../common/TvMediaCard';
 import { Sparkles, Calendar, Shuffle, Clock, X, Loader2, ArrowDownCircle } from 'lucide-react';
-import { api } from '../../services/api';
+import { api, isTrailerOrIntroUrl } from '../../services/api';
+
+const isTrailerOnly = (item: MediaItem) => {
+  if (!item.streamUrl) return false;
+  return isTrailerOrIntroUrl(item.streamUrl, item.title) && !item.id.startsWith('tk_') && !item.streamUrl.includes('preview.php') && !item.streamUrl.includes('twolekede');
+};
 
 interface MoviesScreenProps {
   movies: MediaItem[];
@@ -42,8 +47,9 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
         vj: selectedVj || undefined,
         sort: sortMode
       });
-      setMovieList(res.items);
-      setHasMore(res.items.length >= 12);
+      const cleanItems = (res.items || []).filter(i => !isTrailerOnly(i));
+      setMovieList(cleanItems);
+      setHasMore(cleanItems.length >= 12);
     } catch {
       // Keep initial movies on error
     } finally {
@@ -71,13 +77,14 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
       });
 
       if (res.items && res.items.length > 0) {
+        const cleanItems = res.items.filter(i => !isTrailerOnly(i));
         setMovieList(prev => {
           const existingIds = new Set(prev.map(p => p.id));
-          const newItems = res.items.filter(i => !existingIds.has(i.id));
+          const newItems = cleanItems.filter(i => !existingIds.has(i.id));
           return [...prev, ...newItems];
         });
         setPage(nextPage);
-        setHasMore(res.items.length >= 12);
+        setHasMore(cleanItems.length >= 12);
       } else {
         setHasMore(false);
       }

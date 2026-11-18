@@ -7,6 +7,100 @@ export class StreamProxyService {
   private static DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
 
   /**
+   * Universal detector rejecting any trailer, sample, promo, teaser, or intro video URLs or filenames.
+   * Defeats percent-encoded obfuscation via iterative decoding, detects query-param trailer indicators,
+   * enforces token boundaries on trailer/teaser keywords, and avoids false positives when expectedTitle
+   * contains "trailer" (e.g. "Trailer Park Boys").
+   */
+  public static isTrailerOrPromoUrl(url: string | null | undefined, expectedTitle?: string): boolean {
+    if (!url || typeof url !== 'string') return true;
+    let lower = url.toLowerCase().trim();
+    if (lower.length === 0) return true;
+
+    // 1. Iteratively decode decodeURIComponent (up to 3 times or until string stabilizes)
+    // to defeat percent-encoded obfuscation (%74%72%61%69%6c%65%72, %2ftrailer)
+    let decoded = lower;
+    for (let i = 0; i < 3; i++) {
+      try {
+        const next = decodeURIComponent(decoded);
+        if (next === decoded) break;
+        decoded = next;
+      } catch {
+        break;
+      }
+    }
+    lower = decoded.toLowerCase().trim();
+
+    // 2. Forbidden trailer / promo CDN pull zones or hostnames (unconditional)
+    if (lower.includes('trailer256.b-cdn.net')) return true;
+    if (lower.includes('intro_myvj')) return true;
+
+    // 3. Query parameter trailer / teaser / promo indicators
+    // Detect query parameters: [?&](?:type|clip|mode|file)=trailer, [?&]trailer\b, [?&]teaser\b
+    if (
+      /[?&](?:type|clip|mode|file)=(?:trailer|teaser|promo|sample)\b/i.test(lower) ||
+      /[?&]trailer\b/i.test(lower) ||
+      /[?&]teaser\b/i.test(lower) ||
+      /[?&]promo\b/i.test(lower)
+    ) {
+      return true;
+    }
+
+    // 4. Context-aware title protection:
+    // If expectedTitle contains "trailer" (e.g. "Trailer Park Boys", "The Trailer"),
+    // do not falsely block the title name in the URL.
+    let testStr = lower;
+    if (expectedTitle && typeof expectedTitle === 'string' && expectedTitle.toLowerCase().includes('trailer')) {
+      const coreTitle = expectedTitle
+        .toLowerCase()
+        .replace(/\b(?:seasons?\s*\d+|s\d+|episodes?\s*\d+|eps?\s*\d+|e\d+|parts?\s*\d+|pt\s*\d+)\b/gi, ' ')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+      const words = coreTitle.split(/\s+/).filter(Boolean);
+      if (words.length > 0) {
+        const titlePattern = new RegExp(words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[^a-z0-9]*'), 'gi');
+        testStr = testStr.replace(titlePattern, 'TITLEREPLACED');
+      }
+      testStr = testStr.replace(/trailer[^a-z0-9]*park[^a-z0-9]*boys/gi, 'TITLEREPLACED');
+      testStr = testStr.replace(/the[^a-z0-9]*trailer/gi, 'TITLEREPLACED');
+    } else if (!expectedTitle) {
+      // Even if expectedTitle is omitted, protect known legitimate titles containing "trailer"
+      testStr = testStr.replace(/trailer[^a-z0-9]+park[^a-z0-9]+boys/gi, 'TITLEREPLACED');
+      testStr = testStr.replace(/the[^a-z0-9]+trailer(?=[^a-z0-9]+(?:19\d\d|20\d\d|x264|720p|1080p|hd|vj|full|\.))/gi, 'TITLEREPLACED');
+    }
+
+    // 5. Hostname check for BunnyCDN trailer zone with trailer in name
+    if (testStr.includes('trailer') && testStr.includes('b-cdn.net')) return true;
+
+    // 6. Token boundary checks for trailer
+    // Enforce token boundaries /(?:^|[._\/-])trailer(?:s)?(?:[._\/-]|\.mp4|\.m3u8|$)/i
+    const trailerTokenRegex = /(?:^|[._\/-])trailer(?:s)?(?:[._\/-]|\.mp4|\.m3u8|$)/i;
+    if (trailerTokenRegex.test(testStr)) {
+      return true;
+    }
+
+    // 7. Teaser token boundary checks (_teaser, /teaser, teaser.mp4)
+    const teaserTokenRegex = /(?:^|[._\/-])teaser(?:s)?(?:[._\/-]|\.mp4|\.m3u8|$)/i;
+    if (teaserTokenRegex.test(testStr)) {
+      return true;
+    }
+
+    // 8. Sample token boundary checks (_sample, /sample, sample.mp4)
+    const sampleTokenRegex = /(?:^|[._\/-])sample(?:s)?(?:[._\/-]|\.mp4|\.m3u8|$)/i;
+    if (sampleTokenRegex.test(testStr)) {
+      return true;
+    }
+
+    // 9. Promo token boundary checks (_promo, /promo, promo.mp4)
+    const promoTokenRegex = /(?:^|[._\/-])promo(?:s)?(?:[._\/-]|\.mp4|\.m3u8|$)/i;
+    if (promoTokenRegex.test(testStr)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
    * Proxies media video stream with HTTP 206 Partial Content and Range headers
    */
   public static async handleProxyStream(req: Request, res: Response): Promise<void> {
@@ -44,6 +138,15 @@ export class StreamProxyService {
           targetUrl = direct;
         }
       }
+    }
+
+    // Strict trailer rejection: never proxy trailers or promo clips
+    const titleParam = req.query.title ? String(req.query.title) : undefined;
+    if (this.isTrailerOrPromoUrl(targetUrl, titleParam)) {
+      res.status(400).json({
+        error: 'Trailer and promo playback blocked. Munowatch exclusively streams full-length Ugandan translated movies.'
+      });
+      return;
     }
 
     this.pipeStream(targetUrl, req, res, 0);
@@ -246,6 +349,10 @@ export class StreamProxyService {
       s = s.replace(/\b(?:by\s+vj|vj)\s+[a-z0-9_.-]*.*$/gi, ' ');
       s = s.replace(/\b(?:19\d{2}|20\d{2})\b/g, ' ');
       s = s.replace(/\b(?:jr|junior|icep|emmy|jingo|ulio|mark|nelly|kimuli)\b/g, ' ');
+      // Strip series season descriptors (e.g. "s01", "s1", "s02", "season 1", "season 2", etc.)
+      s = s.replace(/\b(?:seasons?\s*\d+|s\d+)\b/gi, ' ');
+      // Strip episode descriptors (e.g. "episode 1", "ep 1", "e01", "eps 1")
+      s = s.replace(/\b(?:episodes?\s*\d+|eps?\s*\d+|e\d+)\b/gi, ' ');
       s = s.replace(/[:–—|]/g, ' ');
       // Standardize Roman numerals at word boundaries
       s = s.replace(/\biv\b/g, '4');
@@ -300,7 +407,8 @@ export class StreamProxyService {
     const ignorableExtras = new Set([
       "the", "of", "and", "a", "an", "in", "on", "at", "for", "from", "to",
       "pt", "part", "1", "hd", "full", "movie", "translated", "luganda", "vj",
-      "jr", "twolekede"
+      "jr", "twolekede", "season", "seasons", "s01", "s02", "s03", "s04", "s05",
+      "ep", "episode", "eps", "series"
     ]);
 
     let intersectionCount = 0;
@@ -336,8 +444,8 @@ export class StreamProxyService {
 
     // 1. If it's a numeric Twolekede ID (including episode IDs), resolve and verify title match
     if (isExplicitTwolekede && /^\d+$/.test(cleanId)) {
-      const resolved = await this.resolveTwolekedeStreamById(cleanId);
-      if (resolved && this.urlMatchesTitle(resolved, title)) {
+      const resolved = await this.resolveTwolekedeStreamById(cleanId, title);
+      if (resolved && !this.isTrailerOrPromoUrl(resolved, title) && this.urlMatchesTitle(resolved, title)) {
         return resolved;
       }
       // If direct ID returned mismatched movie, fall through to search by title
@@ -345,8 +453,8 @@ export class StreamProxyService {
 
     // 1.5. If cleanId itself is numeric and resolves to Twolekede preview, try it
     if (/^\d+$/.test(cleanId)) {
-      const resolved = await this.resolveTwolekedeStreamById(cleanId);
-      if (resolved && this.urlMatchesTitle(resolved, title)) {
+      const resolved = await this.resolveTwolekedeStreamById(cleanId, title);
+      if (resolved && !this.isTrailerOrPromoUrl(resolved, title) && this.urlMatchesTitle(resolved, title)) {
         return resolved;
       }
     }
@@ -377,8 +485,8 @@ export class StreamProxyService {
               const cardTitle = (m[3] || m[2] || '').trim();
 
               if (this.titlesMatch(title, cardTitle)) {
-                const stream = await this.resolveTwolekedeStreamById(matchedId);
-                if (stream && this.urlMatchesTitle(stream, title)) {
+                const stream = await this.resolveTwolekedeStreamById(matchedId, title);
+                if (stream && !this.isTrailerOrPromoUrl(stream, title) && this.urlMatchesTitle(stream, title)) {
                   return stream;
                 }
               }
@@ -391,8 +499,8 @@ export class StreamProxyService {
               const matchedId = altM[1];
               const cardTitle = (altM[2] || '').trim();
               if (this.titlesMatch(title, cardTitle)) {
-                const stream = await this.resolveTwolekedeStreamById(matchedId);
-                if (stream && this.urlMatchesTitle(stream, title)) {
+                const stream = await this.resolveTwolekedeStreamById(matchedId, title);
+                if (stream && !this.isTrailerOrPromoUrl(stream, title) && this.urlMatchesTitle(stream, title)) {
                   return stream;
                 }
               }
@@ -404,7 +512,9 @@ export class StreamProxyService {
 
     // 3. Fallback: Query UgaWatch API for BunnyCDN video stream (e.g. Indian movies / MK Kisuule / exclusive uploads)
     const ugaStream = await this.resolveUgaWatchStream(cleanId, title);
-    if (ugaStream) return ugaStream;
+    if (ugaStream && !this.isTrailerOrPromoUrl(ugaStream, title)) {
+      return ugaStream;
+    }
 
     return null;
   }
@@ -472,16 +582,20 @@ export class StreamProxyService {
             const data = await resp.json();
             if (data && (data.status === 0 || data.status === '0')) {
               const movie = data.movie || data.serie || data.data || {};
+              // Explicitly eliminate movie.trailer and ep.trailer
               const file = movie.bunny_file_name ||
                 (Array.isArray(data.episodes) && data.episodes[0]?.bunny_file_name) ||
-                movie.trailer ||
                 movie.video;
 
               if (file && typeof file === 'string' && file.trim().length > 3) {
                 const cleanFile = file.replace(/\\/g, '').trim();
-                const stream = cleanFile.startsWith('http') ? cleanFile : `https://trailer256.b-cdn.net/${cleanFile}`;
-                if (this.urlMatchesTitle(stream, title)) {
-                  return stream;
+                // Never allow trailers or construct trailer256.b-cdn.net
+                if (this.isTrailerOrPromoUrl(cleanFile, title)) {
+                  continue;
+                }
+                // Only accept genuine full http streams that are not trailers
+                if (cleanFile.startsWith('http') && this.urlMatchesTitle(cleanFile, title)) {
+                  return cleanFile;
                 }
               }
             }
@@ -493,7 +607,7 @@ export class StreamProxyService {
     return null;
   }
 
-  public static async resolveTwolekedeStreamById(id: string): Promise<string | null> {
+  public static async resolveTwolekedeStreamById(id: string, expectedTitle?: string): Promise<string | null> {
     // Attempt 1: GET preview.php (fastest direct stream source)
     try {
       const resp = await fetch(`https://twolekede.com/preview.php?id=${id}`, {
@@ -510,7 +624,7 @@ export class StreamProxyService {
                          html.match(/https?:\/\/(?:cdn|dl)\.movviez\.com\/secure\.php\?[^\s"'<>]+/);
         if (srcMatch) {
           const rawUrl = (srcMatch[1] || srcMatch[0]).replace(/&amp;/g, '&');
-          if (rawUrl && !rawUrl.includes('index.php')) {
+          if (rawUrl && !rawUrl.includes('index.php') && !this.isTrailerOrPromoUrl(rawUrl, expectedTitle)) {
             return rawUrl;
           }
         }
@@ -533,7 +647,7 @@ export class StreamProxyService {
       });
 
       const loc = resp.headers.get('location');
-      if (loc && (loc.includes('secure.php') || loc.includes('.mp4') || loc.includes('movviez.com')) && !loc.includes('index.php')) {
+      if (loc && (loc.includes('secure.php') || loc.includes('.mp4') || loc.includes('movviez.com')) && !loc.includes('index.php') && !this.isTrailerOrPromoUrl(loc, expectedTitle)) {
         return loc;
       }
     } catch {}

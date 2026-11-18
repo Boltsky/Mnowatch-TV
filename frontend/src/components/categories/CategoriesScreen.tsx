@@ -2,7 +2,12 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { MediaItem, VjItem } from '../../types';
 import { TvMediaCard } from '../common/TvMediaCard';
 import { Clapperboard, Layers, Loader2, ArrowDownCircle } from 'lucide-react';
-import { api } from '../../services/api';
+import { api, isTrailerOrIntroUrl } from '../../services/api';
+
+const isTrailerOnly = (item: MediaItem) => {
+  if (!item.streamUrl) return false;
+  return isTrailerOrIntroUrl(item.streamUrl, item.title) && !item.id.startsWith('tk_') && !item.streamUrl.includes('preview.php') && !item.streamUrl.includes('twolekede');
+};
 
 interface CategoriesScreenProps {
   movies: MediaItem[];
@@ -38,20 +43,22 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
     try {
       if (activeTab === 'VJ') {
         const res = await api.getMovies({ page: 1, perPage: 30, vj: selectedVj });
-        if (res.items.length > 0) {
-          setLiveItems(res.items);
-          setTotalTitles(res.total || res.items.length);
-          setHasMore(res.hasMore ?? (res.items.length >= 25));
+        const cleanItems = (res.items || []).filter(i => !isTrailerOnly(i));
+        if (cleanItems.length > 0) {
+          setLiveItems(cleanItems);
+          setTotalTitles(res.total || cleanItems.length);
+          setHasMore(res.hasMore ?? (cleanItems.length >= 25));
         } else {
           setLiveItems([]);
           setHasMore(false);
         }
       } else {
         const res = await api.getMovies({ page: 1, perPage: 30, genre: selectedGenre });
-        if (res.items.length > 0) {
-          setLiveItems(res.items);
-          setTotalTitles(res.total || res.items.length);
-          setHasMore(res.hasMore ?? (res.items.length >= 15));
+        const cleanItems = (res.items || []).filter(i => !isTrailerOnly(i));
+        if (cleanItems.length > 0) {
+          setLiveItems(cleanItems);
+          setTotalTitles(res.total || cleanItems.length);
+          setHasMore(res.hasMore ?? (cleanItems.length >= 15));
         } else {
           setLiveItems([]);
           setHasMore(false);
@@ -78,13 +85,14 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
         : await api.getMovies({ page: nextPage, perPage: 30, genre: selectedGenre });
 
       if (res.items && res.items.length > 0) {
+        const cleanItems = res.items.filter(i => !isTrailerOnly(i));
         setLiveItems(prev => {
           const ids = new Set(prev.map(p => p.id));
-          return [...prev, ...res.items.filter(i => !ids.has(i.id))];
+          return [...prev, ...cleanItems.filter(i => !ids.has(i.id))];
         });
         setPage(nextPage);
         if (res.total) setTotalTitles(res.total);
-        setHasMore(res.hasMore ?? (res.items.length >= 15));
+        setHasMore(res.hasMore ?? (cleanItems.length >= 15));
       } else {
         setHasMore(false);
       }

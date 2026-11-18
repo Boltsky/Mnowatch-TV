@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Search, X, Film, Sparkles } from 'lucide-react';
 import { MediaItem } from '../../types';
-import { api } from '../../services/api';
+import { api, isTrailerOrIntroUrl } from '../../services/api';
 import { TvMediaCard } from '../common/TvMediaCard';
+
+const isTrailerOnly = (item: MediaItem) => {
+  if (!item.streamUrl) return false;
+  return isTrailerOrIntroUrl(item.streamUrl, item.title) && !item.id.startsWith('tk_') && !item.streamUrl.includes('preview.php') && !item.streamUrl.includes('twolekede');
+};
 
 interface SearchScreenProps {
   onItemClick: (item: MediaItem) => void;
@@ -24,7 +29,8 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({ onItemClick }) => {
     const timer = setTimeout(async () => {
       setLoading(true);
       const items = await api.search(query);
-      setResults(items);
+      const cleanItems = (items || []).filter(i => !isTrailerOnly(i));
+      setResults(cleanItems);
       setLoading(false);
     }, 250);
 

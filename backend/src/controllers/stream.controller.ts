@@ -17,11 +17,11 @@ export class StreamController {
 
     try {
       const resolvedDirect = await StreamProxyService.resolveMediaStream(id, title);
-      if (resolvedDirect) {
+      if (resolvedDirect && !StreamProxyService.isTrailerOrPromoUrl(resolvedDirect, title)) {
         const protocol = req.headers['x-forwarded-proto'] || req.protocol;
         const host = req.headers['x-forwarded-host'] || req.get('host');
         const baseUrl = `${protocol}://${host}`;
-        const proxyUrl = `${baseUrl}/api/v1/stream/proxy?url=${encodeURIComponent(resolvedDirect)}`;
+        const proxyUrl = `${baseUrl}/api/v1/stream/proxy?url=${encodeURIComponent(resolvedDirect)}${title ? `&title=${encodeURIComponent(title)}` : ''}`;
 
         res.json({
           success: true,
@@ -47,9 +47,10 @@ export class StreamController {
       } else {
         res.json({
           success: false,
-          error: 'No active media stream found for this item',
+          unavailable: true,
           streamUrl: '',
-          directUrl: ''
+          directUrl: '',
+          error: 'Full Ugandan translated movie is currently unavailable. No trailer playback permitted.'
         });
       }
     } catch (e: any) {

@@ -748,14 +748,16 @@ export class CatalogService {
 
   public static enrichWithServers(item: MediaItem, baseUrl: string): MediaItem {
     const rawStream = item.streamUrl || '';
-    const proxyStreamUrl = rawStream ? `${baseUrl}/api/v1/stream/proxy?url=${encodeURIComponent(rawStream)}` : '';
+    const isTrailer = StreamProxyService.isTrailerOrPromoUrl(rawStream, item.title);
+    const validStream = isTrailer ? '' : rawStream;
+    const proxyStreamUrl = validStream ? `${baseUrl}/api/v1/stream/proxy?url=${encodeURIComponent(validStream)}` : '';
 
-    const servers: PlaybackServer[] = [
+    const servers: PlaybackServer[] = validStream ? [
       {
         id: "server-cdn",
-        name: "Server 1 (BunnyCDN High-Speed 1080p)",
+        name: "Server 1 (High-Speed Direct)",
         quality: "1080p FHD",
-        streamUrl: rawStream,
+        streamUrl: validStream,
         isProxy: false
       },
       {
@@ -765,11 +767,12 @@ export class CatalogService {
         streamUrl: proxyStreamUrl,
         isProxy: true
       }
-    ];
+    ] : [];
 
     return {
       ...item,
-      streamUrl: proxyStreamUrl || rawStream,
+      streamUrl: validStream ? (proxyStreamUrl || validStream) : '',
+      isStreamAvailable: !isTrailer && validStream.length > 0,
       servers: servers
     };
   }
@@ -851,7 +854,56 @@ export class CatalogService {
       } catch {}
     }
 
-    // 2. If it's an UgaWatch / MyVJ item (movie or series)
+    // 2. Prioritize Searching Twolekede by Title BEFORE UgaWatch Mapping
+    // This guarantees full-length Ugandan translated stream is resolved and eliminates trailer fallbacks
+    let twolekedeFoundItem: MediaItem | null = null;
+    const searchCandidateTitle = title || '';
+    if (searchCandidateTitle.trim().length >= 2) {
+      const candidateQueries = StreamProxyService.generateCandidateQueries(searchCandidateTitle);
+      for (const q of candidateQueries) {
+        try {
+          const resp = await fetch(`https://twolekede.com/search.php?q=${encodeURIComponent(q)}`, {
+            headers: {
+              'Referer': 'https://twolekede.com/',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            },
+            signal: AbortSignal.timeout(5000)
+          });
+
+          if (resp.ok) {
+            const html = await resp.text();
+            const cardRegex = /<a href="(?:moviedetails|preview)\.php\?id=(\d+)"[^>]*>[\s\S]*?<img[^>]+alt="([^"]*)"[\s\S]*?<h3 class="content-title">([^<]*)<\/h3>/g;
+            let m: RegExpExecArray | null;
+
+            while ((m = cardRegex.exec(html)) !== null) {
+              const matchedId = m[1];
+              const cardTitle = (m[3] || m[2] || '').trim();
+              if (StreamProxyService.titlesMatch(searchCandidateTitle, cardTitle)) {
+                twolekedeFoundItem = await this.getMovieDetails(`tk_${matchedId}`, searchCandidateTitle, baseUrl);
+                if (twolekedeFoundItem) break;
+              }
+            }
+
+            if (!twolekedeFoundItem) {
+              const altCardRegex = /<a href="(?:moviedetails|preview)\.php\?id=(\d+)"[^>]*alt="([^"]*)"/g;
+              let altM: RegExpExecArray | null;
+              while ((altM = altCardRegex.exec(html)) !== null) {
+                const matchedId = altM[1];
+                const cardTitle = (altM[2] || '').trim();
+                if (StreamProxyService.titlesMatch(searchCandidateTitle, cardTitle)) {
+                  twolekedeFoundItem = await this.getMovieDetails(`tk_${matchedId}`, searchCandidateTitle, baseUrl);
+                  if (twolekedeFoundItem) break;
+                }
+              }
+            }
+
+            if (twolekedeFoundItem) break;
+          }
+        } catch {}
+      }
+    }
+
+    // 3. If it's an UgaWatch / MyVJ item (movie or series)
     if (id.startsWith('myvj_') || /^\d+$/.test(cleanId)) {
       try {
         const bodyParams = new URLSearchParams({
@@ -861,7 +913,6 @@ export class CatalogService {
           serie_id: cleanId
         });
 
-        // Try movie details first, then series details
         const endpoints = [
           'https://ugawatch.com/api-v3/mobile/get-movie-details-min.php',
           'https://ugawatch.com/api-v3/mobile/get-serie-details-min.php'
@@ -884,9 +935,54 @@ export class CatalogService {
             if (data && (data.status === 0 || data.status === '0') && (data.movie || data.serie || data.data)) {
               const m = data.movie || data.serie || data.data;
               const isSeriesItem = Array.isArray(data.episodes) && data.episodes.length > 0;
-              const file = m.bunny_file_name || (isSeriesItem ? data.episodes[0]?.bunny_file_name : null) || m.trailer || m.video || '';
-              const cleanFile = typeof file === 'string' ? file.replace(/\\/g, '').trim() : '';
-              const directStream = cleanFile.startsWith('http') ? cleanFile : (cleanFile ? `https://trailer256.b-cdn.net/${cleanFile}` : '');
+              const itemTitle = m.title || title || 'Movie';
+
+              // If Twolekede had not been searched yet (e.g. title was missing from request), search using m.title
+              if (!twolekedeFoundItem && itemTitle && itemTitle.trim().length >= 2) {
+                const candidateQueries = StreamProxyService.generateCandidateQueries(itemTitle);
+                for (const q of candidateQueries) {
+                  try {
+                    const sResp = await fetch(`https://twolekede.com/search.php?q=${encodeURIComponent(q)}`, {
+                      headers: {
+                        'Referer': 'https://twolekede.com/',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                      },
+                      signal: AbortSignal.timeout(5000)
+                    });
+                    if (sResp.ok) {
+                      const sHtml = await sResp.text();
+                      const cRegex = /<a href="(?:moviedetails|preview)\.php\?id=(\d+)"[^>]*>[\s\S]*?<img[^>]+alt="([^"]*)"[\s\S]*?<h3 class="content-title">([^<]*)<\/h3>/g;
+                      let sm: RegExpExecArray | null;
+                      while ((sm = cRegex.exec(sHtml)) !== null) {
+                        const sMatchedId = sm[1];
+                        const sCardTitle = (sm[3] || sm[2] || '').trim();
+                        if (StreamProxyService.titlesMatch(itemTitle, sCardTitle)) {
+                          twolekedeFoundItem = await this.getMovieDetails(`tk_${sMatchedId}`, itemTitle, baseUrl);
+                          if (twolekedeFoundItem) break;
+                        }
+                      }
+                      if (twolekedeFoundItem) break;
+                    }
+                  } catch {}
+                }
+              }
+
+              // Filter out trailers and intro clips completely
+              const rawFile = m.bunny_file_name || (isSeriesItem ? data.episodes[0]?.bunny_file_name : null) || m.video || '';
+              const cleanFile = typeof rawFile === 'string' ? rawFile.replace(/\\/g, '').trim() : '';
+
+              // Direct stream resolution: prioritize Twolekede stream if found
+              let directStream = '';
+              let hasVerifiedFullStream = false;
+
+              if (twolekedeFoundItem && twolekedeFoundItem.streamUrl && !StreamProxyService.isTrailerOrPromoUrl(twolekedeFoundItem.streamUrl, title)) {
+                directStream = twolekedeFoundItem.streamUrl;
+                hasVerifiedFullStream = true;
+              } else if (cleanFile.startsWith('http') && !StreamProxyService.isTrailerOrPromoUrl(cleanFile, title)) {
+                directStream = cleanFile;
+                hasVerifiedFullStream = true;
+              }
+
               const proxyUrl = directStream ? `${baseUrl}/api/v1/stream/proxy?url=${encodeURIComponent(directStream)}` : '';
 
               const munoImg = m.img_port_muno_file_name || '';
@@ -896,6 +992,8 @@ export class CatalogService {
                 posterUrl = `https://image.tmdb.org/t/p/w500${tmdbPoster.startsWith('/') ? tmdbPoster : `/${tmdbPoster}`}`;
               } else if (munoImg && munoImg !== 'null') {
                 posterUrl = munoImg.startsWith('http') ? munoImg : `https://res-watch.b-cdn.net/1/${munoImg}`;
+              } else if (twolekedeFoundItem?.posterUrl) {
+                posterUrl = twolekedeFoundItem.posterUrl;
               }
 
               const tmdbBackdrop = m.tmdb_backdrop_path || '';
@@ -904,17 +1002,20 @@ export class CatalogService {
                 backdropUrl = `https://image.tmdb.org/t/p/original${tmdbBackdrop.startsWith('/') ? tmdbBackdrop : `/${tmdbBackdrop}`}`;
               }
 
-              let vj = m.vj && m.vj !== '-' && m.vj !== 'null' ? m.vj : 'VJ Junior';
+              let vj = m.vj && m.vj !== '-' && m.vj !== 'null' ? m.vj : (twolekedeFoundItem?.vj || 'VJ Junior');
               if (!vj.toLowerCase().includes('vj')) vj = `VJ ${vj}`;
 
-              // Map episodes for series
+              // Map episodes for series (sanitize trailers)
               let seasons: any[] | undefined = undefined;
               if (isSeriesItem) {
                 const seasonsMap = new Map<number, any[]>();
                 for (const ep of data.episodes) {
                   const sNum = ep.season || 1;
-                  const epFile = ep.bunny_file_name || ep.video || ep.trailer || '';
-                  const epStream = epFile.startsWith('http') ? epFile : (epFile ? `https://trailer256.b-cdn.net/${epFile}` : '');
+                  const epFile = ep.bunny_file_name || ep.video || '';
+                  const cleanEpFile = typeof epFile === 'string' ? epFile.replace(/\\/g, '').trim() : '';
+                  const epStream = (cleanEpFile.startsWith('http') && !StreamProxyService.isTrailerOrPromoUrl(cleanEpFile, ep.title || title))
+                    ? cleanEpFile
+                    : '';
 
                   const episodeObj = {
                     id: `ep_${ep.id || ep.episode_number}`,
@@ -937,7 +1038,7 @@ export class CatalogService {
 
               const item: MediaItem = {
                 id: `myvj_${cleanId}`,
-                title: m.title || title || 'Movie',
+                title: itemTitle,
                 type: isSeriesItem ? 'series' : 'movie',
                 vj: vj,
                 genre: m.categories || 'Action / Drama',
@@ -949,10 +1050,11 @@ export class CatalogService {
                 backdropUrl: backdropUrl,
                 streamUrl: directStream,
                 isSeries: isSeriesItem,
+                isStreamAvailable: hasVerifiedFullStream,
                 seasons: seasons,
-                servers: directStream ? [
+                servers: hasVerifiedFullStream ? [
                   { id: 's2', name: 'Server 2 (Munowatch Web Streamer - CORS Safe)', quality: '1080p Full HD', streamUrl: proxyUrl, isProxy: true },
-                  { id: 's1', name: 'Server 1 (BunnyCDN High-Speed)', quality: '1080p FHD', streamUrl: directStream, isProxy: false }
+                  { id: 's1', name: 'Server 1 (High-Speed Direct)', quality: '1080p FHD', streamUrl: directStream, isProxy: false }
                 ] : []
               };
 
@@ -964,37 +1066,13 @@ export class CatalogService {
       } catch {}
     }
 
-    // 3. Fallback: Search Twolekede by title if candidate title is provided
-    if (title && title.trim().length >= 2) {
-      const candidateQueries = StreamProxyService.generateCandidateQueries(title);
-      for (const q of candidateQueries) {
-        try {
-          const resp = await fetch(`https://twolekede.com/search.php?q=${encodeURIComponent(q)}`, {
-            headers: {
-              'Referer': 'https://twolekede.com/',
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            },
-            signal: AbortSignal.timeout(5000)
-          });
-
-          if (resp.ok) {
-            const html = await resp.text();
-            const cardRegex = /<a href="(?:moviedetails|preview)\.php\?id=(\d+)"[^>]*>[\s\S]*?<img[^>]+alt="([^"]*)"[\s\S]*?<h3 class="content-title">([^<]*)<\/h3>/g;
-            let m: RegExpExecArray | null;
-
-            while ((m = cardRegex.exec(html)) !== null) {
-              const matchedId = m[1];
-              const cardTitle = (m[3] || m[2] || '').trim();
-              if (StreamProxyService.titlesMatch(title, cardTitle)) {
-                return await this.getMovieDetails(`tk_${matchedId}`, title, baseUrl);
-              }
-            }
-          }
-        } catch {}
-      }
+    // 4. If Twolekede found item and UgaWatch had no details, return Twolekede item directly
+    if (twolekedeFoundItem) {
+      this.setInCache(cacheKey, twolekedeFoundItem, 60 * 60 * 1000);
+      return twolekedeFoundItem;
     }
 
-    // 4. Fallback to rich catalog entry if matched
+    // 5. Fallback to rich catalog entry if matched
     const local = RICH_CATALOG.find(i => i.id === id || (title && i.title.toLowerCase().includes(title.toLowerCase())));
     if (local) return this.enrichWithServers(local, baseUrl);
 

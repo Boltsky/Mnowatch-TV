@@ -402,27 +402,18 @@ export const RICH_CATALOG: MediaItem[] = [
   },
   {
     id: "myvj_5040",
-    title: "Superman & Lois (VJ Translated)",
-    type: "series",
+    title: "Superman (VJ Translated)",
+    type: "movie",
     vj: "VJ Junior",
-    genre: "Action / Sci-Fi / Drama",
+    genre: "Action / Sci-Fi / Adventure",
     year: "2024",
     rating: "8.9",
-    duration: "15 Episodes",
-    description: "After years of facing supervillains and alien invaders, the world's most famous superhero and comic books' most famous journalist deal with the stress and pressures of being working parents.",
-    posterUrl: "https://image.tmdb.org/t/p/w500/vlv1gn98GqMnKHLSh0dNTeWQrq5.jpg",
-    backdropUrl: "https://image.tmdb.org/t/p/original/p7f7mS24rOqF42i3wF1p5GzV9.jpg",
-    streamUrl: "https://trailer256.b-cdn.net/s0_sr_superman-lois_eps_S01E01.mp4",
-    isSeries: true,
-    seasons: [
-      {
-        seasonNumber: 1,
-        episodes: [
-          { episodeNumber: 1, title: "Pilot", duration: "1h 04m", streamUrl: "https://trailer256.b-cdn.net/s0_sr_superman-lois_eps_S01E01.mp4" },
-          { episodeNumber: 2, title: "Heritage", duration: "43m", streamUrl: "https://trailer256.b-cdn.net/s0_sr_superman-lois_eps_S01E02.mp4" }
-        ]
-      }
-    ]
+    duration: "2h 10m",
+    description: "Superman, a journalist in Metropolis, embarks on a journey to reconcile his Kryptonian heritage with his human upbringing as Clark Kent in this blockbuster Ugandan translation by VJ Junior.",
+    posterUrl: "https://twolekede.com/mv-admin/uploads/posters/1756209138_68ad9ff29c4ef.jpg",
+    backdropUrl: "https://twolekede.com/mv-admin/uploads/posters/1756209138_68ad9ff29c4ef.jpg",
+    streamUrl: "https://twolekede.com/preview.php?id=5478",
+    isSeries: false
   }
 ];
 

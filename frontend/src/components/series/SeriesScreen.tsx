@@ -2,7 +2,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { MediaItem } from '../../types';
 import { TvMediaCard } from '../common/TvMediaCard';
 import { Tv, Loader2, ArrowDownCircle } from 'lucide-react';
-import { api } from '../../services/api';
+import { api, isTrailerOrIntroUrl } from '../../services/api';
+
+const isTrailerOnly = (item: MediaItem) => {
+  if (!item.streamUrl) return false;
+  return isTrailerOrIntroUrl(item.streamUrl, item.title) && !item.id.startsWith('tk_') && !item.streamUrl.includes('preview.php') && !item.streamUrl.includes('twolekede');
+};
 
 interface SeriesScreenProps {
   series: MediaItem[];
@@ -30,8 +35,9 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
         perPage: 24,
         vj: selectedVj || undefined
       });
-      setSeriesList(res.items);
-      setHasMore(res.items.length >= 10);
+      const cleanItems = (res.items || []).filter(i => !isTrailerOnly(i));
+      setSeriesList(cleanItems);
+      setHasMore(cleanItems.length >= 10);
     } catch {
       // Keep existing
     } finally {
@@ -54,12 +60,13 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
         vj: selectedVj || undefined
       });
       if (res.items && res.items.length > 0) {
+        const cleanItems = res.items.filter(i => !isTrailerOnly(i));
         setSeriesList(prev => {
           const ids = new Set(prev.map(p => p.id));
-          return [...prev, ...res.items.filter(i => !ids.has(i.id))];
+          return [...prev, ...cleanItems.filter(i => !ids.has(i.id))];
         });
         setPage(nextPage);
-        setHasMore(res.items.length >= 10);
+        setHasMore(cleanItems.length >= 10);
       } else {
         setHasMore(false);
       }

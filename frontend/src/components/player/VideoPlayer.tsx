@@ -5,7 +5,7 @@ import {
   ArrowLeft, Volume2, VolumeX, Server, Check, AlertCircle, RefreshCw
 } from 'lucide-react';
 import { MediaItem, Episode, PlaybackServer } from '../../types';
-import { api } from '../../services/api';
+import { api, isTrailerOrIntroUrl } from '../../services/api';
 
 interface VideoPlayerProps {
   item: MediaItem;
@@ -34,16 +34,26 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isResolving, setIsResolving] = useState<boolean>(false);
 
-  // Available servers
-  const availableServers: PlaybackServer[] = item.servers && item.servers.length > 0
+  // Available servers (strictly filtered to eliminate trailers and promos)
+  const rawServers: PlaybackServer[] = item.servers && item.servers.length > 0
     ? item.servers
-    : [
+    : (item.streamUrl && !isTrailerOrIntroUrl(item.streamUrl, item.title) ? [
         { id: 's1', name: 'Server 1 (BunnyCDN High-Speed)', quality: '1080p FHD', streamUrl: item.streamUrl, isProxy: false },
         { id: 's2', name: 'Server 2 (Munowatch Web Streamer - CORS Safe)', quality: '1080p FHD', streamUrl: api.getProxyStreamUrl(item.streamUrl), isProxy: true }
-      ];
+      ] : []);
+
+  const availableServers = rawServers.filter(s => s.streamUrl && !isTrailerOrIntroUrl(s.streamUrl, item.title));
 
   const [currentServer, setCurrentServer] = useState<PlaybackServer>(
-    initialServer || availableServers.find(s => s.isProxy) || availableServers[0]
+    initialServer && !isTrailerOrIntroUrl(initialServer.streamUrl, item.title)
+      ? initialServer
+      : (availableServers.find(s => s.isProxy) || availableServers[0] || {
+          id: 's2',
+          name: 'Server 2 (Munowatch Web Streamer - CORS Safe)',
+          quality: '1080p FHD',
+          streamUrl: '',
+          isProxy: true
+        })
   );
 
   const [resolvedStreamUrl, setResolvedStreamUrl] = useState<string>('');
@@ -53,11 +63,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
     setIsResolving(true);
 
     // 1. If series episode has explicit stream URL
-    if (episode?.streamUrl && episode.streamUrl.length > 10) {
+    if (episode?.streamUrl && episode.streamUrl.length > 10 && !isTrailerOrIntroUrl(episode.streamUrl, episode.title || item.title)) {
       if (episode.streamUrl.includes('preview.php') || episode.streamUrl.includes('id=')) {
         try {
           const res = await api.resolveStream(episode.id || item.id, episode.title || item.title);
-          if (res.streamUrl) {
+          if (res.streamUrl && !isTrailerOrIntroUrl(res.streamUrl, item.title) && !isTrailerOrIntroUrl(res.directUrl, item.title)) {
             const finalUrl = currentServer.isProxy ? res.streamUrl : (res.directUrl || res.streamUrl);
             setResolvedStreamUrl(finalUrl);
             setIsResolving(false);
@@ -74,23 +84,31 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
     // 2. Always query verified stream resolver to validate title match and avoid wrong movie playback
     try {
       const res = await api.resolveStream(item.id, item.title);
-      if (res.streamUrl) {
+      if (res.streamUrl && !isTrailerOrIntroUrl(res.streamUrl, item.title) && !isTrailerOrIntroUrl(res.directUrl, item.title)) {
         const finalUrl = currentServer.isProxy ? res.streamUrl : (res.directUrl || res.streamUrl);
         setResolvedStreamUrl(finalUrl);
-      } else if (item.streamUrl && (item.streamUrl.includes('movviez.com') || item.streamUrl.includes('b-cdn.net'))) {
+      } else if (
+        item.streamUrl &&
+        !isTrailerOrIntroUrl(item.streamUrl, item.title) &&
+        (item.streamUrl.includes('movviez.com') || (item.streamUrl.includes('b-cdn.net') && !item.streamUrl.includes('trailer256')))
+      ) {
         const finalUrl = currentServer.isProxy ? api.getProxyStreamUrl(item.streamUrl) : item.streamUrl;
         setResolvedStreamUrl(finalUrl);
       } else {
         setHasError(true);
-        setErrorMessage('Streaming source is undergoing failover. Tap retry below.');
+        setErrorMessage(
+          res.error || `A genuine full-length Ugandan translated stream is not currently available for "${item.title}". We do not stream promotional trailers or intro clips.`
+        );
       }
     } catch (err: any) {
-      if (item.streamUrl) {
+      if (item.streamUrl && !isTrailerOrIntroUrl(item.streamUrl, item.title)) {
         const finalUrl = currentServer.isProxy ? api.getProxyStreamUrl(item.streamUrl) : item.streamUrl;
         setResolvedStreamUrl(finalUrl);
       } else {
         setHasError(true);
-        setErrorMessage(err.message || 'Stream connection timeout.');
+        setErrorMessage(
+          `A genuine full-length Ugandan translated stream is not currently available for "${item.title}". We do not stream promotional trailers or intro clips.`
+        );
       }
     } finally {
       setIsResolving(false);
@@ -360,12 +378,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
       {/* Stream Error Fallback Screen */}
       {hasError && !isResolving && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-50 p-6 text-center space-y-4">
-          <div className="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/40 flex items-center justify-center text-red-400">
+          <div className="w-14 h-14 rounded-full bg-amber-500/10 border border-amber-500/40 flex items-center justify-center text-amber-400">
             <AlertCircle className="w-7 h-7" />
           </div>
           <div className="space-y-1">
-            <h3 className="text-lg font-bold text-white">Playback Notice</h3>
-            <p className="text-xs text-zinc-400 max-w-md">{errorMessage || 'Unable to play this stream directly.'}</p>
+            <h3 className="text-lg font-bold text-white">Full Ugandan Movie Unavailable</h3>
+            <p className="text-xs text-zinc-400 max-w-md">
+              {errorMessage || `A genuine full-length Ugandan translated stream is not currently available for "${item.title}". We do not stream promotional trailers or intro clips.`}
+            </p>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
             <button
@@ -376,21 +396,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
               Retry Playback
             </button>
             <button
-              onClick={() => {
-                const proxyServer = availableServers.find(s => s.isProxy) || availableServers[0];
-                setCurrentServer(proxyServer);
-                triggerStreamResolution();
-              }}
+              onClick={onBack}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs border border-white/20 transition-all"
             >
-              <Server className="w-3.5 h-3.5 text-emerald-400" />
-              Switch to CORS Proxy
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Back to Details
             </button>
             <button
               onClick={onBack}
               className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 font-semibold text-xs transition-all"
             >
-              Back to Details
+              Explore Other Movies
             </button>
           </div>
         </div>

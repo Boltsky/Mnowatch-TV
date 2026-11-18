@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Play, ArrowLeft, Star, Clock, Server, Check, Sparkles, BookOpen, Bookmark, BookmarkCheck, Headphones, Shield, Film, Loader2 } from 'lucide-react';
+import { Play, ArrowLeft, Star, Clock, Server, Check, Sparkles, BookOpen, Bookmark, BookmarkCheck, Headphones, Shield, Film, Loader2, AlertCircle } from 'lucide-react';
 import { MediaItem, Episode, PlaybackServer } from '../../types';
-import { api } from '../../services/api';
+import { api, isTrailerOrIntroUrl } from '../../services/api';
 import { TvMediaCard } from '../common/TvMediaCard';
 
 interface ContentDetailsProps {
@@ -51,16 +51,24 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
       try {
         const fullDetails = await api.getMovieDetails(initialItem.id, initialItem.title);
         if (!isCancelled && fullDetails) {
+          const cleanServers = fullDetails.servers?.filter(s => s.streamUrl && !isTrailerOrIntroUrl(s.streamUrl, fullDetails.title || initialItem.title)) || [];
+          const isTrailer = isTrailerOrIntroUrl(fullDetails.streamUrl, fullDetails.title || initialItem.title);
+          const sanitizedStreamUrl = isTrailer ? '' : (fullDetails.streamUrl || '');
+          const isAvailable = fullDetails.isStreamAvailable !== false && !isTrailer && (sanitizedStreamUrl.length > 0 || cleanServers.length > 0 || fullDetails.id.startsWith('tk_'));
+
           setMovie(prev => ({
             ...prev,
             ...fullDetails,
+            streamUrl: sanitizedStreamUrl,
+            servers: cleanServers,
+            isStreamAvailable: isAvailable,
             // Keep existing poster/backdrop if better
             posterUrl: fullDetails.posterUrl || prev.posterUrl,
             backdropUrl: fullDetails.backdropUrl || prev.backdropUrl || fullDetails.posterUrl || prev.posterUrl
           }));
 
-          if (fullDetails.servers && fullDetails.servers.length > 0) {
-            setSelectedServer(fullDetails.servers.find(s => s.isProxy) || fullDetails.servers[0]);
+          if (cleanServers.length > 0) {
+            setSelectedServer(cleanServers.find(s => s.isProxy) || cleanServers[0]);
           }
         }
       } catch {} finally {
@@ -291,6 +299,14 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Unavailable Stream Notice Banner */}
+            {(!movie.streamUrl || isTrailerOrIntroUrl(movie.streamUrl, movie.title) || movie.isStreamAvailable === false) && !movie.id.startsWith('tk_') && (
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 text-amber-400" />
+                <span>Full Ugandan translated stream for this title is currently unavailable or undergoing verification. Promotional trailers are strictly suppressed.</span>
               </div>
             )}
 

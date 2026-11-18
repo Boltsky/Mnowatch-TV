@@ -12,6 +12,7 @@ export interface MediaItem {
   backdropUrl: string;
   streamUrl: string;
   isSeries: boolean;
+  isStreamAvailable?: boolean;
   seasons?: Season[];
   servers?: PlaybackServer[];
 }

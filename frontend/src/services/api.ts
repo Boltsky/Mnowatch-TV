@@ -1,5 +1,78 @@
 import { MediaItem, CatalogRail, VjItem } from '../types';
 
+/**
+ * Validates whether a URL or filename represents a promotional trailer, teaser, or intro clip
+ */
+export const isTrailerOrIntroUrl = (url?: string | null, expectedTitle?: string): boolean => {
+  if (!url || typeof url !== 'string') return false;
+  let lower = url.toLowerCase().trim();
+  if (lower.length === 0) return false;
+
+  // 1. Iteratively decode (up to 3 times)
+  let decoded = lower;
+  for (let i = 0; i < 3; i++) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    } catch {
+      break;
+    }
+  }
+  lower = decoded.toLowerCase().trim();
+
+  // 2. Forbidden CDN pull zones or hostnames
+  if (lower.includes('trailer256.b-cdn.net')) return true;
+  if (lower.includes('intro_myvj')) return true;
+
+  // 3. Query parameter indicators
+  if (
+    /[?&](?:type|clip|mode|file)=(?:trailer|teaser|promo|sample)\b/i.test(lower) ||
+    /[?&]trailer\b/i.test(lower) ||
+    /[?&]teaser\b/i.test(lower) ||
+    /[?&]promo\b/i.test(lower)
+  ) {
+    return true;
+  }
+
+  // 4. Context-aware title protection
+  let testStr = lower;
+  if (expectedTitle && typeof expectedTitle === 'string' && expectedTitle.toLowerCase().includes('trailer')) {
+    const coreTitle = expectedTitle
+      .toLowerCase()
+      .replace(/\b(?:seasons?\s*\d+|s\d+|episodes?\s*\d+|eps?\s*\d+|e\d+|parts?\s*\d+|pt\s*\d+)\b/gi, ' ')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+    const words = coreTitle.split(/\s+/).filter(Boolean);
+    if (words.length > 0) {
+      const titlePattern = new RegExp(words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[^a-z0-9]*'), 'gi');
+      testStr = testStr.replace(titlePattern, 'TITLEREPLACED');
+    }
+    testStr = testStr.replace(/trailer[^a-z0-9]*park[^a-z0-9]*boys/gi, 'TITLEREPLACED');
+    testStr = testStr.replace(/the[^a-z0-9]*trailer/gi, 'TITLEREPLACED');
+  } else if (!expectedTitle) {
+    testStr = testStr.replace(/trailer[^a-z0-9]+park[^a-z0-9]+boys/gi, 'TITLEREPLACED');
+    testStr = testStr.replace(/the[^a-z0-9]+trailer(?=[^a-z0-9]+(?:19\d\d|20\d\d|x264|720p|1080p|hd|vj|full|\.))/gi, 'TITLEREPLACED');
+  }
+
+  if (testStr.includes('trailer') && testStr.includes('b-cdn.net')) return true;
+
+  // 5. Token boundaries
+  const trailerTokenRegex = /(?:^|[._\/-])trailer(?:s)?(?:[._\/-]|\.mp4|\.m3u8|$)/i;
+  if (trailerTokenRegex.test(testStr)) return true;
+
+  const teaserTokenRegex = /(?:^|[._\/-])teaser(?:s)?(?:[._\/-]|\.mp4|\.m3u8|$)/i;
+  if (teaserTokenRegex.test(testStr)) return true;
+
+  const sampleTokenRegex = /(?:^|[._\/-])sample(?:s)?(?:[._\/-]|\.mp4|\.m3u8|$)/i;
+  if (sampleTokenRegex.test(testStr)) return true;
+
+  const promoTokenRegex = /(?:^|[._\/-])promo(?:s)?(?:[._\/-]|\.mp4|\.m3u8|$)/i;
+  if (promoTokenRegex.test(testStr)) return true;
+
+  return false;
+};
+
 const RAW_ENV = (import.meta as any).env?.VITE_API_URL || 'https://munowatch-api.onrender.com/api/v1';
 const API_BASE = RAW_ENV.endsWith('/api/v1') ? RAW_ENV : `${RAW_ENV.replace(/\/+$/, '')}/api/v1`;
 
@@ -240,7 +313,7 @@ export const api = {
     const filtered = FALLBACK_CATALOG.filter(i => i.isSeries);
     return { items: filtered, count: filtered.length, total: filtered.length, page: 1, hasMore: false };
   },
-  async resolveStream(id: string, title?: string): Promise<{ streamUrl: string; directUrl: string; servers?: any[] }> {
+  async resolveStream(id: string, title?: string): Promise<{ streamUrl: string; directUrl: string; servers?: any[]; error?: string; unavailable?: boolean }> {
     try {
       const params = new URLSearchParams();
       params.append('id', id);
@@ -249,12 +322,19 @@ export const api = {
       const res = await fetch(`${API_BASE}/stream/resolve?${params.toString()}`, { signal: AbortSignal.timeout(7000) });
       if (res.ok) {
         const data = await res.json();
-        if (data.success && data.streamUrl) {
+        if (data.success && data.streamUrl && !isTrailerOrIntroUrl(data.streamUrl, title) && !isTrailerOrIntroUrl(data.directUrl, title)) {
           return { streamUrl: data.streamUrl, directUrl: data.directUrl, servers: data.servers };
+        } else if (data.unavailable || !data.success) {
+          return {
+            streamUrl: '',
+            directUrl: '',
+            unavailable: true,
+            error: data.error || 'Full Ugandan translated movie is currently unavailable. No trailer playback permitted.'
+          };
         }
       }
     } catch {}
-    return { streamUrl: '', directUrl: '' };
+    return { streamUrl: '', directUrl: '', unavailable: true, error: 'Full Ugandan translated stream connection failed.' };
   },
 
   async search(query: string): Promise<MediaItem[]> {

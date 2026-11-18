@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsx watch src/index.ts"
+    "dev": "tsx watch src/index.ts",
+    "verify:r3": "tsx scripts/verify-r3-streams.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
