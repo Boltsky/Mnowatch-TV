@@ -124,7 +124,7 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({ onItemClick }) => {
       </div>
 
       {/* Results Section */}
-      <div className="mt-8 max-w-7xl mx-auto">
+      <div className="mt-8 w-full max-w-[2400px] mx-auto px-4 sm:px-8 md:px-10">
         {loading && (
           <div className="flex items-center justify-center py-12 text-[#94A3B8] text-sm">
             Searching translated catalog...
@@ -147,7 +147,7 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({ onItemClick }) => {
                 Found <strong className="text-white">{results.length}</strong> Titles
               </h2>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 3xl:grid-cols-10 gap-3 sm:gap-4">
               {results.map((item) => (
                 <TvMediaCard
                   key={item.id}

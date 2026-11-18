@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { MediaItem } from '../../types';
 import { TvMediaCard } from '../common/TvMediaCard';
 import { Tv, Loader2, ArrowDownCircle } from 'lucide-react';
@@ -12,9 +12,10 @@ const isTrailerOnly = (item: MediaItem) => {
 const filterByVj = (items: MediaItem[], vj: string | null): MediaItem[] => {
   if (!vj) return items;
   const cleanTarget = vj.toLowerCase().replace('vj-', '').replace('vj', '').replace('.', '').trim();
+  if (!cleanTarget) return items;
   return items.filter(item => {
     const cleanCard = (item.vj || '').toLowerCase().replace('vj-', '').replace('vj', '').replace('.', '').trim();
-    return cleanCard.includes(cleanTarget) || cleanTarget.includes(cleanCard);
+    return cleanCard.includes(cleanTarget);
   });
 };
 
@@ -35,7 +36,10 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [selectedVj, setSelectedVj] = useState<string | null>(null);
 
-  // Sync initial series if loaded asynchronously
+  // Request sequence counter to eliminate race conditions
+  const reqSeqRef = useRef<number>(0);
+
+  // Sync initial series if loaded asynchronously (only when no VJ filter is selected)
   useEffect(() => {
     if (selectedVj === null && initialSeries && initialSeries.length > 0 && seriesList.length === 0) {
       setSeriesList(initialSeries);
@@ -51,6 +55,7 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
   };
 
   const fetchSeriesPageOne = useCallback(async () => {
+    const currentSeq = ++reqSeqRef.current;
     setLoading(true);
     setPage(1);
     try {
@@ -59,14 +64,21 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
         perPage: 24,
         vj: selectedVj || undefined
       });
+      if (reqSeqRef.current !== currentSeq) return; // Stale request discarded
+
       const cleanItems = (res.items || []).filter(i => !isTrailerOnly(i));
       const filtered = filterByVj(cleanItems, selectedVj);
       setSeriesList(filtered);
       setHasMore(filtered.length >= 10);
     } catch {
-      // Keep existing
+      if (reqSeqRef.current === currentSeq) {
+        // Enforce strict VJ filter even on fallback
+        setSeriesList(prev => filterByVj(prev, selectedVj));
+      }
     } finally {
-      setLoading(false);
+      if (reqSeqRef.current === currentSeq) {
+        setLoading(false);
+      }
     }
   }, [selectedVj]);
 
@@ -74,16 +86,19 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
     fetchSeriesPageOne();
   }, [fetchSeriesPageOne]);
 
-  const handleLoadMore = async () => {
+  const handleLoadMore = useCallback(async () => {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
     const nextPage = page + 1;
+    const currentSeq = reqSeqRef.current;
     try {
       const res = await api.getSeries({
         page: nextPage,
         perPage: 24,
         vj: selectedVj || undefined
       });
+      if (reqSeqRef.current !== currentSeq) return;
+
       if (res.items && res.items.length > 0) {
         const cleanItems = res.items.filter(i => !isTrailerOnly(i));
         const filtered = filterByVj(cleanItems, selectedVj);
@@ -101,10 +116,35 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
     } finally {
       setLoadingMore(false);
     }
-  };
+  }, [loadingMore, hasMore, page, selectedVj]);
+
+  // Automated Infinite Scroll Sentinel (zero manual clicks)
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!hasMore || loadingMore || loading) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          handleLoadMore();
+        }
+      },
+      { rootMargin: '450px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, loading, handleLoadMore]);
+
+  // Guarantee that displayed cards strictly match selected VJ with zero cross-contamination
+  const displayedSeries = useMemo(() => {
+    return filterByVj(seriesList, selectedVj);
+  }, [seriesList, selectedVj]);
 
   return (
-    <div className="p-4 sm:p-9 max-w-7xl mx-auto space-y-6 animate-fadeIn">
+    <div className="p-4 sm:p-8 md:p-10 w-full max-w-[2400px] mx-auto space-y-6 animate-fadeIn">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[#132845] pb-4">
         <div className="flex items-center gap-3">
@@ -118,7 +158,7 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
         </div>
 
         <span className="text-xs font-bold text-[#94A3B8]">
-          <strong className="text-white">{seriesList.length}</strong> Series Loaded
+          <strong className="text-white">{displayedSeries.length}</strong> Series Loaded
         </span>
       </div>
 
@@ -156,9 +196,9 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
         </div>
       ) : (
         <>
-          {/* Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4 pt-2">
-            {seriesList.map((item) => (
+          {/* Responsive Expanded Grid (up to 10 columns on ultrawide) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 3xl:grid-cols-10 gap-3 sm:gap-4 pt-2">
+            {displayedSeries.map((item) => (
               <TvMediaCard
                 key={item.id}
                 item={item}
@@ -168,25 +208,15 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
             ))}
           </div>
 
+          {/* Automated infinite scroll sentinel */}
           {hasMore && (
-            <div className="flex justify-center pt-8 pb-4">
-              <button
-                onClick={handleLoadMore}
-                disabled={loadingMore}
-                className="flex items-center gap-2 px-6 py-3 bg-[#0A192F] hover:bg-[#132845] border border-[#10B981]/60 hover:border-[#10B981] text-white hover:text-[#34D399] font-bold text-sm rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50"
-              >
-                {loadingMore ? (
-                  <>
-                    <Loader2 className="w-4 h-4 text-[#10B981] animate-spin" />
-                    <span>Loading Next Series...</span>
-                  </>
-                ) : (
-                  <>
-                    <ArrowDownCircle className="w-4 h-4 text-[#10B981]" />
-                    <span>Load More Series (Page {page + 1})</span>
-                  </>
-                )}
-              </button>
+            <div ref={sentinelRef} className="flex justify-center py-8">
+              {loadingMore && (
+                <div className="flex items-center gap-2 px-6 py-3 rounded-full bg-[#0A192F]/80 text-[#10B981] text-xs font-bold border border-[#10B981]/30">
+                  <Loader2 className="w-4 h-4 animate-spin text-[#10B981]" />
+                  <span>Loading more series...</span>
+                </div>
+              )}
             </div>
           )}
         </>

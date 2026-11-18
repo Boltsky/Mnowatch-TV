@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { MediaItem, VjItem } from '../../types';
 import { TvMediaCard } from '../common/TvMediaCard';
 import { Clapperboard, Layers, Loader2, ArrowDownCircle } from 'lucide-react';
@@ -32,17 +32,20 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
   const [hasMore, setHasMore] = useState<boolean>(true);
 
   const [totalTitles, setTotalTitles] = useState<number>(0);
+  const reqSeqRef = useRef<number>(0);
 
   const genres = [
     'Action', 'Sci-Fi', 'Adventure', 'Thriller', 'Horror', 'Crime', 'Comedy', 'Drama', 'Animation', 'Korean', 'Indian Movie', 'Kinigeria'
   ];
 
   const fetchCategoryPageOne = useCallback(async () => {
+    const currentSeq = ++reqSeqRef.current;
     setLoading(true);
     setPage(1);
     try {
       if (activeTab === 'VJ') {
         const res = await api.getMovies({ page: 1, perPage: 30, vj: selectedVj });
+        if (reqSeqRef.current !== currentSeq) return;
         const cleanItems = (res.items || []).filter(i => !isTrailerOnly(i));
         if (cleanItems.length > 0) {
           setLiveItems(cleanItems);
@@ -54,6 +57,7 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
         }
       } else {
         const res = await api.getMovies({ page: 1, perPage: 30, genre: selectedGenre });
+        if (reqSeqRef.current !== currentSeq) return;
         const cleanItems = (res.items || []).filter(i => !isTrailerOnly(i));
         if (cleanItems.length > 0) {
           setLiveItems(cleanItems);
@@ -67,7 +71,9 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
     } catch {
       // Keep existing
     } finally {
-      setLoading(false);
+      if (reqSeqRef.current === currentSeq) {
+        setLoading(false);
+      }
     }
   }, [activeTab, selectedVj, selectedGenre]);
 
@@ -75,14 +81,17 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
     fetchCategoryPageOne();
   }, [fetchCategoryPageOne]);
 
-  const handleLoadMore = async () => {
+  const handleLoadMore = useCallback(async () => {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
     const nextPage = page + 1;
+    const currentSeq = reqSeqRef.current;
     try {
       const res = activeTab === 'VJ'
         ? await api.getMovies({ page: nextPage, perPage: 30, vj: selectedVj })
         : await api.getMovies({ page: nextPage, perPage: 30, genre: selectedGenre });
+
+      if (reqSeqRef.current !== currentSeq) return;
 
       if (res.items && res.items.length > 0) {
         const cleanItems = res.items.filter(i => !isTrailerOnly(i));
@@ -101,7 +110,27 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
     } finally {
       setLoadingMore(false);
     }
-  };
+  }, [loadingMore, hasMore, page, activeTab, selectedVj, selectedGenre]);
+
+  // Automated Infinite Scroll Sentinel (zero manual clicks)
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!hasMore || loadingMore || loading) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          handleLoadMore();
+        }
+      },
+      { rootMargin: '450px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, loading, handleLoadMore]);
 
   const displayItems = useMemo(() => {
     if (liveItems.length > 0) return liveItems;
@@ -115,7 +144,7 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
   }, [liveItems, movies, activeTab, selectedVj, selectedGenre]);
 
   return (
-    <div className="p-4 sm:p-9 max-w-7xl mx-auto space-y-6 animate-fadeIn">
+    <div className="p-4 sm:p-8 md:p-10 w-full max-w-[2400px] mx-auto space-y-6 animate-fadeIn">
       {/* Category Type Tab Switcher matching Android CategoriesScreen */}
       <div className="flex items-center justify-between border-b border-[#132845] pb-4">
         <div className="flex items-center gap-3">
@@ -191,7 +220,7 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4 pt-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 3xl:grid-cols-10 gap-3 sm:gap-4 pt-2">
             {displayItems.map(item => (
               <TvMediaCard
                 key={item.id}
@@ -202,28 +231,15 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
             ))}
           </div>
 
+          {/* Automated infinite scroll sentinel */}
           {hasMore && (
-            <div className="flex flex-col items-center justify-center pt-8 pb-4 space-y-2">
-              <button
-                onClick={handleLoadMore}
-                disabled={loadingMore}
-                className="flex items-center gap-2 px-6 py-3 bg-[#0A192F] hover:bg-[#132845] border border-[#10B981]/60 hover:border-[#10B981] text-white hover:text-[#34D399] font-bold text-sm rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50"
-              >
-                {loadingMore ? (
-                  <>
-                    <Loader2 className="w-4 h-4 text-[#10B981] animate-spin" />
-                    <span>Loading More Titles...</span>
-                  </>
-                ) : (
-                  <>
-                    <ArrowDownCircle className="w-4 h-4 text-[#10B981]" />
-                    <span>Load More {activeTab === 'VJ' ? selectedVj : selectedGenre} (Page {page + 1})</span>
-                  </>
-                )}
-              </button>
-              <span className="text-xs text-[#94A3B8]">
-                Accessing 17,000+ Ugandan translated movies index
-              </span>
+            <div ref={sentinelRef} className="flex justify-center py-8">
+              {loadingMore && (
+                <div className="flex items-center gap-2 px-6 py-3 rounded-full bg-[#0A192F]/80 text-[#10B981] text-xs font-bold border border-[#10B981]/30">
+                  <Loader2 className="w-4 h-4 animate-spin text-[#10B981]" />
+                  <span>Loading more {activeTab === 'VJ' ? selectedVj : selectedGenre}...</span>
+                </div>
+              )}
             </div>
           )}
         </>

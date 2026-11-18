@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Hls from 'hls.js';
 import { 
   Play, Pause, RotateCcw, RotateCw, Maximize, Minimize, 
-  ArrowLeft, Volume2, VolumeX, Server, Check, AlertCircle, RefreshCw
+  ArrowLeft, Volume2, VolumeX, Server, Check, AlertCircle, RefreshCw,
+  Cast, PictureInPicture2
 } from 'lucide-react';
 import { MediaItem, Episode, PlaybackServer } from '../../types';
 import { api, isTrailerOrIntroUrl } from '../../services/api';
@@ -287,15 +288,68 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
     setIsMuted(!isMuted);
   };
 
-  const toggleFullscreen = () => {
+  const toggleFullscreen = async () => {
     const container = containerRef.current;
+    const video = videoRef.current;
     if (!container) return;
 
     if (!document.fullscreenElement) {
-      container.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+      try {
+        if (container.requestFullscreen) {
+          await container.requestFullscreen();
+        } else if ((video as any)?.webkitEnterFullscreen) {
+          (video as any).webkitEnterFullscreen();
+        }
+        setIsFullscreen(true);
+
+        // Switch to landscape orientation on mobile devices
+        try {
+          if ((window.screen?.orientation as any)?.lock) {
+            await (window.screen.orientation as any).lock('landscape');
+          }
+        } catch {}
+      } catch {}
     } else {
-      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
+      try {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        }
+        setIsFullscreen(false);
+
+        // Unlock orientation
+        try {
+          if ((window.screen?.orientation as any)?.unlock) {
+            (window.screen.orientation as any).unlock();
+          }
+        } catch {}
+      } catch {}
     }
+  };
+
+  const togglePiP = async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
+        await video.requestPictureInPicture();
+      }
+    } catch {}
+  };
+
+  const triggerCast = async () => {
+    const video = videoRef.current as any;
+    if (!video) return;
+    try {
+      if (video.remote && typeof video.remote.prompt === 'function') {
+        await video.remote.prompt();
+      } else if (typeof video.webkitShowPlaybackTargetPicker === 'function') {
+        video.webkitShowPlaybackTargetPicker();
+      } else {
+        alert('Casting is available via Google Cast / Chrome Cast on desktop/Android or AirPlay on iOS/macOS.');
+      }
+    } catch {}
   };
 
   // Double tap gestures (±10s Seek, Double-tap center for Play/Pause)
@@ -579,11 +633,34 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Picture-in-Picture Button */}
+              <button
+                onClick={togglePiP}
+                className="hover:text-white text-zinc-300 transition-colors p-1 rounded-lg hover:bg-white/10"
+                title="Picture-in-Picture"
+              >
+                <PictureInPicture2 className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+
+              {/* Cast Button */}
+              <button
+                onClick={triggerCast}
+                className="hover:text-[#10B981] text-zinc-300 transition-colors p-1 rounded-lg hover:bg-white/10"
+                title="Cast to TV / Big Screen"
+              >
+                <Cast className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+
               <span className="hidden sm:inline-block px-2 py-0.5 rounded bg-white/10 text-[10px] font-bold text-emerald-400">
                 1080p Full HD
               </span>
-              <button onClick={toggleFullscreen} className="hover:text-white transition-colors">
-                {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+
+              <button
+                onClick={toggleFullscreen}
+                className="hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10"
+                title="Fullscreen (Landscape on Mobile)"
+              >
+                {isFullscreen ? <Minimize className="w-4 h-4 sm:w-5 sm:h-5" /> : <Maximize className="w-4 h-4 sm:w-5 sm:h-5" />}
               </button>
             </div>
           </div>

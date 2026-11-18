@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { MediaItem, CatalogRail, Episode, PlaybackServer, VjItem } from './types';
 import { api, FALLBACK_VJS } from './services/api';
 import { TvTopBar } from './components/common/TvTopBar';
@@ -17,6 +17,7 @@ import { VideoPlayer } from './components/player/VideoPlayer';
 
 export const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<string>('home');
+  const [previousScreen, setPreviousScreen] = useState<string>('home');
   const [homeRails, setHomeRails] = useState<CatalogRail[]>([]);
   const [featuredItem, setFeaturedItem] = useState<MediaItem | null>(null);
   const [vjList, setVjList] = useState<VjItem[]>(FALLBACK_VJS);
@@ -33,7 +34,83 @@ export const App: React.FC = () => {
     server?: PlaybackServer;
   } | null>(null);
 
-  // Load catalog on mount
+  // Hash route parsing
+  const parseHashRoute = useCallback(() => {
+    const rawHash = window.location.hash.replace(/^#\/?/, '').trim();
+    if (rawHash.startsWith('watch/')) {
+      return { type: 'watch' as const, id: decodeURIComponent(rawHash.replace('watch/', '')) };
+    }
+    if (rawHash.startsWith('title/')) {
+      return { type: 'title' as const, id: decodeURIComponent(rawHash.replace('title/', '')) };
+    }
+    const cleanScreen = rawHash.split('?')[0].toLowerCase();
+    if (['home', 'movies', 'series', 'categories', 'search', 'settings'].includes(cleanScreen)) {
+      return { type: 'screen' as const, screen: cleanScreen };
+    }
+    return { type: 'screen' as const, screen: 'home' };
+  }, []);
+
+  // Synchronize state from URL hash
+  const syncFromHash = useCallback(async (moviesPool: MediaItem[], seriesPool: MediaItem[]) => {
+    const route = parseHashRoute();
+    if (route.type === 'screen') {
+      setPlayerTarget(null);
+      setSelectedItem(null);
+      setCurrentScreen(route.screen);
+      setPreviousScreen(route.screen);
+    } else if (route.type === 'title') {
+      setPlayerTarget(null);
+      const combined = [...moviesPool, ...seriesPool];
+      const normalizedRouteId = route.id.replace(/\+/g, ' ');
+      let item = combined.find(i =>
+        i.id === route.id ||
+        i.id === normalizedRouteId ||
+        i.id.replace(/\+/g, ' ') === normalizedRouteId ||
+        decodeURIComponent(i.id) === decodeURIComponent(route.id)
+      );
+      if (!item) {
+        try {
+          const fetched = await api.getMovieDetails(route.id);
+          if (fetched) item = fetched;
+        } catch {}
+      }
+      if (!item && route.id.includes('+')) {
+        try {
+          const fetched = await api.getMovieDetails(normalizedRouteId);
+          if (fetched) item = fetched;
+        } catch {}
+      }
+      if (item) {
+        setSelectedItem(item);
+      }
+    } else if (route.type === 'watch') {
+      const combined = [...moviesPool, ...seriesPool];
+      const normalizedRouteId = route.id.replace(/\+/g, ' ');
+      let item = combined.find(i =>
+        i.id === route.id ||
+        i.id === normalizedRouteId ||
+        i.id.replace(/\+/g, ' ') === normalizedRouteId ||
+        decodeURIComponent(i.id) === decodeURIComponent(route.id)
+      );
+      if (!item) {
+        try {
+          const fetched = await api.getMovieDetails(route.id);
+          if (fetched) item = fetched;
+        } catch {}
+      }
+      if (!item && route.id.includes('+')) {
+        try {
+          const fetched = await api.getMovieDetails(normalizedRouteId);
+          if (fetched) item = fetched;
+        } catch {}
+      }
+      if (item) {
+        setPlayerTarget({ item });
+      }
+    }
+  }, [parseHashRoute]);
+
+  // Load catalog on mount & initialize route
   useEffect(() => {
     const loadData = async () => {
       const data = await api.getHome();
@@ -44,10 +121,12 @@ export const App: React.FC = () => {
       setVjList(vjs);
 
       const moviesRes = await api.getMovies();
-      setAllMovies(moviesRes.items);
+      const loadedMovies = moviesRes.items || [];
+      setAllMovies(loadedMovies);
 
       const seriesRes = await api.getSeries();
-      setAllSeries(seriesRes.items);
+      const loadedSeries = seriesRes.items || [];
+      setAllSeries(loadedSeries);
 
       // Load saved watchlist from localStorage
       try {
@@ -60,48 +139,46 @@ export const App: React.FC = () => {
         const savedCw = localStorage.getItem('munowatch_history');
         if (savedCw) setContinueWatching(JSON.parse(savedCw));
       } catch {}
+
+      // Synchronize initial route from URL hash
+      await syncFromHash(loadedMovies, loadedSeries);
     };
     loadData();
-  }, []);
+  }, [syncFromHash]);
 
-  // HTML5 History API integration for Android / mobile hardware back buttons
+  // Listen to popstate and hashchange events for smooth back/forward navigation
   useEffect(() => {
-    const handlePopState = (e: PopStateEvent) => {
-      if (playerTarget) {
-        setPlayerTarget(null);
-        return;
-      }
-      if (selectedItem) {
-        setSelectedItem(null);
-        return;
-      }
-      if (e.state && e.state.screen) {
-        setCurrentScreen(e.state.screen);
-      } else {
-        setCurrentScreen('home');
-      }
+    const onHashOrPop = () => {
+      syncFromHash(allMovies, allSeries);
     };
 
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [playerTarget, selectedItem]);
+    window.addEventListener('popstate', onHashOrPop);
+    window.addEventListener('hashchange', onHashOrPop);
+    return () => {
+      window.removeEventListener('popstate', onHashOrPop);
+      window.removeEventListener('hashchange', onHashOrPop);
+    };
+  }, [allMovies, allSeries, syncFromHash]);
 
   const navigateTo = (screen: string) => {
-    window.history.pushState({ screen }, '', `#/${screen}`);
+    setPreviousScreen(currentScreen);
     setCurrentScreen(screen);
     setSelectedItem(null);
     setPlayerTarget(null);
+    window.location.hash = `#/${screen}`;
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleItemClick = (item: MediaItem) => {
-    window.history.pushState({ screen: 'details', id: item.id }, '', `#/title/${item.id}`);
+    setPreviousScreen(currentScreen);
     setSelectedItem(item);
+    window.location.hash = `#/title/${encodeURIComponent(item.id)}`;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handlePlay = (item: MediaItem, episode?: Episode, server?: PlaybackServer) => {
-    window.history.pushState({ screen: 'player', id: item.id }, '', `#/watch/${item.id}`);
     setPlayerTarget({ item, episode, server });
+    window.location.hash = `#/watch/${encodeURIComponent(item.id)}`;
 
     // Save to Continue Watching in localStorage
     try {
@@ -140,13 +217,23 @@ export const App: React.FC = () => {
     if (window.history.length > 1) {
       window.history.back();
     } else {
-      if (playerTarget) setPlayerTarget(null);
-      else if (selectedItem) setSelectedItem(null);
-      else setCurrentScreen('home');
+      if (playerTarget) {
+        setPlayerTarget(null);
+        if (selectedItem) {
+          window.location.hash = `#/title/${encodeURIComponent(selectedItem.id)}`;
+        } else {
+          navigateTo(previousScreen || 'home');
+        }
+      } else if (selectedItem) {
+        setSelectedItem(null);
+        navigateTo(previousScreen || 'home');
+      } else {
+        navigateTo('home');
+      }
     }
   };
 
-  // 1. If Video Player is active
+  // 1. If Video Player is active, render full-screen immersive cinema player
   if (playerTarget) {
     return (
       <VideoPlayer
@@ -159,34 +246,32 @@ export const App: React.FC = () => {
     );
   }
 
-  // 2. If Details View is active
-  if (selectedItem) {
-    return (
-      <ContentDetails
-        item={selectedItem}
-        allMovies={[...allMovies, ...allSeries]}
-        onPlay={handlePlay}
-        onBack={handleBack}
-        onSelectMovie={handleItemClick}
-        onToggleWatchlist={toggleFavorite}
-        isInWatchlist={watchlist.some(w => w.id === selectedItem.id)}
-      />
-    );
-  }
-
   return (
     <div className="min-h-screen bg-[#010318] text-[#F8FAFC] pb-20 md:pb-8 flex flex-col">
-      {/* Universal TopBar with munowatch VIP & responsive navigation */}
+      {/* Universal TopBar with munowatch VIP & responsive navigation on EVERY page */}
       <TvTopBar
-        currentRoute={currentScreen}
+        currentRoute={selectedItem ? previousScreen : currentScreen}
         onNavigate={navigateTo}
       />
 
       {/* Main Screen Views */}
-      <div className="flex-1">
-        {/* --- SCREEN: HOME --- */}
-        {currentScreen === 'home' && (
-          <main className="p-4 sm:p-9 max-w-7xl mx-auto space-y-4">
+      <div className="flex-1 w-full">
+        {/* If Details View is active, render ContentDetails below Universal TopBar */}
+        {selectedItem ? (
+          <ContentDetails
+            item={selectedItem}
+            allMovies={[...allMovies, ...allSeries]}
+            onPlay={handlePlay}
+            onBack={handleBack}
+            onSelectMovie={handleItemClick}
+            onToggleWatchlist={toggleFavorite}
+            isInWatchlist={watchlist.some(w => w.id === selectedItem.id)}
+          />
+        ) : (
+          <>
+            {/* --- SCREEN: HOME --- */}
+            {currentScreen === 'home' && (
+              <main className="p-4 sm:p-8 md:p-10 w-full max-w-[2400px] mx-auto space-y-6">
             {/* 1. Featured Hero Banner matching TvHeroBanner in HomeScreen.kt */}
             {featuredItem && (
               <TvHeroBanner
@@ -345,6 +430,8 @@ export const App: React.FC = () => {
         {/* --- SCREEN: SETTINGS (Clone of SettingsScreen.kt) --- */}
         {currentScreen === 'settings' && (
           <SettingsScreen />
+        )}
+          </>
         )}
       </div>
 

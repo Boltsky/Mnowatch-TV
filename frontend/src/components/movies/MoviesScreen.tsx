@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { MediaItem } from '../../types';
 import { TvMediaCard } from '../common/TvMediaCard';
 import { Sparkles, Calendar, Shuffle, Clock, X, Loader2, ArrowDownCircle } from 'lucide-react';
@@ -63,7 +63,7 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
   }, [fetchPageOne]);
 
   // Load More Next Page
-  const handleLoadMore = async () => {
+  const handleLoadMore = useCallback(async () => {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
     const nextPage = page + 1;
@@ -84,7 +84,7 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
           return [...prev, ...newItems];
         });
         setPage(nextPage);
-        setHasMore(cleanItems.length >= 12);
+        setHasMore(cleanItems.length >= 10);
       } else {
         setHasMore(false);
       }
@@ -93,10 +93,30 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
     } finally {
       setLoadingMore(false);
     }
-  };
+  }, [loadingMore, hasMore, page, selectedYear, selectedVj, sortMode]);
+
+  // Automated Infinite Scroll Sentinel (zero manual clicks)
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!hasMore || loadingMore || loading) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          handleLoadMore();
+        }
+      },
+      { rootMargin: '450px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, loading, handleLoadMore]);
 
   return (
-    <div className="p-4 sm:p-9 max-w-7xl mx-auto space-y-6 animate-fadeIn">
+    <div className="p-4 sm:p-8 md:p-10 w-full max-w-[2400px] mx-auto space-y-6 animate-fadeIn">
       {/* Top Filter and Action Bar matching Android MoviesScreen */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#132845] pb-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -214,8 +234,8 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
         </div>
       ) : (
         <>
-          {/* 6-Column Grid matching Android TV MoviesScreen */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4 pt-2">
+          {/* Responsive Expanded Grid (up to 10 columns on ultrawide) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 3xl:grid-cols-10 gap-3 sm:gap-4 pt-2">
             {movieList.map((movie) => (
               <TvMediaCard
                 key={movie.id}
@@ -226,29 +246,15 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
             ))}
           </div>
 
-          {/* Load More Button for Infinite Catalog Exploration */}
+          {/* Automated infinite scroll sentinel */}
           {hasMore && (
-            <div className="flex flex-col items-center justify-center pt-8 pb-4 space-y-2">
-              <button
-                onClick={handleLoadMore}
-                disabled={loadingMore}
-                className="flex items-center gap-2 px-6 py-3 bg-[#0A192F] hover:bg-[#132845] border border-[#10B981]/60 hover:border-[#10B981] text-white hover:text-[#34D399] font-bold text-sm rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50"
-              >
-                {loadingMore ? (
-                  <>
-                    <Loader2 className="w-4 h-4 text-[#10B981] animate-spin" />
-                    <span>Loading Next 24 Movies...</span>
-                  </>
-                ) : (
-                  <>
-                    <ArrowDownCircle className="w-4 h-4 text-[#10B981]" />
-                    <span>Load More Movies (Page {page + 1})</span>
-                  </>
-                )}
-              </button>
-              <span className="text-xs text-[#94A3B8]">
-                Accessing 17,000+ Ugandan translated movies index
-              </span>
+            <div ref={sentinelRef} className="flex justify-center py-8">
+              {loadingMore && (
+                <div className="flex items-center gap-2 px-6 py-3 rounded-full bg-[#0A192F]/80 text-[#10B981] text-xs font-bold border border-[#10B981]/30">
+                  <Loader2 className="w-4 h-4 animate-spin text-[#10B981]" />
+                  <span>Loading more movies...</span>
+                </div>
+              )}
             </div>
           )}
         </>

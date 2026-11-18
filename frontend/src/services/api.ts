@@ -273,7 +273,7 @@ export const api = {
       if (options.sort) params.append('sort', options.sort);
 
       const qs = params.toString() ? `?${params.toString()}` : '';
-      const res = await fetch(`${API_BASE}/catalog/movies${qs}`, { signal: AbortSignal.timeout(12000) });
+      const res = await fetch(`${API_BASE}/catalog/movies${qs}`, { signal: AbortSignal.timeout(20000) });
       if (res.ok) {
         const data = await res.json();
         return {
@@ -285,7 +285,11 @@ export const api = {
         };
       }
     } catch {}
-    const filtered = FALLBACK_CATALOG.filter(i => !i.isSeries);
+    let filtered = FALLBACK_CATALOG.filter(i => !i.isSeries);
+    if (options.vj) {
+      const cl = options.vj.toLowerCase().replace('vj-', '').replace('vj', '').replace('.', '').trim();
+      filtered = filtered.filter(i => (i.vj || '').toLowerCase().includes(cl));
+    }
     return { items: filtered, count: filtered.length, total: filtered.length, page: 1, hasMore: false };
   },
 
@@ -298,7 +302,7 @@ export const api = {
       if (options.genre) params.append('genre', options.genre);
 
       const qs = params.toString() ? `?${params.toString()}` : '';
-      const res = await fetch(`${API_BASE}/catalog/series${qs}`, { signal: AbortSignal.timeout(12000) });
+      const res = await fetch(`${API_BASE}/catalog/series${qs}`, { signal: AbortSignal.timeout(20000) });
       if (res.ok) {
         const data = await res.json();
         return {
@@ -310,16 +314,21 @@ export const api = {
         };
       }
     } catch {}
-    const filtered = FALLBACK_CATALOG.filter(i => i.isSeries);
+    let filtered = FALLBACK_CATALOG.filter(i => i.isSeries);
+    if (options.vj) {
+      const cl = options.vj.toLowerCase().replace('vj-', '').replace('vj', '').replace('.', '').trim();
+      filtered = filtered.filter(i => (i.vj || '').toLowerCase().includes(cl));
+    }
     return { items: filtered, count: filtered.length, total: filtered.length, page: 1, hasMore: false };
   },
+
   async resolveStream(id: string, title?: string): Promise<{ streamUrl: string; directUrl: string; servers?: any[]; error?: string; unavailable?: boolean; alternative?: { id: string; title: string } }> {
-    try {
+    const fetchAttempt = async (): Promise<{ streamUrl: string; directUrl: string; servers?: any[]; error?: string; unavailable?: boolean; alternative?: { id: string; title: string } }> => {
       const params = new URLSearchParams();
       params.append('id', id);
       if (title) params.append('title', title);
 
-      const res = await fetch(`${API_BASE}/stream/resolve?${params.toString()}`, { signal: AbortSignal.timeout(12000) });
+      const res = await fetch(`${API_BASE}/stream/resolve?${params.toString()}`, { signal: AbortSignal.timeout(25000) });
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.streamUrl && !isTrailerOrIntroUrl(data.streamUrl, title) && !isTrailerOrIntroUrl(data.directUrl, title)) {
@@ -334,14 +343,25 @@ export const api = {
           };
         }
       }
-    } catch {}
+      throw new Error('Resolver returned non-ok status');
+    };
+
+    try {
+      return await fetchAttempt();
+    } catch {
+      // Automatic retry once with quick delay in case of Render cold-start or momentary latency
+      try {
+        await new Promise(r => setTimeout(r, 1200));
+        return await fetchAttempt();
+      } catch {}
+    }
     return { streamUrl: '', directUrl: '', unavailable: true, error: 'Full Ugandan translated stream connection failed.' };
   },
 
   async search(query: string): Promise<MediaItem[]> {
     if (!query.trim()) return [];
     try {
-      const res = await fetch(`${API_BASE}/catalog/search?q=${encodeURIComponent(query)}`, { signal: AbortSignal.timeout(9000) });
+      const res = await fetch(`${API_BASE}/catalog/search?q=${encodeURIComponent(query)}`, { signal: AbortSignal.timeout(20000) });
       if (res.ok) {
         const data = await res.json();
         return data.items || [];
@@ -353,7 +373,7 @@ export const api = {
 
   async getTitle(id: string): Promise<MediaItem | null> {
     try {
-      const res = await fetch(`${API_BASE}/catalog/title/${id}`, { signal: AbortSignal.timeout(6000) });
+      const res = await fetch(`${API_BASE}/catalog/title/${id}`, { signal: AbortSignal.timeout(10000) });
       if (res.ok) {
         return await res.json();
       }
@@ -364,7 +384,7 @@ export const api = {
   async getMovieDetails(id: string, title?: string): Promise<MediaItem | null> {
     try {
       const qs = title ? `?title=${encodeURIComponent(title)}` : '';
-      const res = await fetch(`${API_BASE}/catalog/details/${id}${qs}`, { signal: AbortSignal.timeout(12000) });
+      const res = await fetch(`${API_BASE}/catalog/details/${id}${qs}`, { signal: AbortSignal.timeout(20000) });
       if (res.ok) {
         return await res.json();
       }

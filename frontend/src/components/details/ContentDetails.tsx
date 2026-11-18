@@ -196,8 +196,8 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
         <div className="absolute inset-0 bg-radial-gradient from-transparent to-[#010318]/80 pointer-events-none" />
       </div>
 
-      {/* Main Details Presentation matching Android TV DetailsScreen.kt */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-8 -mt-32 sm:-mt-44 relative z-10 space-y-10">
+      {/* Main Details Presentation matching Android TV DetailsScreen.kt with 2400px widescreen expansion */}
+      <div className="w-full max-w-[2400px] mx-auto px-4 sm:px-8 md:px-12 -mt-32 sm:-mt-44 relative z-10 space-y-10">
         <div className="flex flex-col md:flex-row gap-6 sm:gap-10 items-start">
           {/* Main Elevated Poster matching Android TV Poster Frame */}
           <div className="w-48 sm:w-56 md:w-72 aspect-[2/3] rounded-2xl overflow-hidden shadow-2xl shadow-black/80 border-2 border-[#10B981]/50 flex-shrink-0 bg-[#0A192F] relative group mx-auto md:mx-0">
