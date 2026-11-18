@@ -35,6 +35,21 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [selectedVj, setSelectedVj] = useState<string | null>(null);
 
+  // Sync initial series if loaded asynchronously
+  useEffect(() => {
+    if (selectedVj === null && initialSeries && initialSeries.length > 0 && seriesList.length === 0) {
+      setSeriesList(initialSeries);
+    }
+  }, [initialSeries, selectedVj, seriesList.length]);
+
+  const handleSelectVj = (vj: string | null) => {
+    setSelectedVj(vj);
+    // Instant client-side filter to completely prevent cross-VJ flashing
+    if (vj) {
+      setSeriesList(prev => filterByVj(prev, vj));
+    }
+  };
+
   const fetchSeriesPageOne = useCallback(async () => {
     setLoading(true);
     setPage(1);
@@ -110,7 +125,7 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
       {/* VJ Filter Pills */}
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
         <button
-          onClick={() => setSelectedVj(null)}
+          onClick={() => handleSelectVj(null)}
           className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
             selectedVj === null
               ? 'bg-[#10B981] text-black shadow-md'
@@ -122,7 +137,7 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
         {SERIES_VJS.map(vj => (
           <button
             key={vj}
-            onClick={() => setSelectedVj(selectedVj === vj ? null : vj)}
+            onClick={() => handleSelectVj(selectedVj === vj ? null : vj)}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
               selectedVj === vj
                 ? 'bg-[#10B981] text-black shadow-md'

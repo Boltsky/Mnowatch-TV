@@ -364,7 +364,7 @@ export const api = {
   async getMovieDetails(id: string, title?: string): Promise<MediaItem | null> {
     try {
       const qs = title ? `?title=${encodeURIComponent(title)}` : '';
-      const res = await fetch(`${API_BASE}/catalog/details/${id}${qs}`, { signal: AbortSignal.timeout(6000) });
+      const res = await fetch(`${API_BASE}/catalog/details/${id}${qs}`, { signal: AbortSignal.timeout(12000) });
       if (res.ok) {
         return await res.json();
       }
@@ -373,6 +373,8 @@ export const api = {
   },
 
   getProxyStreamUrl(streamUrl: string): string {
+    if (!streamUrl) return '';
+    if (streamUrl.includes('/stream/proxy?url=')) return streamUrl;
     return `${API_BASE}/stream/proxy?url=${encodeURIComponent(streamUrl)}`;
   }
 };

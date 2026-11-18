@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Play, ArrowLeft, Star, Clock, Server, Check, Sparkles, BookOpen, Bookmark, BookmarkCheck, Headphones, Shield, Film, Loader2, AlertCircle } from 'lucide-react';
+import { Play, ArrowLeft, Star, Clock, Server, Check, Sparkles, BookOpen, Bookmark, BookmarkCheck, Headphones, Shield, Film, Loader2, AlertCircle, Tv } from 'lucide-react';
 import { MediaItem, Episode, PlaybackServer } from '../../types';
 import { api, isTrailerOrIntroUrl } from '../../services/api';
 import { TvMediaCard } from '../common/TvMediaCard';
@@ -144,6 +144,16 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
   }, [movie.id, movie.vj, movie.genre, allMovies]);
 
   const seasons = movie.seasons || [];
+  
+  // Synchronize selected season when seasons are fetched
+  useEffect(() => {
+    if (movie.seasons && movie.seasons.length > 0) {
+      if (!movie.seasons.some(s => s.seasonNumber === selectedSeason)) {
+        setSelectedSeason(movie.seasons[0].seasonNumber);
+      }
+    }
+  }, [movie.seasons, selectedSeason]);
+
   const currentSeason = seasons.find(s => s.seasonNumber === selectedSeason) || seasons[0];
 
   const handleCardClick = (target: MediaItem) => {
@@ -312,7 +322,22 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
 
             {/* Primary Actions: Start Watching & Watchlist */}
             <div className="pt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-              {!movie.isSeries && (
+              {movie.isSeries ? (
+                <button
+                  onClick={() => {
+                    const firstEp = seasons[0]?.episodes?.[0];
+                    onPlay(movie, firstEp, selectedServer);
+                  }}
+                  className="flex items-center justify-center gap-3 px-8 py-3.5 sm:py-4 rounded-xl bg-[#10B981] hover:bg-[#34D399] text-black font-extrabold text-sm sm:text-base shadow-xl shadow-[#10B981]/30 transition-all hover:scale-105 active:scale-95"
+                >
+                  <Play className="w-5 h-5 fill-black" />
+                  <span>
+                    {seasons[0]?.episodes?.[0]
+                      ? `Watch S${seasons[0].seasonNumber}:E${seasons[0].episodes[0].episodeNumber}`
+                      : 'Start Series'}
+                  </span>
+                </button>
+              ) : (
                 <button
                   onClick={() => onPlay(movie, undefined, selectedServer)}
                   className="flex items-center justify-center gap-3 px-8 py-3.5 sm:py-4 rounded-xl bg-[#10B981] hover:bg-[#34D399] text-black font-extrabold text-sm sm:text-base shadow-xl shadow-[#10B981]/30 transition-all hover:scale-105 active:scale-95"
@@ -349,62 +374,86 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
         </div>
 
         {/* TV Series Season & Episode Picker (if series) */}
-        {movie.isSeries && seasons.length > 0 && (
+        {movie.isSeries && (
           <div className="mt-12 space-y-6 pt-6 border-t border-[#132845]">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl sm:text-2xl font-black text-white">Episodes</h2>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2">
+                  <Tv className="w-6 h-6 text-[#10B981]" />
+                  <span>Seasons & Episodes</span>
+                </h2>
+                <p className="text-xs text-[#94A3B8]">Select a season and tap any episode to play</p>
+              </div>
+
               {seasons.length > 1 && (
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   {seasons.map(s => (
                     <button
                       key={s.seasonNumber}
                       onClick={() => setSelectedSeason(s.seasonNumber)}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-2 ${
                         selectedSeason === s.seasonNumber
-                          ? 'bg-[#10B981] text-black border-[#10B981]'
-                          : 'bg-[#0A192F] text-[#94A3B8] border-[#132845] hover:text-white'
+                          ? 'bg-[#10B981] text-black border-[#10B981] shadow-lg shadow-[#10B981]/25 scale-105'
+                          : 'bg-[#0A192F] text-[#94A3B8] border-[#132845] hover:text-white hover:border-[#10B981]/40'
                       }`}
                     >
-                      Season {s.seasonNumber}
+                      <span>Season {s.seasonNumber}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                        selectedSeason === s.seasonNumber ? 'bg-black/20 text-black font-extrabold' : 'bg-white/10 text-[#94A3B8]'
+                      }`}>
+                        {s.episodes.length} Eps
+                      </span>
                     </button>
                   ))}
                 </div>
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {currentSeason?.episodes.map(ep => (
-                <div
-                  key={ep.episodeNumber}
-                  onClick={() => onPlay(movie, ep, selectedServer)}
-                  className="group flex gap-3.5 p-3.5 rounded-2xl bg-[#0A192F] border border-[#132845] hover:border-[#10B981]/60 cursor-pointer transition-all hover:scale-[1.02] active:scale-98"
-                >
-                  <div className="relative w-28 sm:w-32 aspect-video rounded-xl overflow-hidden bg-black/60 flex-shrink-0">
-                    <img
-                      src={ep.thumbnailUrl || movie.backdropUrl || movie.posterUrl}
-                      alt={ep.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                    />
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Play className="w-6 h-6 fill-[#10B981] text-[#10B981]" />
+            {loadingDetails && (!seasons || seasons.length === 0) ? (
+              <div className="flex flex-col items-center justify-center py-16 space-y-3 bg-[#0A192F]/50 rounded-2xl border border-[#132845]">
+                <Loader2 className="w-8 h-8 text-[#10B981] animate-spin" />
+                <p className="text-xs font-semibold text-[#94A3B8]">Loading all seasons and episodes from catalog...</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {currentSeason?.episodes.map(ep => (
+                  <div
+                    key={ep.id || `${currentSeason.seasonNumber}_${ep.episodeNumber}`}
+                    onClick={() => onPlay(movie, ep, selectedServer)}
+                    className="group flex flex-col p-3 rounded-2xl bg-[#0A192F] border border-[#132845] hover:border-[#10B981]/60 cursor-pointer transition-all hover:scale-[1.02] active:scale-98 shadow-md"
+                  >
+                    <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-black/60 flex-shrink-0">
+                      <img
+                        src={ep.thumbnailUrl || movie.backdropUrl || movie.posterUrl}
+                        alt={ep.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="w-10 h-10 rounded-full bg-[#10B981] flex items-center justify-center shadow-lg shadow-[#10B981]/40">
+                          <Play className="w-5 h-5 fill-black text-black ml-0.5" />
+                        </div>
+                      </div>
+                      <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-md text-[10px] font-extrabold text-[#10B981] border border-white/10">
+                        S{currentSeason.seasonNumber}:E{ep.episodeNumber}
+                      </div>
+                    </div>
+                    <div className="pt-2.5 flex flex-col justify-between flex-1">
+                      <div>
+                        <h3 className="text-xs sm:text-sm font-bold text-white group-hover:text-[#34D399] line-clamp-1">
+                          {ep.title}
+                        </h3>
+                      </div>
+                      <div className="flex items-center justify-between pt-2 text-[11px] text-[#94A3B8]">
+                        <span>{ep.duration || '45m'}</span>
+                        <span className="text-[#10B981] font-semibold group-hover:underline flex items-center gap-1">
+                          <Play className="w-2.5 h-2.5 fill-[#10B981]" /> Watch
+                        </span>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex flex-col justify-center overflow-hidden">
-                    <span className="text-[11px] font-extrabold text-[#10B981] uppercase tracking-wider">
-                      Episode {ep.episodeNumber}
-                    </span>
-                    <h3 className="text-sm font-bold text-white group-hover:text-[#34D399] truncate">
-                      {ep.title}
-                    </h3>
-                    {ep.duration && (
-                      <span className="text-[11px] text-[#94A3B8] mt-1">
-                        {ep.duration}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

@@ -1,4 +1,4 @@
-import { MediaItem, CatalogRail, PlaybackServer, Episode } from '../types';
+import { MediaItem, CatalogRail, PlaybackServer, Episode, Season } from '../types';
 import { RICH_CATALOG, VJ_LIST, GENRE_LIST } from '../providers/richCatalog.data';
 import { StreamProxyService } from './streamProxy.service';
 
@@ -979,6 +979,151 @@ export class CatalogService {
   }
 
   /**
+   * Fetches all seasons and episodes for a Twolekede series
+   */
+  public static async fetchTwolekedeSeriesSeasonsAndEpisodes(
+    seriesTitle: string,
+    seriesVj: string,
+    baseUrl: string
+  ): Promise<{ seasons: Season[]; posterUrl: string; backdropUrl: string; description: string; year: string } | null> {
+    const unescape = (s: string) => s.replace(/&amp;/g, '&').replace(/&#38;/g, '&').replace(/&#039;/g, "'").replace(/&quot;/g, '"');
+    const sdUrl = `https://twolekede.com/seriesdetails.php?title=${encodeURIComponent(seriesTitle)}&category=${encodeURIComponent(seriesVj)}`;
+
+    try {
+      const resp = await fetch(sdUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Referer': 'https://twolekede.com/'
+        },
+        signal: AbortSignal.timeout(8000)
+      });
+
+      if (!resp.ok) return null;
+      const html = await resp.text();
+
+      // Poster
+      const posterMatch = html.match(/<img[^>]+class="series-poster"[^>]+src="([^"]*)"/) ||
+                          html.match(/<img[^>]+src="([^"]*)"[^>]+class="series-poster"/) ||
+                          html.match(/<img[^>]+src="([^"]*)"[^>]+class="series-thumbnail"/) ||
+                          html.match(/<img[^>]+src="([^"]*)"[^>]+class="movie-poster"/);
+      let posterUrl = posterMatch ? posterMatch[1].trim() : '';
+      if (posterUrl && !posterUrl.startsWith('http')) {
+        posterUrl = `https://twolekede.com/${posterUrl.replace(/^\/+/, '')}`;
+      }
+
+      // Description
+      const descMatch = html.match(/<div class="description">\s*([\s\S]*?)\s*<\/div>/);
+      const description = descMatch ? unescape(descMatch[1]).trim() : '';
+
+      // Year
+      const yearMatch = html.match(/<span class="year">([^<]*)<\/span>/);
+      const year = yearMatch ? yearMatch[1].trim() : '2024';
+
+      // Discover all seasons
+      const seasonRegex = /href="episodes\.php\?title=[^"&]+&amp;category=[^"&]+&amp;season=(\d+)"|href="episodes\.php\?title=[^"&]+&category=[^"&]+&season=(\d+)"/g;
+      let sm: RegExpExecArray | null;
+      const seasonNums = new Set<number>();
+      while ((sm = seasonRegex.exec(html)) !== null) {
+        const num = parseInt(sm[1] || sm[2]);
+        if (num > 0) seasonNums.add(num);
+      }
+
+      if (seasonNums.size === 0) {
+        const sMatches = html.match(/Season\s*(\d+)/gi);
+        if (sMatches) {
+          sMatches.forEach(s => {
+            const n = parseInt(s.replace(/\D/g, ''));
+            if (n > 0) seasonNums.add(n);
+          });
+        }
+      }
+
+      if (seasonNums.size === 0) seasonNums.add(1);
+      const sortedSeasons = Array.from(seasonNums).sort((a, b) => a - b);
+
+      // Fetch episodes for all discovered seasons in parallel
+      const seasons: Season[] = await Promise.all(
+        sortedSeasons.map(async (sNum) => {
+          const epUrl = `https://twolekede.com/episodes.php?title=${encodeURIComponent(seriesTitle)}&category=${encodeURIComponent(seriesVj)}&season=${sNum}`;
+          try {
+            const epResp = await fetch(epUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'https://twolekede.com/'
+              },
+              signal: AbortSignal.timeout(8000)
+            });
+
+            if (!epResp.ok) return { seasonNumber: sNum, episodes: [] };
+            const epHtml = await epResp.text();
+            const episodes: Episode[] = [];
+
+            // Pattern 1: .episode-info block
+            const simpleRegex = /<div class="episode-info">[\s\S]*?<h3>([^<]+)<\/h3>[\s\S]*?<div class="episode-title">([^<]*)<\/div>[\s\S]*?<a href="preview\.php\?id=(\d+)"/g;
+            let em: RegExpExecArray | null;
+            while ((em = simpleRegex.exec(epHtml)) !== null) {
+              const epHeader = em[1].trim();
+              const epSub = em[2].trim();
+              const epId = em[3];
+              const num = parseInt(epHeader.replace(/\D/g, '')) || (episodes.length + 1);
+              const epStream = `https://twolekede.com/preview.php?id=${epId}`;
+              const epProxy = `${baseUrl}/api/v1/stream/proxy?url=${encodeURIComponent(epStream)}`;
+
+              episodes.push({
+                id: `ep_${epId}`,
+                episodeNumber: num,
+                title: epHeader + (epSub && epSub !== seriesTitle ? ` - ${epSub}` : ''),
+                duration: '45m',
+                streamUrl: epProxy,
+                thumbnailUrl: posterUrl
+              });
+            }
+
+            // Pattern 2: direct preview.php fallback
+            if (episodes.length === 0) {
+              const fbRegex = /<a href="preview\.php\?id=(\d+)"[^>]*>[\s\S]*?<h3>([^<]+)<\/h3>/g;
+              while ((em = fbRegex.exec(epHtml)) !== null) {
+                const epId = em[1];
+                const epTitle = em[2].trim();
+                if (epTitle.toLowerCase().includes('links')) continue;
+                const num = parseInt(epTitle.replace(/\D/g, '')) || (episodes.length + 1);
+                const epStream = `https://twolekede.com/preview.php?id=${epId}`;
+                const epProxy = `${baseUrl}/api/v1/stream/proxy?url=${encodeURIComponent(epStream)}`;
+
+                episodes.push({
+                  id: `ep_${epId}`,
+                  episodeNumber: num,
+                  title: epTitle,
+                  duration: '45m',
+                  streamUrl: epProxy,
+                  thumbnailUrl: posterUrl
+                });
+              }
+            }
+
+            return {
+              seasonNumber: sNum,
+              episodes
+            };
+          } catch {
+            return { seasonNumber: sNum, episodes: [] };
+          }
+        })
+      );
+
+      return {
+        seasons: seasons.filter(s => s.episodes.length > 0),
+        posterUrl,
+        backdropUrl: posterUrl,
+        description,
+        year
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Fetches rich genuine details for an individual movie or series
    */
   public static async getMovieDetails(id: string, title?: string, baseUrl: string = ''): Promise<MediaItem | null> {
@@ -996,68 +1141,37 @@ export class CatalogService {
       const seriesTitle = decodeURIComponent(seriesTitleSlug).replace(/\+/g, ' ');
       const seriesVj = decodeURIComponent(seriesCatSlug).replace(/\+/g, ' ');
 
-      try {
-        const epUrl = `https://twolekede.com/episodes.php?title=${encodeURIComponent(seriesTitle)}&category=${encodeURIComponent(seriesVj)}&season=1`;
-        const resp = await fetch(epUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': 'https://twolekede.com/'
-          },
-          signal: AbortSignal.timeout(6000)
-        });
+      const seriesData = await this.fetchTwolekedeSeriesSeasonsAndEpisodes(seriesTitle, seriesVj, baseUrl);
+      if (seriesData && seriesData.seasons.length > 0) {
+        const firstEp = seriesData.seasons[0]?.episodes?.[0];
+        const firstStream = firstEp?.streamUrl || '';
+        const totalEps = seriesData.seasons.reduce((acc, s) => acc + s.episodes.length, 0);
 
-        if (resp.ok) {
-          const html = await resp.text();
-          const epRegex = /<a href="preview\.php\?id=(\d+)"[^>]*>[\s\S]*?<h3>([^<]+)<\/h3>/g;
-          let em: RegExpExecArray | null;
-          const episodes: Episode[] = [];
-          while ((em = epRegex.exec(html)) !== null) {
-            const epId = em[1];
-            const epTitle = em[2].trim();
-            if (epTitle.toLowerCase().includes('links')) continue;
-            const epNum = parseInt(epTitle.replace(/\D/g, '')) || (episodes.length + 1);
-            const epStream = `https://twolekede.com/preview.php?id=${epId}`;
-            const epProxy = `${baseUrl}/api/v1/stream/proxy?url=${encodeURIComponent(epStream)}`;
-            episodes.push({
-              id: `ep_${epId}`,
-              episodeNumber: epNum,
-              title: epTitle,
-              duration: '45m',
-              streamUrl: epProxy
-            });
-          }
+        const item: MediaItem = {
+          id,
+          title: seriesTitle,
+          type: 'series',
+          vj: seriesVj.toLowerCase().includes('vj') ? seriesVj : `VJ ${seriesVj}`,
+          genre: 'Ugandan Translated Series',
+          year: seriesData.year || '2024',
+          rating: '8.9',
+          duration: `${seriesData.seasons.length} Seasons • ${totalEps} Episodes`,
+          description: seriesData.description || `${seriesTitle} multi-season translated series by ${seriesVj} on Munowatch TV.`,
+          posterUrl: seriesData.posterUrl,
+          backdropUrl: seriesData.backdropUrl,
+          streamUrl: firstStream,
+          isSeries: true,
+          isStreamAvailable: true,
+          seasons: seriesData.seasons,
+          servers: firstStream ? [
+            { id: 's2', name: 'Server 2 (Munowatch Web Streamer - CORS Safe)', quality: '1080p Full HD', streamUrl: firstStream, isProxy: true },
+            { id: 's1', name: 'Server 1 (High-Speed Direct)', quality: '1080p FHD', streamUrl: firstStream, isProxy: false }
+          ] : []
+        };
 
-          const firstStream = episodes[0]?.streamUrl || '';
-          const item: MediaItem = {
-            id,
-            title: seriesTitle,
-            type: 'series',
-            vj: seriesVj.toLowerCase().includes('vj') ? seriesVj : `VJ ${seriesVj}`,
-            genre: 'Ugandan Translated Series',
-            year: '2024',
-            rating: '8.9',
-            duration: `${episodes.length} Episodes`,
-            description: `${seriesTitle} multi-season translated series by ${seriesVj} on Munowatch TV.`,
-            posterUrl: '',
-            backdropUrl: '',
-            streamUrl: firstStream,
-            isSeries: true,
-            seasons: [
-              {
-                seasonNumber: 1,
-                episodes
-              }
-            ],
-            servers: firstStream ? [
-              { id: 's2', name: 'Server 2 (Munowatch Web Streamer - CORS Safe)', quality: '1080p Full HD', streamUrl: firstStream, isProxy: true },
-              { id: 's1', name: 'Server 1 (High-Speed Direct)', quality: '1080p FHD', streamUrl: episodes[0]?.streamUrl || '', isProxy: false }
-            ] : []
-          };
-
-          this.setInCache(cacheKey, item, 60 * 60 * 1000);
-          return item;
-        }
-      } catch {}
+        this.setInCache(cacheKey, item, 60 * 60 * 1000);
+        return item;
+      }
     }
 
     // 1. If it's a Twolekede item (or numeric ID)
@@ -1288,14 +1402,15 @@ export class CatalogService {
                   const cleanEpFile = typeof epFile === 'string' ? epFile.replace(/\\/g, '').trim() : '';
                   const epStream = (cleanEpFile.startsWith('http') && !StreamProxyService.isTrailerOrPromoUrl(cleanEpFile, ep.title || title))
                     ? cleanEpFile
-                    : '';
+                    : (cleanEpFile ? `https://munotek.b-cdn.net/${cleanEpFile}` : '');
+                  const epProxy = epStream ? `${baseUrl}/api/v1/stream/proxy?url=${encodeURIComponent(epStream)}` : '';
 
                   const episodeObj = {
                     id: `ep_${ep.id || ep.episode_number}`,
                     episodeNumber: ep.episode_number || 1,
                     title: ep.title || `Episode ${ep.episode_number}`,
                     duration: ep.duration ? `${ep.duration}m` : '45m',
-                    streamUrl: epStream,
+                    streamUrl: epProxy || epStream,
                     thumbnailUrl: backdropUrl
                   };
 
@@ -1307,6 +1422,14 @@ export class CatalogService {
                   seasonNumber,
                   episodes
                 }));
+              }
+
+              // If it's a series and seasons is still empty, query Twolekede series details to populate all seasons and episodes
+              if ((isSeriesItem || m.type === 'series' || m.serie_id) && (!seasons || seasons.length === 0)) {
+                const twolekedeSeries = await this.fetchTwolekedeSeriesSeasonsAndEpisodes(itemTitle, vj, baseUrl);
+                if (twolekedeSeries && twolekedeSeries.seasons.length > 0) {
+                  seasons = twolekedeSeries.seasons;
+                }
               }
 
               const item: MediaItem = {
