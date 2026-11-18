@@ -9,6 +9,15 @@ const isTrailerOnly = (item: MediaItem) => {
   return isTrailerOrIntroUrl(item.streamUrl, item.title) && !item.id.startsWith('tk_') && !item.streamUrl.includes('preview.php') && !item.streamUrl.includes('twolekede');
 };
 
+const filterByVj = (items: MediaItem[], vj: string | null): MediaItem[] => {
+  if (!vj) return items;
+  const cleanTarget = vj.toLowerCase().replace('vj-', '').replace('vj', '').replace('.', '').trim();
+  return items.filter(item => {
+    const cleanCard = (item.vj || '').toLowerCase().replace('vj-', '').replace('vj', '').replace('.', '').trim();
+    return cleanCard.includes(cleanTarget) || cleanTarget.includes(cleanCard);
+  });
+};
+
 interface SeriesScreenProps {
   series: MediaItem[];
   onSeriesClick: (item: MediaItem) => void;
@@ -36,8 +45,9 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
         vj: selectedVj || undefined
       });
       const cleanItems = (res.items || []).filter(i => !isTrailerOnly(i));
-      setSeriesList(cleanItems);
-      setHasMore(cleanItems.length >= 10);
+      const filtered = filterByVj(cleanItems, selectedVj);
+      setSeriesList(filtered);
+      setHasMore(filtered.length >= 10);
     } catch {
       // Keep existing
     } finally {
@@ -61,12 +71,13 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
       });
       if (res.items && res.items.length > 0) {
         const cleanItems = res.items.filter(i => !isTrailerOnly(i));
+        const filtered = filterByVj(cleanItems, selectedVj);
         setSeriesList(prev => {
           const ids = new Set(prev.map(p => p.id));
-          return [...prev, ...cleanItems.filter(i => !ids.has(i.id))];
+          return [...prev, ...filtered.filter(i => !ids.has(i.id))];
         });
         setPage(nextPage);
-        setHasMore(cleanItems.length >= 10);
+        setHasMore(filtered.length >= 10);
       } else {
         setHasMore(false);
       }

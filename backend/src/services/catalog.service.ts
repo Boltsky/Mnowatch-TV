@@ -268,6 +268,82 @@ export class CatalogService {
   }
 
   /**
+   * Fetches authentic series translated by a specific VJ from Twolekede categories.php
+   */
+  public static async fetchTwolekedeSeriesByVj(vjName: string, page: number = 1): Promise<MediaItem[]> {
+    const mappedVj = this.mapVjToTwolekedeName(vjName);
+    const cacheKey = `twolekede:series:vj:${mappedVj.toLowerCase()}:${page}`;
+    const cached = this.getFromCache<MediaItem[]>(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const url = page <= 1
+        ? `https://twolekede.com/categories.php?name=${encodeURIComponent(mappedVj)}`
+        : `https://twolekede.com/categories.php?name=${encodeURIComponent(mappedVj)}&page=${page}`;
+
+      const resp = await fetch(url, {
+        headers: {
+          'Referer': 'https://twolekede.com/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+        },
+        signal: AbortSignal.timeout(10000)
+      });
+
+      if (!resp.ok) return [];
+      const html = await resp.text();
+      const items: MediaItem[] = [];
+
+      // Extract all series links: seriesdetails.php?title=...&category=...
+      const seriesRegex = /<a\s+[^>]*href=["'](seriesdetails\.php\?[^"']+)["'][^>]*>[\s\S]*?<img[^>]+src=["']([^"']+)["'][\s\S]*?<h3>([^<]+)<\/h3>(?:[\s\S]*?<p>([^<]*)<\/p>)?/gi;
+      let match: RegExpExecArray | null;
+
+      const seen = new Set<string>();
+      while ((match = seriesRegex.exec(html)) !== null) {
+        const href = match[1];
+        let poster = match[2];
+        const title = StreamProxyService.unescapeHtml(match[3]).trim();
+        const year = match[4]?.trim() || '2024';
+
+        const normTitle = title.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (seen.has(normTitle)) continue;
+        seen.add(normTitle);
+
+        if (!poster.startsWith('http')) {
+          poster = `https://twolekede.com/${poster.replace(/^\/+/, '')}`;
+        }
+
+        const titleSlugMatch = href.match(/title=([^&"']+)/i);
+        const catSlugMatch = href.match(/category=([^&"']+)/i);
+        const titleSlug = titleSlugMatch ? titleSlugMatch[1] : encodeURIComponent(title);
+        const catSlug = catSlugMatch ? catSlugMatch[1] : encodeURIComponent(mappedVj);
+
+        items.push({
+          id: `tk_series_${titleSlug}_${catSlug}`,
+          title: title,
+          type: 'series',
+          vj: mappedVj.toLowerCase().includes('vj') ? mappedVj : `VJ ${mappedVj}`,
+          genre: 'Ugandan Translated Series',
+          year: year,
+          rating: '8.9',
+          duration: 'Multi-Season',
+          description: `${title} complete series translated into Luganda by ${mappedVj}. Stream all seasons on Munowatch TV.`,
+          posterUrl: poster,
+          backdropUrl: poster,
+          streamUrl: `https://twolekede.com/${href}`,
+          isSeries: true
+        });
+      }
+
+      if (items.length > 0) {
+        this.setInCache(cacheKey, items, 30 * 60 * 1000);
+        return items;
+      }
+    } catch {}
+
+    return [];
+  }
+
+  /**
    * Fetches movies by genre from Twolekede (e.g. Action, Horror, Comedy, Indian Movie)
    */
   public static async fetchTwolekedeByGenre(genreName: string, page: number = 1): Promise<MediaItem[]> {
@@ -485,16 +561,49 @@ export class CatalogService {
   }
 
   /**
-   * High-level getSeries with dynamic pagination
+   * High-level getSeries with dynamic pagination and strict VJ isolation
    */
   public static async getSeries(options: QueryOptions, baseUrl: string): Promise<{ items: MediaItem[]; count: number; page: number }> {
     const page = options.page || 1;
+    let combined: MediaItem[] = [];
 
-    let liveTwolekede = await this.fetchTwolekedeCatalog(true, page);
-    let combined = liveTwolekede.length > 0 ? liveTwolekede : await this.fetchUgaWatchCatalog(2, options);
+    if (options.vj) {
+      const mappedVj = this.mapVjToTwolekedeName(options.vj);
+      const cleanTargetVj = options.vj.toLowerCase().replace('vj-', '').replace('vj', '').replace('.', '').trim();
 
-    if (combined.length === 0) {
-      combined = [...RICH_CATALOG.filter(i => i.isSeries)];
+      // 1. Fetch series from Twolekede categories.php for this specific VJ (e.g. 120+ series for VJ Junior, 121+ for VJ ICEP)
+      const vjSeries = await this.fetchTwolekedeSeriesByVj(mappedVj, page);
+
+      // 2. Also check series.php for series tagged with this VJ
+      const liveCatalogSeries = await this.fetchTwolekedeCatalog(true, page);
+      const matchedFromCatalog = liveCatalogSeries.filter(i => {
+        const cVj = (i.vj || '').toLowerCase().replace('vj-', '').replace('vj', '').replace('.', '').trim();
+        return cVj.includes(cleanTargetVj) || cleanTargetVj.includes(cVj);
+      });
+
+      combined = [...vjSeries, ...matchedFromCatalog];
+
+      // 3. Fallback to rich catalog filtered strictly by VJ if upstream returned empty
+      if (combined.length === 0) {
+        combined = RICH_CATALOG.filter(i => {
+          if (!i.isSeries) return false;
+          const cVj = (i.vj || '').toLowerCase().replace('vj-', '').replace('vj', '').replace('.', '').trim();
+          return cVj.includes(cleanTargetVj) || cleanTargetVj.includes(cVj);
+        });
+      }
+
+      // Strictly ensure NO other VJs can leak into this VJ's series listing
+      combined = combined.filter(i => {
+        const cVj = (i.vj || '').toLowerCase().replace('vj-', '').replace('vj', '').replace('.', '').trim();
+        return cVj.includes(cleanTargetVj) || cleanTargetVj.includes(cVj);
+      });
+    } else {
+      let liveTwolekede = await this.fetchTwolekedeCatalog(true, page);
+      combined = liveTwolekede.length > 0 ? liveTwolekede : await this.fetchUgaWatchCatalog(2, options);
+
+      if (combined.length === 0) {
+        combined = [...RICH_CATALOG.filter(i => i.isSeries)];
+      }
     }
 
     const seen = new Set<string>();
