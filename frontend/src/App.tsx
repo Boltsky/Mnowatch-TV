@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import { MediaItem, CatalogRail, Episode, PlaybackServer, VjItem } from './types';
 import { api, FALLBACK_VJS } from './services/api';
 import { TvTopBar } from './components/common/TvTopBar';
@@ -33,6 +33,68 @@ export const App: React.FC = () => {
     episode?: Episode;
     server?: PlaybackServer;
   } | null>(null);
+
+  // Set of visited screens for Keep-Alive caching (lazy-mount on first visit, preserve thereafter)
+  const [visitedScreens, setVisitedScreens] = useState<Set<string>>(() => {
+    const rawHash = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
+    const screen = ['movies', 'series', 'categories', 'search', 'settings'].find(s => rawHash.startsWith(s)) || 'home';
+    return new Set(['home', screen]);
+  });
+
+  // Track per-screen scroll positions to resume exact scroll coordinates on Back
+  const scrollPositions = useRef<Record<string, number>>({});
+  const prevSelectedItemRef = useRef<MediaItem | null>(null);
+  const prevPlayerTargetRef = useRef<any>(null);
+
+  // Keep visitedScreens updated whenever currentScreen changes
+  useEffect(() => {
+    setVisitedScreens(prev => {
+      if (prev.has(currentScreen)) return prev;
+      const next = new Set(prev);
+      next.add(currentScreen);
+      return next;
+    });
+  }, [currentScreen]);
+
+  // Set manual scroll restoration so native browser popstate does not jump to top
+  useEffect(() => {
+    if ('scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual';
+    }
+  }, []);
+
+  // Continuously track scroll position of the active catalog screen when not viewing details/player
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!selectedItem && !playerTarget) {
+        const y = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
+        scrollPositions.current[currentScreen] = y;
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [currentScreen, selectedItem, playerTarget]);
+
+  // Instant scroll position restoration when returning from ContentDetails or VideoPlayer
+  useLayoutEffect(() => {
+    const justClosedDetails = prevSelectedItemRef.current && !selectedItem;
+    const justClosedPlayer = prevPlayerTargetRef.current && !playerTarget;
+
+    if (justClosedDetails || (justClosedPlayer && !selectedItem)) {
+      const targetY = scrollPositions.current[currentScreen] || 0;
+      window.scrollTo({ top: targetY, behavior: 'instant' });
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: targetY, behavior: 'instant' });
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: targetY, behavior: 'instant' });
+        });
+      });
+    }
+
+    prevSelectedItemRef.current = selectedItem;
+    prevPlayerTargetRef.current = playerTarget;
+  }, [selectedItem, playerTarget, currentScreen]);
 
   // Hash route parsing
   const parseHashRoute = useCallback(() => {
@@ -161,22 +223,51 @@ export const App: React.FC = () => {
   }, [allMovies, allSeries, syncFromHash]);
 
   const navigateTo = (screen: string) => {
+    // If clicking current active tab when not in details, smoothly scroll to top
+    if (screen === currentScreen && !selectedItem && !playerTarget) {
+      scrollPositions.current[screen] = 0;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    // Save scroll position of current screen before navigating away
+    if (!selectedItem && !playerTarget) {
+      const y = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
+      scrollPositions.current[currentScreen] = y;
+    }
+
     setPreviousScreen(currentScreen);
     setCurrentScreen(screen);
     setSelectedItem(null);
     setPlayerTarget(null);
     window.location.hash = `#/${screen}`;
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    const targetY = scrollPositions.current[screen] || 0;
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: targetY, behavior: 'instant' });
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: targetY, behavior: 'instant' });
+      });
+    });
   };
 
   const handleItemClick = (item: MediaItem) => {
+    // Save scroll position of current screen before opening movie details
+    if (!selectedItem) {
+      const y = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
+      scrollPositions.current[currentScreen] = y;
+    }
     setPreviousScreen(currentScreen);
     setSelectedItem(item);
     window.location.hash = `#/title/${encodeURIComponent(item.id)}`;
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'instant' });
   };
 
   const handlePlay = (item: MediaItem, episode?: Episode, server?: PlaybackServer) => {
+    if (!selectedItem) {
+      const y = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
+      scrollPositions.current[currentScreen] = y;
+    }
     setPlayerTarget({ item, episode, server });
     window.location.hash = `#/watch/${encodeURIComponent(item.id)}`;
 
@@ -233,213 +324,227 @@ export const App: React.FC = () => {
     }
   };
 
-  // 1. If Video Player is active, render full-screen immersive cinema player
-  if (playerTarget) {
-    return (
-      <VideoPlayer
-        item={playerTarget.item}
-        episode={playerTarget.episode}
-        initialServer={playerTarget.server}
-        onBack={handleBack}
-        onSelectMovie={handleItemClick}
-      />
-    );
-  }
-
   return (
     <div className="min-h-screen bg-[#010318] text-[#F8FAFC] pb-20 md:pb-8 flex flex-col">
-      {/* Universal TopBar with munowatch VIP & responsive navigation on EVERY page */}
-      <TvTopBar
-        currentRoute={selectedItem ? previousScreen : currentScreen}
-        onNavigate={navigateTo}
-      />
+      {/* 1. Fullscreen Video Player overlay */}
+      {playerTarget && (
+        <VideoPlayer
+          item={playerTarget.item}
+          episode={playerTarget.episode}
+          initialServer={playerTarget.server}
+          onBack={handleBack}
+          onSelectMovie={handleItemClick}
+        />
+      )}
 
-      {/* Main Screen Views */}
-      <div className="flex-1 w-full">
-        {/* If Details View is active, render ContentDetails below Universal TopBar */}
-        {selectedItem ? (
-          <ContentDetails
-            item={selectedItem}
-            allMovies={[...allMovies, ...allSeries]}
-            onPlay={handlePlay}
-            onBack={handleBack}
-            onSelectMovie={handleItemClick}
-            onToggleWatchlist={toggleFavorite}
-            isInWatchlist={watchlist.some(w => w.id === selectedItem.id)}
-          />
-        ) : (
-          <>
+      {/* Main App view (hidden when VideoPlayer is active so player has total immersion) */}
+      <div style={{ display: playerTarget ? 'none' : 'flex' }} className="flex-col flex-1">
+        {/* Universal TopBar with munowatch VIP & responsive navigation on EVERY page */}
+        <TvTopBar
+          currentRoute={selectedItem ? previousScreen : currentScreen}
+          onNavigate={navigateTo}
+        />
+
+        {/* Main Screen Views */}
+        <div className="flex-1 w-full">
+          {/* If Details View is active, render ContentDetails below Universal TopBar */}
+          {selectedItem && (
+            <ContentDetails
+              item={selectedItem}
+              allMovies={[...allMovies, ...allSeries]}
+              onPlay={handlePlay}
+              onBack={handleBack}
+              onSelectMovie={handleItemClick}
+              onToggleWatchlist={toggleFavorite}
+              isInWatchlist={watchlist.some(w => w.id === selectedItem.id)}
+            />
+          )}
+
+          {/* Preserved Catalog Views: hidden while ContentDetails is open, preserving all loaded movies, filters, and scroll position */}
+          <div style={{ display: selectedItem ? 'none' : 'block' }}>
             {/* --- SCREEN: HOME --- */}
-            {currentScreen === 'home' && (
-              <main className="p-4 sm:p-8 md:p-10 w-full max-w-[2400px] mx-auto space-y-6">
-            {/* 1. Featured Hero Banner matching TvHeroBanner in HomeScreen.kt */}
-            {featuredItem && (
-              <TvHeroBanner
-                item={featuredItem}
-                isFavorite={watchlist.some(w => w.id === featuredItem.id)}
-                onPlayClick={() => handlePlay(featuredItem)}
-                onFavoriteClick={() => toggleFavorite(featuredItem)}
-                onDetailsClick={() => handleItemClick(featuredItem)}
-              />
-            )}
+            {visitedScreens.has('home') && (
+              <div style={{ display: currentScreen === 'home' ? 'block' : 'none' }}>
+                <main className="p-4 sm:p-8 md:p-10 w-full max-w-[2400px] mx-auto space-y-6">
+                  {/* 1. Featured Hero Banner matching TvHeroBanner in HomeScreen.kt */}
+                  {featuredItem && (
+                    <TvHeroBanner
+                      item={featuredItem}
+                      isFavorite={watchlist.some(w => w.id === featuredItem.id)}
+                      onPlayClick={() => handlePlay(featuredItem)}
+                      onFavoriteClick={() => toggleFavorite(featuredItem)}
+                      onDetailsClick={() => handleItemClick(featuredItem)}
+                    />
+                  )}
 
-            {/* 2. Continue Watching (if exists) matching Android ContinueWatching section */}
-            {continueWatching.length > 0 && (
-              <TvContentSection
-                title="Continue Watching"
-                subtitle="Resume where you left off"
-              >
-                {continueWatching.map(cw => (
-                  <div
-                    key={cw.id}
-                    onClick={() => {
-                      const fullItem = allMovies.find(m => m.id === cw.id) || allSeries.find(s => s.id === cw.id) || featuredItem;
-                      if (fullItem) handlePlay(fullItem);
-                    }}
-                    className="flex-shrink-0 w-44 sm:w-56 cursor-pointer select-none tv-card-focus group rounded-xl overflow-hidden bg-[#0A192F] border border-[#1E293B]"
+                  {/* 2. Continue Watching (if exists) matching Android ContinueWatching section */}
+                  {continueWatching.length > 0 && (
+                    <TvContentSection
+                      title="Continue Watching"
+                      subtitle="Resume where you left off"
+                    >
+                      {continueWatching.map(cw => (
+                        <div
+                          key={cw.id}
+                          onClick={() => {
+                            const fullItem = allMovies.find(m => m.id === cw.id) || allSeries.find(s => s.id === cw.id) || featuredItem;
+                            if (fullItem) handlePlay(fullItem);
+                          }}
+                          className="flex-shrink-0 w-44 sm:w-56 cursor-pointer select-none tv-card-focus group rounded-xl overflow-hidden bg-[#0A192F] border border-[#1E293B]"
+                        >
+                          <div className="relative aspect-video w-full bg-[#132845] overflow-hidden">
+                            <img src={cw.posterUrl} alt={cw.title} className="w-full h-full object-cover" />
+                            {/* Progress bar */}
+                            <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
+                              <div className="h-full bg-[#10B981]" style={{ width: `${cw.progress || 40}%` }} />
+                            </div>
+                          </div>
+                          <div className="p-2.5">
+                            <h4 className="text-xs font-bold text-white truncate group-hover:text-[#34D399]">
+                              {cw.title}
+                            </h4>
+                            <span className="text-[10px] text-[#10B981] font-semibold">{cw.vj || 'Ugandan Translated'}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </TvContentSection>
+                  )}
+
+                  {/* 3. My Watchlist Row (if saved) matching Android HomeScreen */}
+                  {watchlist.length > 0 && (
+                    <TvContentSection
+                      title="My Watchlist"
+                      subtitle="Saved movies & series for later"
+                    >
+                      {watchlist.map(item => (
+                        <TvMediaCard
+                          key={`wl_${item.id}`}
+                          item={item}
+                          onClick={() => handleItemClick(item)}
+                        />
+                      ))}
+                    </TvContentSection>
+                  )}
+
+                  {/* 4. Latest Translated Movies */}
+                  <TvContentSection
+                    title="Latest Translated Movies"
+                    subtitle="Freshly dubbed and updated releases"
                   >
-                    <div className="relative aspect-video w-full bg-[#132845] overflow-hidden">
-                      <img src={cw.posterUrl} alt={cw.title} className="w-full h-full object-cover" />
-                      {/* Progress bar */}
-                      <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
-                        <div className="h-full bg-[#10B981]" style={{ width: `${cw.progress || 40}%` }} />
-                      </div>
-                    </div>
-                    <div className="p-2.5">
-                      <h4 className="text-xs font-bold text-white truncate group-hover:text-[#34D399]">
-                        {cw.title}
-                      </h4>
-                      <span className="text-[10px] text-[#10B981] font-semibold">{cw.vj || 'Ugandan Translated'}</span>
-                    </div>
-                  </div>
-                ))}
-              </TvContentSection>
+                    {allMovies.slice(0, 10).map(movie => (
+                      <TvMediaCard
+                        key={movie.id}
+                        item={movie}
+                        onClick={() => handleItemClick(movie)}
+                      />
+                    ))}
+                  </TvContentSection>
+
+                  {/* 5. Popular Translated Series matching Android HomeScreen */}
+                  {allSeries.length > 0 && (
+                    <TvContentSection
+                      title="Popular Series"
+                      subtitle="Full seasons translated with Veejay commentary"
+                    >
+                      {allSeries.map(s => (
+                        <TvMediaCard
+                          key={s.id}
+                          item={s}
+                          onClick={() => handleItemClick(s)}
+                        />
+                      ))}
+                    </TvContentSection>
+                  )}
+
+                  {/* 6. Featured Ugandan Video Jockeys (VJs) chips matching TvVjChip in HomeScreen */}
+                  <TvContentSection
+                    title="Ugandan Video Jockeys (VJs)"
+                    subtitle="Browse by your favorite translator"
+                  >
+                    {vjList.map(vj => (
+                      <TvVjChip
+                        key={vj.id}
+                        vj={vj}
+                        onClick={() => navigateTo('categories')}
+                      />
+                    ))}
+                  </TvContentSection>
+
+                  {/* 7. Catalog Rails */}
+                  {homeRails.map(rail => (
+                    <TvContentSection
+                      key={rail.id}
+                      title={rail.title}
+                    >
+                      {rail.items.map(item => (
+                        <TvMediaCard
+                          key={item.id}
+                          item={item}
+                          onClick={() => handleItemClick(item)}
+                        />
+                      ))}
+                    </TvContentSection>
+                  ))}
+                </main>
+              </div>
             )}
 
-            {/* 3. My Watchlist Row (if saved) matching Android HomeScreen */}
-            {watchlist.length > 0 && (
-              <TvContentSection
-                title="My Watchlist"
-                subtitle="Saved movies & series for later"
-              >
-                {watchlist.map(item => (
-                  <TvMediaCard
-                    key={`wl_${item.id}`}
-                    item={item}
-                    onClick={() => handleItemClick(item)}
-                  />
-                ))}
-              </TvContentSection>
-            )}
-
-            {/* 4. Latest Translated Movies */}
-            <TvContentSection
-              title="Latest Translated Movies"
-              subtitle="Freshly dubbed and updated releases"
-            >
-              {allMovies.slice(0, 10).map(movie => (
-                <TvMediaCard
-                  key={movie.id}
-                  item={movie}
-                  onClick={() => handleItemClick(movie)}
+            {/* --- SCREEN: MOVIES (Clone of MoviesScreen.kt) --- */}
+            {visitedScreens.has('movies') && (
+              <div style={{ display: currentScreen === 'movies' ? 'block' : 'none' }}>
+                <MoviesScreen
+                  movies={allMovies}
+                  onMovieClick={handleItemClick}
                 />
-              ))}
-            </TvContentSection>
-
-            {/* 5. Popular Translated Series matching Android HomeScreen */}
-            {allSeries.length > 0 && (
-              <TvContentSection
-                title="Popular Series"
-                subtitle="Full seasons translated with Veejay commentary"
-              >
-                {allSeries.map(s => (
-                  <TvMediaCard
-                    key={s.id}
-                    item={s}
-                    onClick={() => handleItemClick(s)}
-                  />
-                ))}
-              </TvContentSection>
+              </div>
             )}
 
-            {/* 6. Featured Ugandan Video Jockeys (VJs) chips matching TvVjChip in HomeScreen */}
-            <TvContentSection
-              title="Ugandan Video Jockeys (VJs)"
-              subtitle="Browse by your favorite translator"
-            >
-              {vjList.map(vj => (
-                <TvVjChip
-                  key={vj.id}
-                  vj={vj}
-                  onClick={() => navigateTo('categories')}
+            {/* --- SCREEN: SERIES (Clone of SeriesScreen.kt) --- */}
+            {visitedScreens.has('series') && (
+              <div style={{ display: currentScreen === 'series' ? 'block' : 'none' }}>
+                <SeriesScreen
+                  series={allSeries}
+                  onSeriesClick={handleItemClick}
                 />
-              ))}
-            </TvContentSection>
+              </div>
+            )}
 
-            {/* 7. Catalog Rails */}
-            {homeRails.map(rail => (
-              <TvContentSection
-                key={rail.id}
-                title={rail.title}
-              >
-                {rail.items.map(item => (
-                  <TvMediaCard
-                    key={item.id}
-                    item={item}
-                    onClick={() => handleItemClick(item)}
-                  />
-                ))}
-              </TvContentSection>
-            ))}
-          </main>
-        )}
+            {/* --- SCREEN: CATEGORIES (Clone of CategoriesScreen.kt) --- */}
+            {visitedScreens.has('categories') && (
+              <div style={{ display: currentScreen === 'categories' ? 'block' : 'none' }}>
+                <CategoriesScreen
+                  movies={[...allMovies, ...allSeries]}
+                  vjs={vjList}
+                  onItemClick={handleItemClick}
+                />
+              </div>
+            )}
 
-        {/* --- SCREEN: MOVIES (Clone of MoviesScreen.kt) --- */}
-        {currentScreen === 'movies' && (
-          <MoviesScreen
-            movies={allMovies}
-            onMovieClick={handleItemClick}
-          />
-        )}
+            {/* --- SCREEN: SEARCH (Clone of SearchScreen.kt with TV Keypad) --- */}
+            {visitedScreens.has('search') && (
+              <div style={{ display: currentScreen === 'search' ? 'block' : 'none' }}>
+                <SearchScreen
+                  onItemClick={handleItemClick}
+                  onPlay={handlePlay}
+                />
+              </div>
+            )}
 
-        {/* --- SCREEN: SERIES (Clone of SeriesScreen.kt) --- */}
-        {currentScreen === 'series' && (
-          <SeriesScreen
-            series={allSeries}
-            onSeriesClick={handleItemClick}
-          />
-        )}
+            {/* --- SCREEN: SETTINGS (Clone of SettingsScreen.kt) --- */}
+            {visitedScreens.has('settings') && (
+              <div style={{ display: currentScreen === 'settings' ? 'block' : 'none' }}>
+                <SettingsScreen />
+              </div>
+            )}
+          </div>
+        </div>
 
-        {/* --- SCREEN: CATEGORIES (Clone of CategoriesScreen.kt) --- */}
-        {currentScreen === 'categories' && (
-          <CategoriesScreen
-            movies={[...allMovies, ...allSeries]}
-            vjs={vjList}
-            onItemClick={handleItemClick}
-          />
-        )}
-
-        {/* --- SCREEN: SEARCH (Clone of SearchScreen.kt with TV Keypad) --- */}
-        {currentScreen === 'search' && (
-          <SearchScreen
-            onItemClick={handleItemClick}
-            onPlay={handlePlay}
-          />
-        )}
-
-        {/* --- SCREEN: SETTINGS (Clone of SettingsScreen.kt) --- */}
-        {currentScreen === 'settings' && (
-          <SettingsScreen />
-        )}
-          </>
-        )}
+        {/* Mobile Bottom Navigation for phone thumb reachability (< 768px) */}
+        <MunowatchMobileNav
+          currentScreen={currentScreen}
+          onNavigate={navigateTo}
+        />
       </div>
-
-      {/* Mobile Bottom Navigation for phone thumb reachability (< 768px) */}
-      <MunowatchMobileNav
-        currentScreen={currentScreen}
-        onNavigate={navigateTo}
-      />
     </div>
   );
 };
