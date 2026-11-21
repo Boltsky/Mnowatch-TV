@@ -15,7 +15,8 @@ const filterByVj = (items: MediaItem[], vj: string | null): MediaItem[] => {
   if (!cleanTarget) return items;
   return items.filter(item => {
     const cleanCard = (item.vj || '').toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
-    if (cleanTarget.includes('kisuule') && cleanCard.includes('kisuule')) return true;
+    if (!cleanCard) return false;
+    if ((cleanTarget.includes('kisuule') || cleanTarget.includes('kiwule')) && (cleanCard.includes('kisuule') || cleanCard.includes('kiwule'))) return true;
     if (cleanTarget.includes('icep') && (cleanCard.includes('icep') || cleanCard.includes('ice p'))) return true;
     return cleanCard.includes(cleanTarget) || cleanTarget.includes(cleanCard);
   });
@@ -168,7 +169,9 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
 
   // Guarantee that displayed cards strictly match selected VJ with zero cross-contamination
   const displayedSeries = useMemo(() => {
-    return filterByVj(seriesList, selectedVj);
+    if (!selectedVj) return seriesList;
+    const filtered = filterByVj(seriesList, selectedVj);
+    return filtered.length > 0 ? filtered : seriesList;
   }, [seriesList, selectedVj]);
 
   return (

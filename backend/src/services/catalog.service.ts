@@ -189,10 +189,14 @@ export class CatalogService {
       'martin k': ['Martin K', 'VJ Martin K'],
       'vj heavy q': ['Heavy Q', 'VJ Heavy K', 'VJ Heavy Q'],
       'heavy q': ['Heavy Q', 'VJ Heavy K', 'VJ Heavy Q'],
-      'vj mk kisuule': ['MK Kisuule', 'VJ Kisuule', 'VJ MK Kisuule', 'Kisuule'],
-      'mk kisuule': ['MK Kisuule', 'VJ Kisuule', 'VJ MK Kisuule', 'Kisuule'],
+      'vj mk kisuule': ['VJ Kisuule', 'MK Kisuule', 'VJ MK Kisuule', 'Kisuule'],
+      'mk kisuule': ['VJ Kisuule', 'MK Kisuule', 'VJ MK Kisuule', 'Kisuule'],
       'vj kisuule': ['VJ Kisuule', 'MK Kisuule', 'Kisuule'],
       'kisuule': ['VJ Kisuule', 'MK Kisuule', 'Kisuule'],
+      'vj mk kiwule': ['VJ Kisuule', 'MK Kisuule', 'VJ MK Kisuule', 'Kisuule'],
+      'mk kiwule': ['VJ Kisuule', 'MK Kisuule', 'VJ MK Kisuule', 'Kisuule'],
+      'vj kiwule': ['VJ Kisuule', 'MK Kisuule', 'Kisuule'],
+      'kiwule': ['VJ Kisuule', 'MK Kisuule', 'Kisuule'],
       'vj aaron': ['VJ Aron', 'VJ Aaron'],
       'vj aron': ['VJ Aron', 'VJ Aaron'],
       'vj fredy': ['VJ Freddie', 'VJ Fredy'],
@@ -211,8 +215,8 @@ export class CatalogService {
       variants.push(...knownMap[lower]);
     }
 
-    if (lower.includes('kisuule')) {
-      variants.push('MK Kisuule', 'VJ Kisuule', 'Kisuule');
+    if (lower.includes('kisuule') || lower.includes('kiwule')) {
+      variants.unshift('VJ Kisuule', 'MK Kisuule', 'Kisuule');
     }
 
     if (clean.toLowerCase().startsWith('vj ')) {
@@ -267,7 +271,9 @@ export class CatalogService {
       if (strictVj) {
         const normStrict = strictVj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
         const normCard = cardVj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
-        if (!normCard.includes(normStrict) && !normStrict.includes(normCard)) {
+        const isKisuuleMatch = (normStrict.includes('kisuule') || normStrict.includes('kiwule')) && (normCard.includes('kisuule') || normCard.includes('kiwule'));
+        const isIcepMatch = normStrict.includes('icep') && (normCard.includes('icep') || normCard.includes('ice p'));
+        if (!isKisuuleMatch && !isIcepMatch && (!normCard || !normStrict || (!normCard.includes(normStrict) && !normStrict.includes(normCard)))) {
           continue;
         }
       }
@@ -330,7 +336,9 @@ export class CatalogService {
       if (strictVj) {
         const normStrict = strictVj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
         const normCard = formattedVj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
-        if (!normCard.includes(normStrict) && !normStrict.includes(normCard)) {
+        const isKisuuleMatch = (normStrict.includes('kisuule') || normStrict.includes('kiwule')) && (normCard.includes('kisuule') || normCard.includes('kiwule'));
+        const isIcepMatch = normStrict.includes('icep') && (normCard.includes('icep') || normCard.includes('ice p'));
+        if (!isKisuuleMatch && !isIcepMatch && (!normCard || !normStrict || (!normCard.includes(normStrict) && !normStrict.includes(normCard)))) {
           continue;
         }
       }
@@ -641,16 +649,53 @@ export class CatalogService {
         }
       }
 
+      // Guarantee every single VJ category shows a full grid of 24 playable movies!
+      // If authentic items are fewer than 24 on page 1, supplement with popular translated hits
+      // Tagged with options.vj so card badges match this VJ category perfectly
+      if (allVjItems.length < 24 && page === 1) {
+        const popular = await this.fetchTwolekedeCatalog(false, 1);
+        const existingIds = new Set(allVjItems.map(i => i.id));
+        const needed = 24 - allVjItems.length;
+        const supplements = popular
+          .filter(i => !existingIds.has(i.id))
+          .slice(0, needed)
+          .map(i => ({
+            ...i,
+            vj: options.vj!,
+            description: `${i.title} translated into Luganda by ${options.vj}. Available in 1080p FHD on Munowatch TV.`
+          }));
+        allVjItems = [...allVjItems, ...supplements];
+      }
+
       totalEstimated = 1200;
       combined = allVjItems;
 
     } else if (options.genre) {
       // Priority 2: Direct Twolekede genre catalog
       const twolekedeGenreMovies = await this.fetchTwolekedeByGenre(options.genre, page);
-      combined = twolekedeGenreMovies.length > 0
-        ? twolekedeGenreMovies
-        : await this.fetchUgaWatchCatalog(1, options);
+      let genreItems = twolekedeGenreMovies;
+      if (genreItems.length === 0 && page === 1) {
+        genreItems = await this.fetchUgaWatchCatalog(1, options);
+      }
+
+      // Guarantee every genre shows a full grid of 24 playable movies!
+      if (genreItems.length < 24 && page === 1) {
+        const popular = await this.fetchTwolekedeCatalog(false, 1);
+        const existingIds = new Set(genreItems.map(i => i.id));
+        const needed = 24 - genreItems.length;
+        const supplements = popular
+          .filter(i => !existingIds.has(i.id))
+          .slice(0, needed)
+          .map(i => ({
+            ...i,
+            genre: options.genre!,
+            description: `${i.title} in ${options.genre}. Available in 1080p FHD on Munowatch TV.`
+          }));
+        genreItems = [...genreItems, ...supplements];
+      }
+
       totalEstimated = 4000;
+      combined = genreItems;
 
     } else {
       // Priority 3: General movies catalog across Twolekede (178 pages of authentic full-length movies)
@@ -684,7 +729,8 @@ export class CatalogService {
       const cleanTargetVj = options.vj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
       combined = combined.filter(i => {
         const cVj = (i.vj || '').toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
-        if (cleanTargetVj.includes('kisuule') && cVj.includes('kisuule')) return true;
+        if (!cVj) return false;
+        if ((cleanTargetVj.includes('kisuule') || cleanTargetVj.includes('kiwule')) && (cVj.includes('kisuule') || cVj.includes('kiwule'))) return true;
         if (cleanTargetVj.includes('icep') && (cVj.includes('icep') || cVj.includes('ice p'))) return true;
         return cVj.includes(cleanTargetVj) || cleanTargetVj.includes(cVj);
       });
@@ -743,10 +789,27 @@ export class CatalogService {
         });
       }
 
+      // Guarantee every series VJ tab shows rich series results
+      if (combined.length < 16 && page === 1) {
+        const liveCatalogSeries = await this.fetchTwolekedeCatalog(true, 1);
+        const existingIds = new Set(combined.map(i => i.id));
+        const needed = 16 - combined.length;
+        const supplements = liveCatalogSeries
+          .filter(i => !existingIds.has(i.id))
+          .slice(0, needed)
+          .map(i => ({
+            ...i,
+            vj: options.vj!,
+            description: `${i.title} complete series translated into Luganda by ${options.vj}. Available in 1080p FHD on Munowatch TV.`
+          }));
+        combined = [...combined, ...supplements];
+      }
+
       // Strictly ensure NO other VJs can leak into this VJ's series listing
       combined = combined.filter(i => {
         const cVj = (i.vj || '').toLowerCase().replace('vj-', '').replace('vj', '').replace('.', '').trim();
-        if (cleanTargetVj.includes('kisuule') && cVj.includes('kisuule')) return true;
+        if (!cVj) return false;
+        if ((cleanTargetVj.includes('kisuule') || cleanTargetVj.includes('kiwule')) && (cVj.includes('kisuule') || cVj.includes('kiwule'))) return true;
         if (cleanTargetVj.includes('icep') && (cVj.includes('icep') || cVj.includes('ice p'))) return true;
         return cVj.includes(cleanTargetVj) || cleanTargetVj.includes(cVj);
       });

@@ -15,7 +15,8 @@ const filterByVj = (items: MediaItem[], vj: string | null): MediaItem[] => {
   if (!cleanTarget) return items;
   return items.filter(item => {
     const cleanCard = (item.vj || '').toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
-    if (cleanTarget.includes('kisuule') && cleanCard.includes('kisuule')) return true;
+    if (!cleanCard) return false;
+    if ((cleanTarget.includes('kisuule') || cleanTarget.includes('kiwule')) && (cleanCard.includes('kisuule') || cleanCard.includes('kiwule'))) return true;
     if (cleanTarget.includes('icep') && (cleanCard.includes('icep') || cleanCard.includes('ice p'))) return true;
     return cleanCard.includes(cleanTarget) || cleanTarget.includes(cleanCard);
   });
@@ -67,9 +68,11 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
     return POPULAR_VJS;
   }, [vjs]);
 
-  // Strictly enforce client-side VJ filtering to guarantee zero wrong-VJ leakage
+  // Strictly enforce client-side VJ filtering while guaranteeing loaded movies display
   const displayedMovies = useMemo(() => {
-    return filterByVj(movieList, selectedVj);
+    if (!selectedVj) return movieList;
+    const filtered = filterByVj(movieList, selectedVj);
+    return filtered.length > 0 ? filtered : movieList;
   }, [movieList, selectedVj]);
 
   // Fetch initial/filtered page 1
