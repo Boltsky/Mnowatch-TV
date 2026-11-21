@@ -42,7 +42,7 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
   };
 
   const genres = [
-    'Action', 'Sci-Fi', 'Adventure', 'Thriller', 'Horror', 'Crime', 'Comedy', 'Drama', 'Animation', 'Korean', 'Indian Movie', 'Kinigeria'
+    'Action', 'Adventure', 'Animation', 'Comedy', 'Crime', 'Drama', 'Horror', 'Sci-Fi', 'Thriller', 'Korean Drama', 'Romance', 'War', 'Martial Arts', 'Indian Movie', 'Kinigeria', 'Fantasy', 'Family', 'History', 'Mystery'
   ];
 
   const fetchCategoryPageOne = useCallback(async () => {

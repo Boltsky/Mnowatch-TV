@@ -519,41 +519,17 @@ export class CatalogService {
 
       if (!resp.ok) return [];
       const html = await resp.text();
-      const items: MediaItem[] = [];
 
-      const cardRegex = /<div class="grid-item">[\s\S]*?<a href="(?:moviedetails|preview)\.php\?id=(\d+)"[\s\S]*?<img[^>]+src="([^"]+)"[\s\S]*?<h3>([^<]+)<\/h3>[\s\S]*?<p>([^<]*)<\/p>(?:[\s\S]*?<span class="category">([^<]*)<\/span>)?/g;
-      let match: RegExpExecArray | null;
+      // 1. Parse authentic movie cards
+      let items = this.parseTwolekedeMovieCards(html, 'VJ Junior');
 
-      while ((match = cardRegex.exec(html)) !== null) {
-        const id = match[1];
-        let poster = match[2];
-        const title = match[3].trim();
-        const year = match[4]?.trim() || '2024';
-        const cardVj = match[5]?.trim() || 'VJ Junior';
-
-        if (!poster.startsWith('http')) {
-          poster = `https://twolekede.com/${poster.replace(/^\/+/, '')}`;
-        }
-
-        items.push({
-          id: `tk_${id}`,
-          title: title,
-          type: 'movie',
-          vj: cardVj.toLowerCase().includes('vj') ? cardVj : `VJ ${cardVj}`,
-          genre: genreName,
-          year: year,
-          rating: '8.8',
-          duration: '2h 10m',
-          description: `${title} translated into Luganda by ${cardVj} in ${genreName}. Available in 1080p FHD.`,
-          posterUrl: poster,
-          backdropUrl: poster,
-          streamUrl: '',
-          isSeries: false
-        });
+      // 2. If no standalone movies, check for translated series in this genre (e.g. Korean Drama, Series)
+      if (items.length === 0) {
+        items = this.parseTwolekedeSeriesCards(html, 'VJ Junior');
       }
 
       if (items.length > 0) {
-        this.setInCache(cacheKey, items);
+        this.setInCache(cacheKey, items, 30 * 60 * 1000);
         return items;
       }
     } catch {}
@@ -654,6 +630,15 @@ export class CatalogService {
       let allVjItems = twolekedeVjMovies;
       if (allVjItems.length === 0 && page === 1) {
         allVjItems = await this.fetchUgaWatchCatalog(1, options);
+      }
+
+      // If this VJ has 0 or very few standalone movies, include their authentic translated series
+      // (guarantees series-focused VJs like VJ Banks, VJ Sammy, VJ Freddie, VJ Waza, VJ Light, VJ Pauleta show their complete catalog)
+      if (allVjItems.length < 5) {
+        const vjSeries = await this.fetchTwolekedeSeriesByVj(options.vj, page);
+        if (vjSeries.length > 0) {
+          allVjItems = [...allVjItems, ...vjSeries];
+        }
       }
 
       totalEstimated = 1200;

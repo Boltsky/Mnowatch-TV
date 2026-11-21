@@ -459,12 +459,27 @@ export const VJ_LIST = [
 
 export const GENRE_LIST = [
   "Action",
-  "Sci-Fi",
   "Adventure",
-  "Thriller",
-  "Horror",
-  "Crime",
+  "Animation",
   "Comedy",
+  "Crime",
   "Drama",
-  "Animation"
+  "Horror",
+  "Sci-Fi",
+  "Thriller",
+  "Korean Drama",
+  "Romance",
+  "War",
+  "Martial Arts",
+  "Indian Movie",
+  "Kinigeria",
+  "Fantasy",
+  "Family",
+  "Disaster",
+  "Heist",
+  "History",
+  "Mystery",
+  "Spy",
+  "Superhero",
+  "Survival"
 ];
