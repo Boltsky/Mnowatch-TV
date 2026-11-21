@@ -25,6 +25,7 @@ export const App: React.FC = () => {
   const [allSeries, setAllSeries] = useState<MediaItem[]>([]);
   const [watchlist, setWatchlist] = useState<MediaItem[]>([]);
   const [continueWatching, setContinueWatching] = useState<any[]>([]);
+  const [seriesInitialVj, setSeriesInitialVj] = useState<string | null>(null);
 
   // Navigation targets
   const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null);
@@ -496,7 +497,10 @@ export const App: React.FC = () => {
                   movies={allMovies}
                   vjs={vjList}
                   onMovieClick={handleItemClick}
-                  onNavigateToSeries={() => navigateTo('series')}
+                  onNavigateToSeries={(vj) => {
+                    setSeriesInitialVj(vj || null);
+                    navigateTo('series');
+                  }}
                 />
               </div>
             )}
@@ -508,6 +512,7 @@ export const App: React.FC = () => {
                   series={allSeries}
                   vjs={vjList}
                   onSeriesClick={handleItemClick}
+                  initialVj={seriesInitialVj || undefined}
                 />
               </div>
             )}

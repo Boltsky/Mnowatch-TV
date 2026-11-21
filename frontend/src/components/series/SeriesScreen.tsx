@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { MediaItem, VjItem } from '../../types';
 import { TvMediaCard } from '../common/TvMediaCard';
-import { Tv, Loader2, ArrowDownCircle } from 'lucide-react';
+import { Tv, Loader2, ArrowDownCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api, isTrailerOrIntroUrl } from '../../services/api';
 
 const isTrailerOnly = (item: MediaItem) => {
@@ -39,6 +39,21 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [selectedVj, setSelectedVj] = useState<string | null>(initialVj || null);
+
+  // Update selectedVj if initialVj prop changes (e.g. navigating from Movies "Browse VJ in Series")
+  useEffect(() => {
+    if (initialVj) {
+      setSelectedVj(initialVj);
+    }
+  }, [initialVj]);
+
+  // Horizontal scroll container ref & scroll helper for PC
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollHorizontally = (offset: number) => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollBy({ left: offset, behavior: 'smooth' });
+    }
+  };
 
   const availableVjs = useMemo(() => {
     if (vjs && vjs.length > 0) {
@@ -173,31 +188,62 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
         </span>
       </div>
 
-      {/* VJ Filter Pills */}
-      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+      {/* VJ Filter Pills with PC scroll controls */}
+      <div className="relative flex items-center gap-1.5 w-full">
+        {/* PC Left Scroll Arrow Button */}
         <button
-          onClick={() => handleSelectVj(null)}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
-            selectedVj === null
-              ? 'bg-[#10B981] text-black shadow-md'
-              : 'bg-[#0A192F] text-[#94A3B8] hover:text-white border border-[#1E293B]'
-          }`}
+          type="button"
+          onClick={() => scrollHorizontally(-350)}
+          className="hidden md:flex items-center justify-center w-8 h-8 rounded-full bg-[#0A192F] hover:bg-[#10B981]/20 text-[#94A3B8] hover:text-[#10B981] border border-[#1E293B] shadow-md flex-shrink-0 transition-all active:scale-95 z-10"
+          title="Scroll Left (or use mouse wheel)"
         >
-          All Series
+          <ChevronLeft className="w-4 h-4" />
         </button>
-        {availableVjs.map(vj => (
+
+        {/* Scrollable Pills Container with visible PC scrollbar and mouse-wheel support */}
+        <div
+          ref={scrollContainerRef}
+          onWheel={(e) => {
+            if (e.deltaY !== 0 && scrollContainerRef.current) {
+              scrollContainerRef.current.scrollLeft += e.deltaY;
+            }
+          }}
+          className="flex items-center gap-2 overflow-x-auto vj-horizontal-scrollbar pb-2 pt-1 flex-1 scroll-smooth"
+        >
           <button
-            key={vj}
-            onClick={() => handleSelectVj(selectedVj === vj ? null : vj)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
-              selectedVj === vj
+            onClick={() => handleSelectVj(null)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex-shrink-0 ${
+              selectedVj === null
                 ? 'bg-[#10B981] text-black shadow-md'
                 : 'bg-[#0A192F] text-[#94A3B8] hover:text-white border border-[#1E293B]'
             }`}
           >
-            {vj}
+            All Series
           </button>
-        ))}
+          {availableVjs.map(vj => (
+            <button
+              key={vj}
+              onClick={() => handleSelectVj(selectedVj === vj ? null : vj)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex-shrink-0 ${
+                selectedVj === vj
+                  ? 'bg-[#10B981] text-black shadow-md'
+                  : 'bg-[#0A192F] text-[#94A3B8] hover:text-white border border-[#1E293B]'
+              }`}
+            >
+              {vj}
+            </button>
+          ))}
+        </div>
+
+        {/* PC Right Scroll Arrow Button */}
+        <button
+          type="button"
+          onClick={() => scrollHorizontally(350)}
+          className="hidden md:flex items-center justify-center w-8 h-8 rounded-full bg-[#0A192F] hover:bg-[#10B981]/20 text-[#94A3B8] hover:text-[#10B981] border border-[#1E293B] shadow-md flex-shrink-0 transition-all active:scale-95 z-10"
+          title="Scroll Right (or use mouse wheel)"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
       </div>
 
       {loading ? (

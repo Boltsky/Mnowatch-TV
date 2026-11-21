@@ -1,12 +1,22 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { MediaItem, VjItem } from '../../types';
 import { TvMediaCard } from '../common/TvMediaCard';
-import { Sparkles, Calendar, Shuffle, Clock, X, Loader2, ArrowDownCircle, Tv } from 'lucide-react';
+import { Sparkles, Calendar, Shuffle, Clock, X, Loader2, ArrowDownCircle, Tv, ChevronLeft, ChevronRight, Film } from 'lucide-react';
 import { api, isTrailerOrIntroUrl } from '../../services/api';
 
 const isTrailerOnly = (item: MediaItem) => {
   if (!item.streamUrl) return false;
   return isTrailerOrIntroUrl(item.streamUrl, item.title) && !item.id.startsWith('tk_') && !item.streamUrl.includes('preview.php') && !item.streamUrl.includes('twolekede');
+};
+
+const filterByVj = (items: MediaItem[], vj: string | null): MediaItem[] => {
+  if (!vj) return items;
+  const cleanTarget = vj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
+  if (!cleanTarget) return items;
+  return items.filter(item => {
+    const cleanCard = (item.vj || '').toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
+    return cleanCard.includes(cleanTarget) || cleanTarget.includes(cleanCard);
+  });
 };
 
 interface MoviesScreenProps {
@@ -39,6 +49,14 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
   const [selectedVj, setSelectedVj] = useState<string | null>(null);
   const [isYearDialogOpen, setIsYearDialogOpen] = useState<boolean>(false);
 
+  // Horizontal scroll container ref & scroll helper for PC
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollHorizontally = (offset: number) => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollBy({ left: offset, behavior: 'smooth' });
+    }
+  };
+
   // Dynamically resolve full VJ list matching the Android app
   const availableVjs = useMemo(() => {
     if (vjs && vjs.length > 0) {
@@ -46,6 +64,11 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
     }
     return POPULAR_VJS;
   }, [vjs]);
+
+  // Strictly enforce client-side VJ filtering to guarantee zero wrong-VJ leakage
+  const displayedMovies = useMemo(() => {
+    return filterByVj(movieList, selectedVj);
+  }, [movieList, selectedVj]);
 
   // Fetch initial/filtered page 1
   const fetchPageOne = useCallback(async () => {
@@ -197,35 +220,66 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
 
         {/* Count badge */}
         <span className="text-xs font-bold text-[#94A3B8]">
-          <strong className="text-white">{movieList.length}</strong> Movies Loaded
+          <strong className="text-white">{displayedMovies.length}</strong> Movies Loaded
         </span>
       </div>
 
-      {/* VJ Horizontal Quick-Filter Bar with full roster */}
-      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+      {/* VJ Horizontal Quick-Filter Bar with full roster & PC scroll controls */}
+      <div className="relative flex items-center gap-1.5 w-full">
+        {/* PC Left Scroll Arrow Button */}
         <button
-          onClick={() => setSelectedVj(null)}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
-            selectedVj === null
-              ? 'bg-[#10B981] text-black shadow-md'
-              : 'bg-[#0A192F] text-[#94A3B8] hover:text-white border border-[#1E293B]'
-          }`}
+          type="button"
+          onClick={() => scrollHorizontally(-350)}
+          className="hidden md:flex items-center justify-center w-8 h-8 rounded-full bg-[#0A192F] hover:bg-[#10B981]/20 text-[#94A3B8] hover:text-[#10B981] border border-[#1E293B] shadow-md flex-shrink-0 transition-all active:scale-95 z-10"
+          title="Scroll Left (or use mouse wheel)"
         >
-          All Translators
+          <ChevronLeft className="w-4 h-4" />
         </button>
-        {availableVjs.map(vj => (
+
+        {/* Scrollable Pills Container with visible PC scrollbar and mouse-wheel support */}
+        <div
+          ref={scrollContainerRef}
+          onWheel={(e) => {
+            if (e.deltaY !== 0 && scrollContainerRef.current) {
+              scrollContainerRef.current.scrollLeft += e.deltaY;
+            }
+          }}
+          className="flex items-center gap-2 overflow-x-auto vj-horizontal-scrollbar pb-2 pt-1 flex-1 scroll-smooth"
+        >
           <button
-            key={vj}
-            onClick={() => setSelectedVj(selectedVj === vj ? null : vj)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
-              selectedVj === vj
+            onClick={() => setSelectedVj(null)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex-shrink-0 ${
+              selectedVj === null
                 ? 'bg-[#10B981] text-black shadow-md'
                 : 'bg-[#0A192F] text-[#94A3B8] hover:text-white border border-[#1E293B]'
             }`}
           >
-            {vj}
+            All Translators
           </button>
-        ))}
+          {availableVjs.map(vj => (
+            <button
+              key={vj}
+              onClick={() => setSelectedVj(selectedVj === vj ? null : vj)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex-shrink-0 ${
+                selectedVj === vj
+                  ? 'bg-[#10B981] text-black shadow-md'
+                  : 'bg-[#0A192F] text-[#94A3B8] hover:text-white border border-[#1E293B]'
+              }`}
+            >
+              {vj}
+            </button>
+          ))}
+        </div>
+
+        {/* PC Right Scroll Arrow Button */}
+        <button
+          type="button"
+          onClick={() => scrollHorizontally(350)}
+          className="hidden md:flex items-center justify-center w-8 h-8 rounded-full bg-[#0A192F] hover:bg-[#10B981]/20 text-[#94A3B8] hover:text-[#10B981] border border-[#1E293B] shadow-md flex-shrink-0 transition-all active:scale-95 z-10"
+          title="Scroll Right (or use mouse wheel)"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Loading indicator for page 1 */}
@@ -234,14 +288,24 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
           <Loader2 className="w-10 h-10 text-[#10B981] animate-spin" />
           <p className="text-sm font-semibold text-[#94A3B8]">Querying live Ugandan translated movies index...</p>
         </div>
-      ) : movieList.length === 0 ? (
-        <div className="text-center py-20 space-y-4 max-w-md mx-auto">
-          <p className="text-base text-[#94A3B8]">No movies found matching {selectedVj ? `"${selectedVj}"` : 'the selected filter'}.</p>
-          <div className="flex flex-wrap items-center justify-center gap-3">
+      ) : displayedMovies.length === 0 ? (
+        <div className="text-center py-16 px-6 space-y-4 max-w-lg mx-auto bg-[#0A192F]/50 border border-[#132845] rounded-2xl shadow-xl">
+          <div className="w-12 h-12 rounded-2xl bg-[#10B981]/15 border border-[#10B981]/40 flex items-center justify-center mx-auto text-[#10B981]">
+            <Tv className="w-6 h-6" />
+          </div>
+          <h3 className="text-lg font-bold text-white">
+            {selectedVj ? `No standalone movies found for "${selectedVj}"` : 'No movies found matching filters'}
+          </h3>
+          <p className="text-sm text-[#94A3B8]">
+            {selectedVj
+              ? `"${selectedVj}" specializes in Ugandan Translated Series! Click below to stream all their multi-season translated series.`
+              : 'Try clearing the filter or selecting another translator.'}
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
             {selectedVj && onNavigateToSeries && (
               <button
                 onClick={() => onNavigateToSeries(selectedVj)}
-                className="flex items-center gap-2 px-4 py-2 bg-[#10B981] text-black text-xs font-bold rounded-lg hover:bg-[#34D399] transition-all shadow-lg shadow-[#10B981]/20"
+                className="flex items-center gap-2 px-5 py-2.5 bg-[#10B981] hover:bg-[#34D399] text-black text-xs font-black rounded-xl transition-all shadow-lg shadow-[#10B981]/25 active:scale-95"
               >
                 <Tv className="w-4 h-4" />
                 <span>Browse {selectedVj} in Series</span>
@@ -249,7 +313,7 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
             )}
             <button
               onClick={() => { setSelectedYear(null); setSelectedVj(null); }}
-              className="px-4 py-2 bg-[#0A192F] text-white border border-[#1E293B] hover:border-[#10B981]/50 text-xs font-bold rounded-lg transition-all"
+              className="px-4 py-2.5 bg-[#0A192F] hover:bg-white/10 text-white border border-[#1E293B] hover:border-[#10B981]/50 text-xs font-bold rounded-xl transition-all"
             >
               Reset Filters
             </button>
@@ -259,7 +323,7 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
         <>
           {/* Responsive Expanded Grid (up to 10 columns on ultrawide) */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 3xl:grid-cols-10 gap-3 sm:gap-4 pt-2">
-            {movieList.map((movie) => (
+            {displayedMovies.map((movie) => (
               <TvMediaCard
                 key={movie.id}
                 item={movie}

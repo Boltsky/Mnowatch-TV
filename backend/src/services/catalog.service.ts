@@ -231,7 +231,7 @@ export class CatalogService {
     return variants[0] || vjName;
   }
 
-  public static parseTwolekedeMovieCards(html: string, fallbackVj: string): MediaItem[] {
+  public static parseTwolekedeMovieCards(html: string, fallbackVj: string, strictVj?: string): MediaItem[] {
     const items: MediaItem[] = [];
     const seen = new Set<string>();
 
@@ -263,6 +263,15 @@ export class CatalogService {
         cardVj = `VJ ${cardVj}`;
       }
 
+      // Enforce strict VJ isolation: never let movies from another VJ leak into this VJ's catalog
+      if (strictVj) {
+        const normStrict = strictVj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
+        const normCard = cardVj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
+        if (!normCard.includes(normStrict) && !normStrict.includes(normCard)) {
+          continue;
+        }
+      }
+
       items.push({
         id: `tk_${id}`,
         title: title,
@@ -283,7 +292,7 @@ export class CatalogService {
     return items;
   }
 
-  public static parseTwolekedeSeriesCards(html: string, fallbackVj: string): MediaItem[] {
+  public static parseTwolekedeSeriesCards(html: string, fallbackVj: string, strictVj?: string): MediaItem[] {
     const items: MediaItem[] = [];
     const seen = new Set<string>();
 
@@ -314,13 +323,22 @@ export class CatalogService {
       const vjMatch = block.match(/<span[^>]*class=["'](?:category|category-badge)["'][^>]*>([^<]+)<\/span>/i);
       let cardVj = vjMatch ? vjMatch[1].trim() : fallbackVj;
 
+      const isNonPrefixed = ['Heavy Q', 'Martin K', 'MK Kisuule', 'Uncle T', 'Shao Khan', 'KK The Best'].includes(cardVj);
+      const formattedVj = cardVj.toLowerCase().includes('vj') || isNonPrefixed ? cardVj : `VJ ${cardVj}`;
+
+      // Enforce strict VJ isolation for series
+      if (strictVj) {
+        const normStrict = strictVj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
+        const normCard = formattedVj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
+        if (!normCard.includes(normStrict) && !normStrict.includes(normCard)) {
+          continue;
+        }
+      }
+
       const titleSlugMatch = href.match(/title=([^&"']+)/i);
       const catSlugMatch = href.match(/category=([^&"']+)/i);
       const titleSlug = titleSlugMatch ? titleSlugMatch[1] : encodeURIComponent(title);
       const catSlug = catSlugMatch ? catSlugMatch[1] : encodeURIComponent(cardVj);
-
-      const isNonPrefixed = ['Heavy Q', 'Martin K', 'MK Kisuule', 'Uncle T', 'Shao Khan', 'KK The Best'].includes(cardVj);
-      const formattedVj = cardVj.toLowerCase().includes('vj') || isNonPrefixed ? cardVj : `VJ ${cardVj}`;
 
       items.push({
         id: `tk_series_${titleSlug}_${catSlug}`,
@@ -370,7 +388,7 @@ export class CatalogService {
 
         if (!resp.ok) continue;
         const html = await resp.text();
-        const items = this.parseTwolekedeMovieCards(html, vjName);
+        const items = this.parseTwolekedeMovieCards(html, vjName, vjName);
         if (items.length > 0) {
           this.setInCache(cacheKey, items, 30 * 60 * 1000);
           return items;
@@ -398,7 +416,7 @@ export class CatalogService {
           });
           if (!resp.ok) continue;
           const html = await resp.text();
-          const items = this.parseTwolekedeMovieCards(html, vjName);
+          const items = this.parseTwolekedeMovieCards(html, vjName, vjName);
           if (items.length > 0) {
             this.setInCache(cacheKey, items, 30 * 60 * 1000);
             return items;
@@ -438,7 +456,7 @@ export class CatalogService {
 
         if (!resp.ok) continue;
         const html = await resp.text();
-        const items = this.parseTwolekedeSeriesCards(html, vjName);
+        const items = this.parseTwolekedeSeriesCards(html, vjName, vjName);
         if (items.length > 0) {
           this.setInCache(cacheKey, items, 30 * 60 * 1000);
           return items;
@@ -465,7 +483,7 @@ export class CatalogService {
           });
           if (!resp.ok) continue;
           const html = await resp.text();
-          const items = this.parseTwolekedeSeriesCards(html, vjName);
+          const items = this.parseTwolekedeSeriesCards(html, vjName, vjName);
           if (items.length > 0) {
             this.setInCache(cacheKey, items, 30 * 60 * 1000);
             return items;
@@ -674,6 +692,15 @@ export class CatalogService {
       }
       combined = fb;
       totalEstimated = fb.length;
+    }
+
+    // Strictly ensure NO other VJs can leak into this VJ's movie listing
+    if (options.vj) {
+      const cleanTargetVj = options.vj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
+      combined = combined.filter(i => {
+        const cVj = (i.vj || '').toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
+        return cVj.includes(cleanTargetVj) || cleanTargetVj.includes(cVj);
+      });
     }
 
     // Apply sort if requested

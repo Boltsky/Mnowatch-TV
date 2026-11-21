@@ -23,6 +23,26 @@
   scrollbar-width: none;
 }
 
+/* PC Horizontal Scrollbar for VJ and Category pills */
+.vj-horizontal-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(16, 185, 129, 0.45) rgba(255, 255, 255, 0.05);
+}
+.vj-horizontal-scrollbar::-webkit-scrollbar {
+  height: 6px;
+}
+.vj-horizontal-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 9999px;
+}
+.vj-horizontal-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(16, 185, 129, 0.45);
+  border-radius: 9999px;
+}
+.vj-horizontal-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(16, 185, 129, 0.75);
+}
+
 /* TV D-Pad & Keyboard Focus styling matching Compose TvMediaCard */
 .tv-card-focus {
   transition: transform 80ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 80ms cubic-bezier(0.4, 0, 0.2, 1), border-color 80ms ease;

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { MediaItem, VjItem } from '../../types';
 import { TvMediaCard } from '../common/TvMediaCard';
-import { Clapperboard, Layers, Loader2, ArrowDownCircle } from 'lucide-react';
+import { Clapperboard, Layers, Loader2, ArrowDownCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api, isTrailerOrIntroUrl } from '../../services/api';
 
 const isTrailerOnly = (item: MediaItem) => {
@@ -33,6 +33,13 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
 
   const [totalTitles, setTotalTitles] = useState<number>(0);
   const reqSeqRef = useRef<number>(0);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollHorizontally = (offset: number) => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollBy({ left: offset, behavior: 'smooth' });
+    }
+  };
 
   const genres = [
     'Action', 'Sci-Fi', 'Adventure', 'Thriller', 'Horror', 'Crime', 'Comedy', 'Drama', 'Animation', 'Korean', 'Indian Movie', 'Kinigeria'
@@ -178,38 +185,69 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
         </span>
       </div>
 
-      {/* Categories Horizontal Pills Row */}
-      <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar py-1">
-        {activeTab === 'VJ' ? (
-          vjs.map(v => (
-            <button
-              key={v.id}
-              onClick={() => setSelectedVj(v.name)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${
-                selectedVj === v.name
-                  ? 'bg-[#10B981] text-black border-[#10B981] shadow-lg shadow-[#10B981]/25 scale-105'
-                  : 'bg-[#0A192F] text-[#94A3B8] hover:text-white border-[#1E293B]'
-              }`}
-            >
-              <span>{v.icon}</span>
-              <span>{v.name}</span>
-            </button>
-          ))
-        ) : (
-          genres.map(g => (
-            <button
-              key={g}
-              onClick={() => setSelectedGenre(g)}
-              className={`px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${
-                selectedGenre === g
-                  ? 'bg-[#10B981] text-black border-[#10B981] shadow-lg shadow-[#10B981]/25 scale-105'
-                  : 'bg-[#0A192F] text-[#94A3B8] hover:text-white border-[#1E293B]'
-              }`}
-            >
-              {g}
-            </button>
-          ))
-        )}
+      {/* Categories Horizontal Pills Row with PC scroll controls */}
+      <div className="relative flex items-center gap-1.5 w-full">
+        {/* PC Left Scroll Arrow Button */}
+        <button
+          type="button"
+          onClick={() => scrollHorizontally(-350)}
+          className="hidden md:flex items-center justify-center w-8 h-8 rounded-full bg-[#0A192F] hover:bg-[#10B981]/20 text-[#94A3B8] hover:text-[#10B981] border border-[#1E293B] shadow-md flex-shrink-0 transition-all active:scale-95 z-10"
+          title="Scroll Left (or use mouse wheel)"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+
+        {/* Scrollable Pills Container with visible PC scrollbar and mouse-wheel support */}
+        <div
+          ref={scrollContainerRef}
+          onWheel={(e) => {
+            if (e.deltaY !== 0 && scrollContainerRef.current) {
+              scrollContainerRef.current.scrollLeft += e.deltaY;
+            }
+          }}
+          className="flex items-center gap-2.5 overflow-x-auto vj-horizontal-scrollbar pb-2 pt-1 flex-1 scroll-smooth"
+        >
+          {activeTab === 'VJ' ? (
+            vjs.map(v => (
+              <button
+                key={v.id}
+                onClick={() => setSelectedVj(v.name)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border flex-shrink-0 ${
+                  selectedVj === v.name
+                    ? 'bg-[#10B981] text-black border-[#10B981] shadow-lg shadow-[#10B981]/25 scale-105'
+                    : 'bg-[#0A192F] text-[#94A3B8] hover:text-white border-[#1E293B]'
+                }`}
+              >
+                <span>{v.icon}</span>
+                <span>{v.name}</span>
+              </button>
+            ))
+          ) : (
+            genres.map(g => (
+              <button
+                key={g}
+                onClick={() => setSelectedGenre(g)}
+                className={`px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border flex-shrink-0 ${
+                  selectedGenre === g
+                    ? 'bg-[#10B981] text-black border-[#10B981] shadow-lg shadow-[#10B981]/25 scale-105'
+                    : 'bg-[#0A192F] text-[#94A3B8] hover:text-white border-[#1E293B]'
+                }`}
+              >
+                {g}
+              </button>
+            ))
+          )}
+        </div>
+
+        {/* PC Right Scroll Arrow Button */}
+        <button
+          type="button"
+          onClick={() => scrollHorizontally(350)}
+          className="hidden md:flex items-center justify-center w-8 h-8 rounded-full bg-[#0A192F] hover:bg-[#10B981]/20 text-[#94A3B8] hover:text-[#10B981] border border-[#1E293B] shadow-md flex-shrink-0 transition-all active:scale-95 z-10"
+          title="Scroll Right (or use mouse wheel)"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Grid of movies matching Android Categories grid */}
