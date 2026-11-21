@@ -31,8 +31,13 @@ export class CatalogController {
     }
   }
 
-  public static getVjs(req: Request, res: Response): void {
-    res.json({ vjs: CatalogService.getVjs() });
+  public static async getVjs(req: Request, res: Response): Promise<void> {
+    try {
+      const vjs = await CatalogService.getVjs();
+      res.json({ vjs });
+    } catch {
+      res.json({ vjs: CatalogService.getDefaultVjs() });
+    }
   }
 
   public static getGenres(req: Request, res: Response): void {

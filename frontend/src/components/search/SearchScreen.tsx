@@ -54,7 +54,7 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({ onItemClick }) => {
     }
   };
 
-  const quickFilters = ['VJ Junior', 'VJ Emmy', 'VJ Jingo', 'VJ Ice P', 'VJ Ulio', 'Action', 'Series', '2025', '2024'];
+  const quickFilters = ['VJ Junior', 'VJ Emmy', 'VJ ICEP', 'VJ Jingo', 'VJ Ulio', 'VJ Soul', 'Uncle T', 'Martin K', 'Heavy Q', 'MK Kisuule', 'Action', 'Series', '2025', '2024'];
 
   return (
     <div className="min-h-screen bg-[#010318] text-white p-4 sm:p-6 md:p-8 pb-24 md:pb-12 animate-fadeIn">

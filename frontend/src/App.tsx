@@ -494,7 +494,9 @@ export const App: React.FC = () => {
               <div style={{ display: currentScreen === 'movies' ? 'block' : 'none' }}>
                 <MoviesScreen
                   movies={allMovies}
+                  vjs={vjList}
                   onMovieClick={handleItemClick}
+                  onNavigateToSeries={() => navigateTo('series')}
                 />
               </div>
             )}
@@ -504,6 +506,7 @@ export const App: React.FC = () => {
               <div style={{ display: currentScreen === 'series' ? 'block' : 'none' }}>
                 <SeriesScreen
                   series={allSeries}
+                  vjs={vjList}
                   onSeriesClick={handleItemClick}
                 />
               </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { MediaItem } from '../../types';
+import { MediaItem, VjItem } from '../../types';
 import { TvMediaCard } from '../common/TvMediaCard';
 import { Tv, Loader2, ArrowDownCircle } from 'lucide-react';
 import { api, isTrailerOrIntroUrl } from '../../services/api';
@@ -21,20 +21,31 @@ const filterByVj = (items: MediaItem[], vj: string | null): MediaItem[] => {
 
 interface SeriesScreenProps {
   series: MediaItem[];
+  vjs?: VjItem[];
   onSeriesClick: (item: MediaItem) => void;
+  initialVj?: string;
 }
 
 const SERIES_VJS = [
-  'VJ Junior', 'VJ Emmy', 'VJ Jingo', 'VJ Ice P', 'VJ Ulio', 'VJ Kriss Sweet', 'VJ HD'
+  'VJ Junior', 'VJ Emmy', 'VJ ICEP', 'VJ Jingo', 'VJ Ulio',
+  'VJ Soul', 'VJ Banks', 'VJ Sammy', 'VJ Freddie', 'VJ Waza',
+  'VJ Eddy', 'VJ Shield', 'VJ HD', 'MK Kisuule', 'Shao Khan'
 ];
 
-export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSeries, onSeriesClick }) => {
+export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSeries, vjs, onSeriesClick, initialVj }) => {
   const [seriesList, setSeriesList] = useState<MediaItem[]>(initialSeries || []);
   const [page, setPage] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(false);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [hasMore, setHasMore] = useState<boolean>(true);
-  const [selectedVj, setSelectedVj] = useState<string | null>(null);
+  const [selectedVj, setSelectedVj] = useState<string | null>(initialVj || null);
+
+  const availableVjs = useMemo(() => {
+    if (vjs && vjs.length > 0) {
+      return vjs.map(v => v.name);
+    }
+    return SERIES_VJS;
+  }, [vjs]);
 
   // Request sequence counter to eliminate race conditions
   const reqSeqRef = useRef<number>(0);
@@ -174,7 +185,7 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
         >
           All Series
         </button>
-        {SERIES_VJS.map(vj => (
+        {availableVjs.map(vj => (
           <button
             key={vj}
             onClick={() => handleSelectVj(selectedVj === vj ? null : vj)}

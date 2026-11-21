@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { MediaItem } from '../../types';
+import { MediaItem, VjItem } from '../../types';
 import { TvMediaCard } from '../common/TvMediaCard';
-import { Sparkles, Calendar, Shuffle, Clock, X, Loader2, ArrowDownCircle } from 'lucide-react';
+import { Sparkles, Calendar, Shuffle, Clock, X, Loader2, ArrowDownCircle, Tv } from 'lucide-react';
 import { api, isTrailerOrIntroUrl } from '../../services/api';
 
 const isTrailerOnly = (item: MediaItem) => {
@@ -11,7 +11,9 @@ const isTrailerOnly = (item: MediaItem) => {
 
 interface MoviesScreenProps {
   movies: MediaItem[];
+  vjs?: VjItem[];
   onMovieClick: (movie: MediaItem) => void;
+  onNavigateToSeries?: (vj?: string) => void;
 }
 
 const ALL_YEARS = [
@@ -20,11 +22,13 @@ const ALL_YEARS = [
 ];
 
 const POPULAR_VJS = [
-  'VJ Junior', 'VJ Emmy', 'VJ Jingo', 'VJ Ice P', 'VJ Ulio',
-  'VJ Kriss Sweet', 'VJ HD', 'VJ MK Kisuule', 'VJ Mark', 'VJ Nelly', 'VJ Kimuli'
+  'VJ Junior', 'VJ Emmy', 'VJ ICEP', 'VJ Jingo', 'VJ Ulio',
+  'VJ Soul', 'Uncle T', 'VJ Mosco', 'VJ Kevo', 'VJ Muba', 'VJ Shield',
+  'Martin K', 'Heavy Q', 'VJ MK Kisuule', 'VJ Mark', 'VJ Tonny',
+  'VJ Kriss Sweet', 'VJ HD', 'VJ Nelly', 'VJ Kimuli'
 ];
 
-export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovies, onMovieClick }) => {
+export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovies, vjs, onMovieClick, onNavigateToSeries }) => {
   const [movieList, setMovieList] = useState<MediaItem[]>(initialMovies || []);
   const [page, setPage] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(false);
@@ -34,6 +38,14 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
   const [selectedYear, setSelectedYear] = useState<string | null>(null);
   const [selectedVj, setSelectedVj] = useState<string | null>(null);
   const [isYearDialogOpen, setIsYearDialogOpen] = useState<boolean>(false);
+
+  // Dynamically resolve full VJ list matching the Android app
+  const availableVjs = useMemo(() => {
+    if (vjs && vjs.length > 0) {
+      return vjs.map(v => v.name);
+    }
+    return POPULAR_VJS;
+  }, [vjs]);
 
   // Fetch initial/filtered page 1
   const fetchPageOne = useCallback(async () => {
@@ -189,7 +201,7 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
         </span>
       </div>
 
-      {/* VJ Horizontal Quick-Filter Bar */}
+      {/* VJ Horizontal Quick-Filter Bar with full roster */}
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
         <button
           onClick={() => setSelectedVj(null)}
@@ -201,7 +213,7 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
         >
           All Translators
         </button>
-        {POPULAR_VJS.map(vj => (
+        {availableVjs.map(vj => (
           <button
             key={vj}
             onClick={() => setSelectedVj(selectedVj === vj ? null : vj)}
@@ -223,14 +235,25 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
           <p className="text-sm font-semibold text-[#94A3B8]">Querying live Ugandan translated movies index...</p>
         </div>
       ) : movieList.length === 0 ? (
-        <div className="text-center py-20 space-y-3">
-          <p className="text-base text-[#94A3B8]">No movies found matching the selected filter.</p>
-          <button
-            onClick={() => { setSelectedYear(null); setSelectedVj(null); }}
-            className="px-4 py-2 bg-[#10B981] text-black text-xs font-bold rounded-lg"
-          >
-            Reset Filters
-          </button>
+        <div className="text-center py-20 space-y-4 max-w-md mx-auto">
+          <p className="text-base text-[#94A3B8]">No movies found matching {selectedVj ? `"${selectedVj}"` : 'the selected filter'}.</p>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {selectedVj && onNavigateToSeries && (
+              <button
+                onClick={() => onNavigateToSeries(selectedVj)}
+                className="flex items-center gap-2 px-4 py-2 bg-[#10B981] text-black text-xs font-bold rounded-lg hover:bg-[#34D399] transition-all shadow-lg shadow-[#10B981]/20"
+              >
+                <Tv className="w-4 h-4" />
+                <span>Browse {selectedVj} in Series</span>
+              </button>
+            )}
+            <button
+              onClick={() => { setSelectedYear(null); setSelectedVj(null); }}
+              className="px-4 py-2 bg-[#0A192F] text-white border border-[#1E293B] hover:border-[#10B981]/50 text-xs font-bold rounded-lg transition-all"
+            >
+              Reset Filters
+            </button>
+          </div>
         </div>
       ) : (
         <>

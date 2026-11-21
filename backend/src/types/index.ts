@@ -46,3 +46,10 @@ export interface CatalogRail {
   genre?: string;
   items: MediaItem[];
 }
+
+export interface VjItem {
+  id: string;
+  name: string;
+  icon: string;
+  count: number;
+}
