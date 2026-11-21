@@ -351,11 +351,12 @@ export const api = {
     return { items: filtered, count: filtered.length, total: filtered.length, page: 1, hasMore: false };
   },
 
-  async resolveStream(id: string, title?: string): Promise<{ streamUrl: string; directUrl: string; servers?: any[]; error?: string; unavailable?: boolean; alternative?: { id: string; title: string } }> {
+  async resolveStream(id: string, title?: string, vj?: string): Promise<{ streamUrl: string; directUrl: string; servers?: any[]; error?: string; unavailable?: boolean; alternative?: { id: string; title: string } }> {
     const fetchAttempt = async (): Promise<{ streamUrl: string; directUrl: string; servers?: any[]; error?: string; unavailable?: boolean; alternative?: { id: string; title: string } }> => {
       const params = new URLSearchParams();
       params.append('id', id);
       if (title) params.append('title', title);
+      if (vj) params.append('vj', vj);
 
       const res = await fetch(`${API_BASE}/stream/resolve?${params.toString()}`, { signal: AbortSignal.timeout(25000) });
       if (res.ok) {

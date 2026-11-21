@@ -9,6 +9,7 @@ export class StreamController {
   public static async resolve(req: Request, res: Response): Promise<void> {
     const id = (req.query.id as string) || '';
     const title = (req.query.title as string) || '';
+    const vj = (req.query.vj as string) || '';
 
     if (!id && !title) {
       res.status(400).json({ error: 'Missing id or title parameter' });
@@ -16,7 +17,7 @@ export class StreamController {
     }
 
     try {
-      const resolvedDirect = await StreamProxyService.resolveMediaStream(id, title);
+      const resolvedDirect = await StreamProxyService.resolveMediaStream(id, title, vj);
       if (resolvedDirect && !StreamProxyService.isTrailerOrPromoUrl(resolvedDirect, title)) {
         const protocol = req.headers['x-forwarded-proto'] || req.protocol;
         const host = req.headers['x-forwarded-host'] || req.get('host');

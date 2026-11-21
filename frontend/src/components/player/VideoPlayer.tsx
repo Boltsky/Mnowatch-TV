@@ -69,7 +69,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
     if (episode?.streamUrl && episode.streamUrl.length > 10 && !isTrailerOrIntroUrl(episode.streamUrl, episode.title || item.title)) {
       if (episode.streamUrl.includes('preview.php') || episode.streamUrl.includes('id=')) {
         try {
-          const res = await api.resolveStream(episode.id || item.id, episode.title || item.title);
+          const res = await api.resolveStream(episode.id || item.id, episode.title || item.title, item.vj);
           if (res.streamUrl && !isTrailerOrIntroUrl(res.streamUrl, item.title) && !isTrailerOrIntroUrl(res.directUrl, item.title)) {
             const finalUrl = currentServer.isProxy ? res.streamUrl : (res.directUrl || res.streamUrl);
             setResolvedStreamUrl(finalUrl);
@@ -86,7 +86,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
 
     // 2. Always query verified stream resolver to validate title match and avoid wrong movie playback
     try {
-      const res = await api.resolveStream(item.id, item.title);
+      const res = await api.resolveStream(item.id, item.title, item.vj);
       if (res.alternative) {
         setAlternative(res.alternative);
       }

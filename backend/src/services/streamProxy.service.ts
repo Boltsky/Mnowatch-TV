@@ -490,7 +490,7 @@ export class StreamProxyService {
   /**
    * Resolves direct media streaming link for any movie or series title on demand
    */
-  public static async resolveMediaStream(id: string, title?: string): Promise<string | null> {
+  public static async resolveMediaStream(id: string, title?: string, vj?: string): Promise<string | null> {
     const isExplicitTwolekede = id.startsWith('tk_') || (!id.startsWith('myvj_') && !id.startsWith('muno_') && /^\d+$/.test(id));
     const cleanId = id.replace(/^(myvj_|tk_|ep_|muno_)/, '');
 
@@ -502,13 +502,31 @@ export class StreamProxyService {
       }
     }
 
-    // 0.5. Search Munowatch catalog directly by title (Fastest 1080p BunnyCDN source, zero buffering)
+    // 1. Direct explicit Twolekede ID resolution FIRST (Guarantees exact movie from poster/ID with zero hijacking)
+    if (isExplicitTwolekede && /^\d+$/.test(cleanId)) {
+      const resolved = await this.resolveTwolekedeStreamById(cleanId, title);
+      if (resolved && !this.isTrailerOrPromoUrl(resolved, title) && this.urlMatchesTitle(resolved, title)) {
+        return resolved;
+      }
+    }
+
+    // 1.5. If cleanId itself is numeric and resolves to Twolekede preview, try it
+    if (/^\d+$/.test(cleanId)) {
+      const resolved = await this.resolveTwolekedeStreamById(cleanId, title);
+      if (resolved && !this.isTrailerOrPromoUrl(resolved, title) && this.urlMatchesTitle(resolved, title)) {
+        return resolved;
+      }
+    }
+
+    // 2. Search Munowatch catalog directly by title (with strict VJ verification)
     if (title && title.trim().length >= 2) {
       const cleanTitle = title
         .replace(/\[.*?\]|\(.*?\)/g, '')
         .replace(/\b(?:by\s+vj|vj)\s+[a-z0-9_.-]*.*$/gi, '')
         .replace(/\s+/g, ' ')
         .trim();
+
+      const normTargetVj = vj ? vj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').trim() : '';
 
       const candidateQueries = this.generateCandidateQueries(cleanTitle);
       for (const q of candidateQueries.slice(0, 3)) {
@@ -524,11 +542,21 @@ export class StreamProxyService {
 
           if (resp.ok) {
             const html = await resp.text();
-            const cardRegex = /<a[^>]+href="(\/twolekede\?v=[^"'\s]+)"[^>]*>[\s\S]*?<img[^>]+alt="([^"']+)"/g;
+            const cardRegex = /<a[^>]+href="(\/twolekede\?v=[^"'\s]+)"[^>]*>([\s\S]*?)<\/a>/g;
             let cm: RegExpExecArray | null;
             while ((cm = cardRegex.exec(html)) !== null) {
               const watchHref = cm[1].replace(/&amp;/g, '&');
-              const cardTitle = this.unescapeHtml(cm[2]).trim();
+              const inner = cm[2];
+              const imgM = inner.match(/<img[^>]+alt="([^"']+)"/i);
+              const vjM = inner.match(/<p[^>]*>([^<]+)<\/p>/i);
+              const cardTitle = imgM ? this.unescapeHtml(imgM[1]).trim() : '';
+              const cardVj = vjM ? vjM[1].trim() : '';
+              const normCardVj = cardVj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').trim();
+
+              // If VJ is known and doesn't match card VJ, skip to prevent wrong movie translation hijacking
+              if (normTargetVj && normCardVj && !normCardVj.includes(normTargetVj) && !normTargetVj.includes(normCardVj)) {
+                continue;
+              }
 
               if (this.titlesMatch(title, cardTitle)) {
                 const bcdnStream = await this.resolveMunowatchWatchStream(watchHref);
@@ -539,23 +567,6 @@ export class StreamProxyService {
             }
           }
         } catch {}
-      }
-    }
-
-    // 1. If it's a numeric Twolekede ID (including episode IDs), resolve and verify title match
-    if (isExplicitTwolekede && /^\d+$/.test(cleanId)) {
-      const resolved = await this.resolveTwolekedeStreamById(cleanId, title);
-      if (resolved && !this.isTrailerOrPromoUrl(resolved, title) && this.urlMatchesTitle(resolved, title)) {
-        return resolved;
-      }
-      // If direct ID returned mismatched movie, fall through to search by title
-    }
-
-    // 1.5. If cleanId itself is numeric and resolves to Twolekede preview, try it
-    if (/^\d+$/.test(cleanId)) {
-      const resolved = await this.resolveTwolekedeStreamById(cleanId, title);
-      if (resolved && !this.isTrailerOrPromoUrl(resolved, title) && this.urlMatchesTitle(resolved, title)) {
-        return resolved;
       }
     }
 
