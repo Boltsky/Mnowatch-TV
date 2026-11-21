@@ -15,6 +15,8 @@ const filterByVj = (items: MediaItem[], vj: string | null): MediaItem[] => {
   if (!cleanTarget) return items;
   return items.filter(item => {
     const cleanCard = (item.vj || '').toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
+    if (cleanTarget.includes('kisuule') && cleanCard.includes('kisuule')) return true;
+    if (cleanTarget.includes('icep') && (cleanCard.includes('icep') || cleanCard.includes('ice p'))) return true;
     return cleanCard.includes(cleanTarget) || cleanTarget.includes(cleanCard);
   });
 };

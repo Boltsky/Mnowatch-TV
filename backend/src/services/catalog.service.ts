@@ -341,7 +341,7 @@ export class CatalogService {
       const catSlug = catSlugMatch ? catSlugMatch[1] : encodeURIComponent(cardVj);
 
       items.push({
-        id: `tk_series_${titleSlug}_${catSlug}`,
+        id: `tk_series_${titleSlug}___${catSlug}`,
         title: title,
         type: 'series',
         vj: formattedVj,
@@ -601,7 +601,7 @@ export class CatalogService {
         const title = StreamProxyService.unescapeHtml(rawTitle);
         const resolvedId = id
           ? `tk_${id}`
-          : `tk_series_${seriesTitleSlug || encodeURIComponent(title)}_${seriesCatSlug || encodeURIComponent(cardVj)}`;
+          : `tk_series_${seriesTitleSlug || encodeURIComponent(title)}___${seriesCatSlug || encodeURIComponent(cardVj)}`;
 
         let vj = cardVj;
         if (!vj.toLowerCase().includes('vj')) vj = `VJ ${vj}`;
@@ -699,6 +699,8 @@ export class CatalogService {
       const cleanTargetVj = options.vj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
       combined = combined.filter(i => {
         const cVj = (i.vj || '').toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
+        if (cleanTargetVj.includes('kisuule') && cVj.includes('kisuule')) return true;
+        if (cleanTargetVj.includes('icep') && (cVj.includes('icep') || cVj.includes('ice p'))) return true;
         return cVj.includes(cleanTargetVj) || cleanTargetVj.includes(cVj);
       });
     }
@@ -759,6 +761,8 @@ export class CatalogService {
       // Strictly ensure NO other VJs can leak into this VJ's series listing
       combined = combined.filter(i => {
         const cVj = (i.vj || '').toLowerCase().replace('vj-', '').replace('vj', '').replace('.', '').trim();
+        if (cleanTargetVj.includes('kisuule') && cVj.includes('kisuule')) return true;
+        if (cleanTargetVj.includes('icep') && (cVj.includes('icep') || cVj.includes('ice p'))) return true;
         return cVj.includes(cleanTargetVj) || cleanTargetVj.includes(cVj);
       });
     } else {
@@ -1332,45 +1336,70 @@ export class CatalogService {
 
     const cleanId = id.replace(/^(myvj_|tk_)/, '');
 
-    // 0. If it's a Twolekede series ID (tk_series_Title_Category)
+    // 0. If it's a Twolekede series ID (tk_series_Title___Category or legacy tk_series_Title_Category)
     if (id.startsWith('tk_series_')) {
-      const parts = id.replace('tk_series_', '').split('_');
-      const seriesTitleSlug = parts[0] || '';
-      const seriesCatSlug = parts[1] || '';
-      const seriesTitle = decodeURIComponent(seriesTitleSlug).replace(/\+/g, ' ');
-      const seriesVj = decodeURIComponent(seriesCatSlug).replace(/\+/g, ' ');
+      const raw = id.replace('tk_series_', '');
+      let seriesTitleSlug = '';
+      let seriesCatSlug = '';
 
-      const seriesData = await this.fetchTwolekedeSeriesSeasonsAndEpisodes(seriesTitle, seriesVj, baseUrl);
-      if (seriesData && seriesData.seasons.length > 0) {
-        const firstEp = seriesData.seasons[0]?.episodes?.[0];
-        const firstStream = firstEp?.streamUrl || '';
-        const totalEps = seriesData.seasons.reduce((acc, s) => acc + s.episodes.length, 0);
-
-        const item: MediaItem = {
-          id,
-          title: seriesTitle,
-          type: 'series',
-          vj: seriesVj.toLowerCase().includes('vj') ? seriesVj : `VJ ${seriesVj}`,
-          genre: 'Ugandan Translated Series',
-          year: seriesData.year || '2024',
-          rating: '8.9',
-          duration: `${seriesData.seasons.length} Seasons • ${totalEps} Episodes`,
-          description: seriesData.description || `${seriesTitle} multi-season translated series by ${seriesVj} on Munowatch TV.`,
-          posterUrl: seriesData.posterUrl,
-          backdropUrl: seriesData.backdropUrl,
-          streamUrl: firstStream,
-          isSeries: true,
-          isStreamAvailable: true,
-          seasons: seriesData.seasons,
-          servers: firstStream ? [
-            { id: 's2', name: 'Server 2 (Munowatch Web Streamer - CORS Safe)', quality: '1080p Full HD', streamUrl: firstStream, isProxy: true },
-            { id: 's1', name: 'Server 1 (High-Speed Direct)', quality: '1080p FHD', streamUrl: firstStream, isProxy: false }
-          ] : []
-        };
-
-        this.setInCache(cacheKey, item, 60 * 60 * 1000);
-        return item;
+      if (raw.includes('___')) {
+        const parts = raw.split('___');
+        seriesTitleSlug = parts[0] || '';
+        seriesCatSlug = parts[1] || '';
+      } else {
+        const lastUnder = raw.lastIndexOf('_');
+        if (lastUnder !== -1) {
+          seriesTitleSlug = raw.substring(0, lastUnder);
+          seriesCatSlug = raw.substring(lastUnder + 1);
+        } else {
+          seriesTitleSlug = raw;
+        }
       }
+
+      // Convert underscores and pluses to spaces (Twolekede series titles require spaces)
+      const seriesTitle = decodeURIComponent(seriesTitleSlug).replace(/\+/g, ' ').replace(/_/g, ' ').trim();
+      let seriesVj = decodeURIComponent(seriesCatSlug).replace(/\+/g, ' ').replace(/_/g, ' ').trim();
+      if (!seriesVj.toLowerCase().startsWith('vj')) {
+        seriesVj = `VJ ${seriesVj}`;
+      }
+
+      // Try fetching seasons/episodes with exact VJ, then fallback variants if needed
+      let seriesData = await this.fetchTwolekedeSeriesSeasonsAndEpisodes(seriesTitle, seriesVj, baseUrl);
+      if (!seriesData || seriesData.seasons.length === 0) {
+        const plainVj = seriesVj.replace(/^vj\s*/i, '').trim();
+        seriesData = await this.fetchTwolekedeSeriesSeasonsAndEpisodes(seriesTitle, plainVj, baseUrl);
+      }
+
+      const seasons = seriesData?.seasons || [];
+      const firstEp = seasons[0]?.episodes?.[0];
+      const firstStream = firstEp?.streamUrl || '';
+      const totalEps = seasons.reduce((acc, s) => acc + s.episodes.length, 0);
+      const poster = seriesData?.posterUrl || 'https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?w=600&auto=format&fit=crop&q=80';
+
+      const item: MediaItem = {
+        id,
+        title: seriesTitle,
+        type: 'series',
+        vj: seriesVj,
+        genre: 'Ugandan Translated Series',
+        year: seriesData?.year || '2024',
+        rating: '8.9',
+        duration: seasons.length > 0 ? `${seasons.length} Seasons • ${totalEps} Episodes` : 'Multi-Season',
+        description: seriesData?.description || `${seriesTitle} multi-season translated series by ${seriesVj} on Munowatch TV.`,
+        posterUrl: poster,
+        backdropUrl: seriesData?.backdropUrl || poster,
+        streamUrl: firstStream,
+        isSeries: true,
+        isStreamAvailable: true,
+        seasons: seasons,
+        servers: firstStream ? [
+          { id: 's2', name: 'Server 2 (Munowatch Web Streamer - CORS Safe)', quality: '1080p Full HD', streamUrl: firstStream, isProxy: true },
+          { id: 's1', name: 'Server 1 (High-Speed Direct)', quality: '1080p FHD', streamUrl: firstStream, isProxy: false }
+        ] : []
+      };
+
+      this.setInCache(cacheKey, item, 60 * 60 * 1000);
+      return item;
     }
 
     // 1. If it's a Twolekede item (or numeric ID)
@@ -1413,16 +1442,23 @@ export class CatalogService {
             const streamUrl = `https://twolekede.com/preview.php?id=${cleanId}`;
             const proxyUrl = `${baseUrl}/api/v1/stream/proxy?url=${encodeURIComponent(streamUrl)}`;
 
+            let correctedYear = year;
+            let correctedDesc = desc;
+            if (cleanId === '117980' || (movieTitle.toLowerCase() === 'desperado' && vj.toLowerCase().includes('jingo'))) {
+              correctedYear = '2024';
+              correctedDesc = 'Desperado (Xi Zhuang Bao Tu / 西装暴徒): A formidable former operative fights his way through a criminal syndicate in this high-octane martial arts thriller, translated into Luganda by VJ Jingo.';
+            }
+
             const item: MediaItem = {
               id: `tk_${cleanId}`,
               title: movieTitle,
               type: 'movie',
               vj: vj,
               genre: 'Action / Adventure',
-              year: year,
+              year: correctedYear,
               rating: '8.8',
               duration: '2h 05m',
-              description: desc || `Luganda translation by ${vj} available on Munowatch TV.`,
+              description: correctedDesc || `Luganda translation by ${vj} available on Munowatch TV.`,
               posterUrl: posterUrl,
               backdropUrl: posterUrl,
               streamUrl: streamUrl,

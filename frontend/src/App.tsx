@@ -143,6 +143,43 @@ export const App: React.FC = () => {
           if (fetched) item = fetched;
         } catch {}
       }
+      if (!item && route.id.startsWith('tk_series_')) {
+        const raw = route.id.replace('tk_series_', '');
+        let seriesTitleSlug = '';
+        let seriesCatSlug = '';
+        if (raw.includes('___')) {
+          const parts = raw.split('___');
+          seriesTitleSlug = parts[0] || '';
+          seriesCatSlug = parts[1] || '';
+        } else {
+          const lastUnder = raw.lastIndexOf('_');
+          if (lastUnder !== -1) {
+            seriesTitleSlug = raw.substring(0, lastUnder);
+            seriesCatSlug = raw.substring(lastUnder + 1);
+          } else {
+            seriesTitleSlug = raw;
+          }
+        }
+        const parsedTitle = decodeURIComponent(seriesTitleSlug).replace(/\+/g, ' ').replace(/_/g, ' ').trim();
+        let parsedVj = decodeURIComponent(seriesCatSlug).replace(/\+/g, ' ').replace(/_/g, ' ').trim();
+        if (parsedVj && !parsedVj.toLowerCase().startsWith('vj')) parsedVj = `VJ ${parsedVj}`;
+        item = {
+          id: route.id,
+          title: parsedTitle || 'Ugandan Translated Series',
+          type: 'series',
+          vj: parsedVj || 'VJ Junior',
+          genre: 'Ugandan Translated Series',
+          year: '2024',
+          rating: '8.9',
+          duration: 'Multi-Season',
+          description: `${parsedTitle} multi-season translated series by ${parsedVj} on Munowatch TV.`,
+          posterUrl: 'https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?w=600&auto=format&fit=crop&q=80',
+          backdropUrl: 'https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?w=600&auto=format&fit=crop&q=80',
+          streamUrl: '',
+          isSeries: true,
+          isStreamAvailable: true
+        };
+      }
       if (item) {
         setSelectedItem(item);
       }
