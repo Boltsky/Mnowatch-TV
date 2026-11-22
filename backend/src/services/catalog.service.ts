@@ -106,8 +106,10 @@ export class CatalogService {
           const title = String(obj.title || '').trim();
           if (!rowId || !title) continue;
 
-          // Reject trailer-only promotional placeholders (unpaid entries with only 3MB clips on trailer256)
-          if (obj.bunny_file_name && obj.trailer && obj.bunny_file_name === obj.trailer && obj.is_free !== 1 && !obj.video) {
+          // Reject trailer-only promotional placeholders (e.g. trailer256 or explicit trailer clips)
+          const fname = (obj.bunny_file_name || '').toLowerCase();
+          const trailerUrl = (obj.trailer || '').toLowerCase();
+          if (fname.includes('trailer256') || trailerUrl.includes('trailer256') || (fname.includes('trailer') && !fname.includes('trailer_park'))) {
             continue;
           }
 
@@ -632,8 +634,23 @@ export class CatalogService {
     let combined: MediaItem[] = [];
     let totalEstimated: number = 0;
 
-    if (options.vj) {
-      // Priority 1: Direct Twolekede VJ catalog (1,156+ verified full movies for Junior, 444+ for Emmy, etc.)
+    const hasYearFilter = !!(options.year && options.year !== 'all');
+
+    if (options.vj && hasYearFilter) {
+      // Priority 1A: Both VJ and Year specified - query UgaWatch year+vj index first
+      let vjYearItems = await this.fetchUgaWatchCatalog(page, options);
+      if (vjYearItems.length === 0) {
+        const twolekedeVjMovies = await this.fetchTwolekedeByVj(options.vj, page);
+        vjYearItems = twolekedeVjMovies.filter(i => (i.year || '').includes(options.year!.trim()));
+      }
+      if (vjYearItems.length === 0 && page === 1) {
+        vjYearItems = RICH_CATALOG.filter(i => !i.isSeries && i.year === options.year!.trim());
+      }
+      totalEstimated = 400;
+      combined = vjYearItems;
+
+    } else if (options.vj) {
+      // Priority 1B: Direct Twolekede VJ catalog (1,156+ verified full movies for Junior, 444+ for Emmy, etc.)
       const twolekedeVjMovies = await this.fetchTwolekedeByVj(options.vj, page);
       let allVjItems = twolekedeVjMovies;
       if (allVjItems.length === 0 && page === 1) {
@@ -670,8 +687,17 @@ export class CatalogService {
       totalEstimated = 1200;
       combined = allVjItems;
 
+    } else if (options.genre && hasYearFilter) {
+      // Priority 2A: Both Genre and Year specified
+      let genreYearItems = await this.fetchUgaWatchCatalog(page, options);
+      if (genreYearItems.length === 0 && page === 1) {
+        genreYearItems = RICH_CATALOG.filter(i => !i.isSeries && i.year === options.year!.trim() && i.genre.toLowerCase().includes(options.genre!.toLowerCase().trim()));
+      }
+      totalEstimated = 400;
+      combined = genreYearItems;
+
     } else if (options.genre) {
-      // Priority 2: Direct Twolekede genre catalog
+      // Priority 2B: Direct Twolekede genre catalog
       const twolekedeGenreMovies = await this.fetchTwolekedeByGenre(options.genre, page);
       let genreItems = twolekedeGenreMovies;
       if (genreItems.length === 0 && page === 1) {
@@ -697,8 +723,14 @@ export class CatalogService {
       totalEstimated = 4000;
       combined = genreItems;
 
+    } else if (hasYearFilter) {
+      // Priority 3A: Year filter alone (authority is UgaWatch 2010-2026 indexed catalog)
+      const yearMovies = await this.fetchUgaWatchCatalog(page, options);
+      combined = yearMovies;
+      totalEstimated = 400;
+
     } else {
-      // Priority 3: General movies catalog across Twolekede (178 pages of authentic full-length movies)
+      // Priority 3B: General movies catalog across Twolekede (178 pages of authentic full-length movies)
       const liveTwolekede = await this.fetchTwolekedeCatalog(false, page);
       combined = liveTwolekede.length > 0
         ? liveTwolekede
@@ -722,6 +754,15 @@ export class CatalogService {
       }
       combined = fb;
       totalEstimated = fb.length;
+    }
+
+    // Strictly enforce release year filtering across all sources
+    if (hasYearFilter) {
+      const yr = options.year!.trim();
+      combined = combined.filter(i => {
+        if (!i.year) return false;
+        return i.year.trim() === yr || i.year.includes(yr);
+      });
     }
 
     // Strictly ensure NO other VJs can leak into this VJ's movie listing

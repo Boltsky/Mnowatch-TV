@@ -68,12 +68,20 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
     return POPULAR_VJS;
   }, [vjs]);
 
-  // Strictly enforce client-side VJ filtering while guaranteeing loaded movies display
+  // Strictly enforce client-side VJ and year filtering while guaranteeing loaded movies display
   const displayedMovies = useMemo(() => {
-    if (!selectedVj) return movieList;
-    const filtered = filterByVj(movieList, selectedVj);
-    return filtered.length > 0 ? filtered : movieList;
-  }, [movieList, selectedVj]);
+    let items = movieList;
+    if (selectedVj) {
+      const filtered = filterByVj(items, selectedVj);
+      items = filtered.length > 0 ? filtered : items;
+    }
+    if (selectedYear && selectedYear !== 'all') {
+      const yr = selectedYear.trim();
+      const yearFiltered = items.filter(i => (i.year || '').trim() === yr || (i.year || '').includes(yr));
+      items = yearFiltered.length > 0 ? yearFiltered : items;
+    }
+    return items;
+  }, [movieList, selectedVj, selectedYear]);
 
   // Fetch initial/filtered page 1
   const fetchPageOne = useCallback(async () => {
@@ -299,12 +307,18 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
             <Tv className="w-6 h-6" />
           </div>
           <h3 className="text-lg font-bold text-white">
-            {selectedVj ? `No standalone movies found for "${selectedVj}"` : 'No movies found matching filters'}
+            {selectedYear && selectedVj
+              ? `No movies found for "${selectedVj}" in ${selectedYear}`
+              : selectedYear
+              ? `No movies found released in ${selectedYear}`
+              : selectedVj
+              ? `No standalone movies found for "${selectedVj}"`
+              : 'No movies found matching filters'}
           </h3>
           <p className="text-sm text-[#94A3B8]">
-            {selectedVj
+            {selectedVj && !selectedYear
               ? `"${selectedVj}" specializes in Ugandan Translated Series! Click below to stream all their multi-season translated series.`
-              : 'Try clearing the filter or selecting another translator.'}
+              : 'Try selecting another year or clearing the filters.'}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
             {selectedVj && onNavigateToSeries && (
