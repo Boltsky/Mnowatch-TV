@@ -372,6 +372,9 @@ export const App: React.FC = () => {
           initialServer={playerTarget.server}
           onBack={handleBack}
           onSelectMovie={handleItemClick}
+          onPlayEpisode={(item, ep) => {
+            setPlayerTarget(prev => prev ? { ...prev, item, episode: ep } : { item, episode: ep });
+          }}
         />
       )}
 

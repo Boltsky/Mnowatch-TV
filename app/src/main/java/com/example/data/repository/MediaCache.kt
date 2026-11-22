@@ -1079,14 +1079,21 @@ object MediaCache {
     fun findAdjacentEpisodes(contentId: String): Pair<Episode?, Episode?> {
         val cleanId = extractNumericId(contentId) ?: contentId
         val cleanPath = normalizePath(contentId)
+        val numId = extractNumericId(contentId)
         for (detail in seriesDetailsById.values.distinctBy { it.id }) {
             val allEpisodes = detail.seasons.sortedBy { it.number }.flatMap { it.episodes }
             val index = allEpisodes.indexOfFirst { ep ->
-                ep.id == contentId ||
-                ep.id == cleanId ||
-                ep.streamUrl == contentId ||
-                ep.streamUrl == cleanPath ||
-                (cleanId.isNotBlank() && (ep.streamUrl.contains("mid=$cleanId") || ep.streamUrl.contains("id=$cleanId")))
+                ep.id.equals(contentId, ignoreCase = true) ||
+                (cleanId.isNotBlank() && ep.id.equals(cleanId, ignoreCase = true)) ||
+                ep.streamUrl.equals(contentId, ignoreCase = true) ||
+                ep.streamUrl.equals(cleanPath, ignoreCase = true) ||
+                (numId != null && (
+                    ep.id.endsWith("_$numId") ||
+                    ep.id.contains("_$numId") ||
+                    ep.streamUrl.contains("mid=$numId") ||
+                    ep.streamUrl.contains("id=$numId") ||
+                    ep.streamUrl.contains("/$numId")
+                ))
             }
             if (index >= 0) {
                 val prev = allEpisodes.getOrNull(index - 1)

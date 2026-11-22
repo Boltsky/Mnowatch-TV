@@ -1,11 +1,11 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Hls from 'hls.js';
 import { 
   Play, Pause, RotateCcw, RotateCw, Maximize, Minimize, 
   ArrowLeft, Volume2, VolumeX, Server, Check, AlertCircle, RefreshCw,
-  Cast, PictureInPicture2
+  Cast, PictureInPicture2, SkipForward, ListVideo, X, Sparkles
 } from 'lucide-react';
-import { MediaItem, Episode, PlaybackServer } from '../../types';
+import { MediaItem, Episode, Season, PlaybackServer } from '../../types';
 import { api, isTrailerOrIntroUrl } from '../../services/api';
 
 interface VideoPlayerProps {
@@ -14,12 +14,73 @@ interface VideoPlayerProps {
   initialServer?: PlaybackServer;
   onBack: () => void;
   onSelectMovie?: (item: MediaItem) => void;
+  onPlayEpisode?: (item: MediaItem, episode: Episode) => void;
 }
 
-export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initialServer, onBack, onSelectMovie }) => {
+export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initialServer, onBack, onSelectMovie, onPlayEpisode }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+
+  // Stateful current episode and series seasons for seamless next episode transitions
+  const [currentEpisode, setCurrentEpisode] = useState<Episode | undefined>(episode);
+  const [seriesSeasons, setSeriesSeasons] = useState<Season[]>(item.seasons || []);
+  const [showEpisodesDrawer, setShowEpisodesDrawer] = useState<boolean>(false);
+  const [upNextCountdown, setUpNextCountdown] = useState<number | null>(null);
+  const upNextTimerRef = useRef<any>(null);
+
+  // Sync currentEpisode when episode prop changes
+  useEffect(() => {
+    if (episode) {
+      setCurrentEpisode(episode);
+    }
+  }, [episode]);
+
+  // Ensure full seasons & episodes are loaded for series if not already in item
+  useEffect(() => {
+    if (item.isSeries && (!seriesSeasons || seriesSeasons.length === 0)) {
+      api.getMovieDetails(item.id, item.title).then(details => {
+        if (details?.seasons && details.seasons.length > 0) {
+          setSeriesSeasons(details.seasons);
+        }
+      }).catch(() => {});
+    }
+  }, [item.id, item.title, item.isSeries]);
+
+  // Flatten all episodes in order across all seasons
+  const allEpisodes = useMemo(() => {
+    const list: { seasonNumber: number; episode: Episode }[] = [];
+    if (seriesSeasons && seriesSeasons.length > 0) {
+      for (const season of seriesSeasons) {
+        if (season.episodes && season.episodes.length > 0) {
+          for (const ep of season.episodes) {
+            list.push({ seasonNumber: season.seasonNumber, episode: ep });
+          }
+        }
+      }
+    }
+    return list;
+  }, [seriesSeasons]);
+
+  // Determine current episode's index and the next episode
+  const currentEpisodeIndex = useMemo(() => {
+    if (!currentEpisode || allEpisodes.length === 0) return 0;
+    return allEpisodes.findIndex(e =>
+      (e.episode.id && currentEpisode.id && e.episode.id === currentEpisode.id) ||
+      (e.episode.streamUrl && currentEpisode.streamUrl && e.episode.streamUrl === currentEpisode.streamUrl) ||
+      (e.episode.episodeNumber === currentEpisode.episodeNumber && e.episode.title === currentEpisode.title) ||
+      (e.episode.episodeNumber === currentEpisode.episodeNumber)
+    );
+  }, [allEpisodes, currentEpisode]);
+
+  const nextEpisodeInfo = useMemo(() => {
+    if (!item.isSeries || allEpisodes.length <= 1) return null;
+    const idx = currentEpisodeIndex;
+    if (idx >= 0 && idx + 1 < allEpisodes.length) {
+      return allEpisodes[idx + 1];
+    }
+    return null;
+  }, [item.isSeries, allEpisodes, currentEpisodeIndex]);
 
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [currentTime, setCurrentTime] = useState<number>(0);

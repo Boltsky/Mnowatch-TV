@@ -485,7 +485,8 @@ data class PlayerUiState(
     val hasNextEpisode: Boolean = false,
     val hasPrevEpisode: Boolean = false,
     val nextEpisodeId: String? = null,
-    val prevEpisodeId: String? = null
+    val prevEpisodeId: String? = null,
+    val nextEpisodeTitle: String? = null
 )
 
 class PlayerViewModel(
@@ -535,16 +536,37 @@ class PlayerViewModel(
                 _uiState.value = _uiState.value.copy(initialResumePositionMs = saved)
             }
         }
+        if (!_uiState.value.hasNextEpisode) {
+            viewModelScope.launch {
+                delay(600)
+                if (!_uiState.value.hasNextEpisode) {
+                    updateAdjacentEpisodes(currentContentId)
+                }
+            }
+        }
         loadSource(fallbackServers[currentServerIndex])
     }
 
     private fun updateAdjacentEpisodes(contentId: String) {
         val (prev, next) = MediaCache.findAdjacentEpisodes(contentId)
+        val nextTarget = next?.let { ep ->
+            ep.streamUrl.takeIf { it.isNotBlank() && (it.contains("twolekede") || it.contains("mid=") || it.contains("preview.php") || it.contains("download.php")) }
+                ?: Regex("""[?&]mid=([0-9]+)""").find(ep.streamUrl)?.let { "/twolekede?mid=${it.groupValues[1]}" }
+                ?: ep.streamUrl.takeIf { it.isNotBlank() }
+                ?: ep.id
+        }
+        val prevTarget = prev?.let { ep ->
+            ep.streamUrl.takeIf { it.isNotBlank() && (it.contains("twolekede") || it.contains("mid=") || it.contains("preview.php") || it.contains("download.php")) }
+                ?: Regex("""[?&]mid=([0-9]+)""").find(ep.streamUrl)?.let { "/twolekede?mid=${it.groupValues[1]}" }
+                ?: ep.streamUrl.takeIf { it.isNotBlank() }
+                ?: ep.id
+        }
         _uiState.value = _uiState.value.copy(
             hasPrevEpisode = prev != null,
             hasNextEpisode = next != null,
-            prevEpisodeId = prev?.id ?: prev?.streamUrl,
-            nextEpisodeId = next?.id ?: next?.streamUrl
+            prevEpisodeId = prevTarget,
+            nextEpisodeId = nextTarget,
+            nextEpisodeTitle = next?.title
         )
     }
 
@@ -954,6 +976,25 @@ fun PlayerScreen(
     }
     var showQualityDialog by remember { mutableStateOf(false) }
     var tracksRevision by remember { mutableIntStateOf(0) }
+    var autoPlayCountdown by remember(state.contentId) { mutableIntStateOf(-1) }
+    val autoPlayFocusRequester = remember { FocusRequester() }
+
+    // Auto-play next episode countdown runner
+    LaunchedEffect(autoPlayCountdown) {
+        if (autoPlayCountdown > 0) {
+            try {
+                autoPlayFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+            delay(1000L)
+            autoPlayCountdown -= 1
+        } else if (autoPlayCountdown == 0) {
+            autoPlayCountdown = -1
+            if (state.hasNextEpisode && !state.nextEpisodeId.isNullOrBlank()) {
+                android.util.Log.d("PlayerScreen", "Auto-play countdown finished, triggering next episode: ${state.nextEpisodeId}")
+                viewModel.playNextEpisode()
+            }
+        }
+    }
 
     // Reset detected video qualities when media changes
     LaunchedEffect(state.contentId, state.playbackSource) {
@@ -1306,6 +1347,10 @@ fun PlayerScreen(
                         if (playbackState == Player.STATE_ENDED) {
                             isPlaying = false
                             playWhenReadyState = false
+                            if (state.hasNextEpisode && !state.nextEpisodeId.isNullOrBlank()) {
+                                android.util.Log.d("PlayerScreen", "Series episode ended. Starting auto-play countdown for next episode: ${state.nextEpisodeId}")
+                                autoPlayCountdown = 5
+                            }
                         } else if (playbackState == Player.STATE_READY) {
                             isPlaying = this@apply.playWhenReady
                             playWhenReadyState = this@apply.playWhenReady
@@ -1699,7 +1744,7 @@ fun PlayerScreen(
             }
             android.util.Log.d("PlayerScreen", "Preparing playback: URL=$cleanUrl MIME=$mimeType Server=${state.activeServer}")
             val currentUri = exoPlayer.currentMediaItem?.localConfiguration?.uri?.toString()
-            if (currentUri != cleanUrl || exoPlayer.playbackState == Player.STATE_IDLE) {
+            if (currentUri != cleanUrl || exoPlayer.playbackState == Player.STATE_IDLE || exoPlayer.playbackState == Player.STATE_ENDED) {
                 val resumePosition = savedPlaybackPositionMs.takeIf { it > 1000L }
                     ?: state.initialResumePositionMs.takeIf { it > 1000L }
                     ?: exoPlayer.currentPosition.takeIf { it > 1000L }
@@ -1712,6 +1757,9 @@ fun PlayerScreen(
                     savedPlaybackPositionMs = resumePosition
                 }
                 hasAppliedResumeForCurrentMedia = false
+                autoPlayCountdown = -1
+                exoPlayer.stop()
+                exoPlayer.clearMediaItems()
                 exoPlayer.setMediaItem(mediaItem)
                 exoPlayer.prepare()
                 exoPlayer.play()
@@ -1777,6 +1825,13 @@ fun PlayerScreen(
                         return@onKeyEvent true
                     }
                     return@onKeyEvent false
+                }
+                if (autoPlayCountdown > 0) {
+                    if (event.type == KeyEventType.KeyDown && (event.key == Key.Back || event.key == Key.Escape)) {
+                        autoPlayCountdown = -1
+                        showControls = true
+                        return@onKeyEvent true
+                    }
                 }
                 if (event.type == KeyEventType.KeyDown) {
                     when (event.key) {
@@ -2253,6 +2308,92 @@ fun PlayerScreen(
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
                         )
+                    }
+                }
+            }
+        }
+
+        // Auto-Play Next Episode Countdown Dialog
+        if (autoPlayCountdown > 0 && state.hasNextEpisode) {
+            LaunchedEffect(autoPlayCountdown) {
+                delay(50)
+                try {
+                    autoPlayFocusRequester.requestFocus()
+                } catch (_: Exception) {}
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.65f)),
+                contentAlignment = Alignment.BottomEnd
+            ) {
+                Surface(
+                    color = MunowatchSurfaceElevated,
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(2.dp, MunowatchGreen),
+                    shadowElevation = 16.dp,
+                    modifier = Modifier
+                        .padding(32.dp)
+                        .widthIn(min = 360.dp, max = 500.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SkipNext,
+                                contentDescription = null,
+                                tint = MunowatchGreen,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "Up Next in $autoPlayCountdown...",
+                                    color = MunowatchGreenLight,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    text = state.nextEpisodeTitle ?: "Next Episode",
+                                    color = MunowatchTextPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 17.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TvButton(
+                                text = "Cancel",
+                                onClick = {
+                                    autoPlayCountdown = -1
+                                    showControls = true
+                                },
+                                isPrimary = false
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            TvButton(
+                                text = "Play Now",
+                                icon = Icons.Default.PlayArrow,
+                                onClick = {
+                                    autoPlayCountdown = -1
+                                    viewModel.playNextEpisode()
+                                },
+                                isPrimary = true,
+                                modifier = Modifier.focusRequester(autoPlayFocusRequester)
+                            )
+                        }
                     }
                 }
             }
