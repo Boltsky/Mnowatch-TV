@@ -24,26 +24,54 @@ export class StreamController {
         const baseUrl = `${protocol}://${host}`;
         const proxyUrl = `${baseUrl}/api/v1/stream/proxy?url=${encodeURIComponent(resolvedDirect)}${title ? `&title=${encodeURIComponent(title)}` : ''}`;
 
+        const servers = [
+          {
+            id: 'server-direct',
+            name: resolvedDirect.includes('b-cdn.net') ? 'Server 1 (BunnyCDN High-Speed - Direct)' : 'Server 1 (Direct CDN Stream)',
+            quality: '1080p Full HD',
+            streamUrl: resolvedDirect,
+            isProxy: false
+          },
+          {
+            id: 'server-proxy',
+            name: 'Server 2 (Munowatch High-Speed Proxy - CORS Safe)',
+            quality: '1080p FHD',
+            streamUrl: proxyUrl,
+            isProxy: true
+          }
+        ];
+
+        // Heterogeneous CDN failover: provide independent BunnyCDN edge stream when available
+        if (title && !resolvedDirect.includes('b-cdn.net')) {
+          try {
+            const bcdnDirect = await StreamProxyService.resolveBunnyCdnStream(title, vj);
+            if (bcdnDirect && bcdnDirect !== resolvedDirect && !StreamProxyService.isTrailerOrPromoUrl(bcdnDirect, title)) {
+              const bcdnProxy = `${baseUrl}/api/v1/stream/proxy?url=${encodeURIComponent(bcdnDirect)}${title ? `&title=${encodeURIComponent(title)}` : ''}`;
+              servers.push(
+                {
+                  id: 'server-bunny-direct',
+                  name: 'Server 3 (BunnyCDN Edge - Direct)',
+                  quality: '1080p FHD',
+                  streamUrl: bcdnDirect,
+                  isProxy: false
+                },
+                {
+                  id: 'server-bunny-proxy',
+                  name: 'Server 4 (BunnyCDN Edge - CORS Safe)',
+                  quality: '1080p FHD',
+                  streamUrl: bcdnProxy,
+                  isProxy: true
+                }
+              );
+            }
+          } catch {}
+        }
+
         res.json({
           success: true,
           directUrl: resolvedDirect,
           streamUrl: proxyUrl,
-          servers: [
-            {
-              id: 'server-direct',
-              name: 'Server 1 (Direct CDN Stream)',
-              quality: '1080p Full HD',
-              streamUrl: resolvedDirect,
-              isProxy: false
-            },
-            {
-              id: 'server-proxy',
-              name: 'Server 2 (Munowatch High-Speed Proxy - CORS Safe)',
-              quality: '1080p FHD',
-              streamUrl: proxyUrl,
-              isProxy: true
-            }
-          ]
+          servers
         });
       } else {
         const alternative = title ? await StreamProxyService.findAlternativeMovie(title) : null;

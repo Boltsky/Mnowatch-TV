@@ -175,6 +175,39 @@ export class CatalogService {
     return [];
   }
 
+  public static normalizeVj(vjName: string | null | undefined): string {
+    const clean = (vjName || '').toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
+    if (!clean) return '';
+    if (clean.includes('kisuule') || clean.includes('kiwule') || clean.includes('kiwuule')) return 'kisuule';
+    if (clean.includes('icep') || clean.includes('ice p')) return 'icep';
+    if (clean === 'paxwo' || clean === 'paxwoo') return 'paxwo';
+    if (clean === 'neil' || clean === 'niel') return 'neil';
+    if (clean === 'uli' || clean === 'ulio') return 'ulio';
+    if (clean === 'ronage' || clean === 'ronnage') return 'ronage';
+    if (clean === 'freddie' || clean === 'fredy') return 'freddie';
+    if (clean === 'dan' || clean === 'dandee' || clean === 'dande') return 'dan';
+    if (clean === 'heavyk' || clean === 'heavyq') return 'heavyq';
+    if (clean === 'hashim' || clean === 'hashimj' || clean === 'hash' || clean === 'ashim') return 'hashim';
+    if (clean === 'ismak' || clean === 'ismapro') return 'isma';
+    if (clean === 'aron' || clean === 'aaron') return 'aron';
+    if (clean === 'raj' || clean === 'raji') return 'raj';
+    if (clean === 'kam' || clean === 'kamran') return 'kamran';
+    if (clean === 'charly' || clean === 'charry') return 'charly';
+    if (clean === 'cabs' || clean === 'cb') return 'cabs';
+    if (clean.includes('shaokhan') || clean.includes('khan')) return 'khan';
+    if (clean === 'unclet' || clean === 'uncle t') return 'unclet';
+    if (clean === 'martink' || clean === 'martin k') return 'martink';
+    return clean;
+  }
+
+  public static isVjMatch(vj1: string | null | undefined, vj2: string | null | undefined): boolean {
+    if (!vj1 || !vj2) return false;
+    const n1 = this.normalizeVj(vj1);
+    const n2 = this.normalizeVj(vj2);
+    if (!n1 || !n2) return false;
+    return n1 === n2 || n1.includes(n2) || n2.includes(n1);
+  }
+
   public static getTwolekedeVjVariants(vjName: string): string[] {
     const clean = vjName.trim();
     const lower = clean.toLowerCase();
@@ -183,6 +216,8 @@ export class CatalogService {
     const knownMap: Record<string, string[]> = {
       'vj ice p': ['VJ ICEP', 'VJ Ice P'],
       'vj icep': ['VJ ICEP', 'VJ Ice P'],
+      'ice p': ['VJ ICEP', 'VJ Ice P'],
+      'icep': ['VJ ICEP', 'VJ Ice P'],
       'vj uncle t': ['Uncle T', 'VJ Uncle T'],
       'uncle t': ['Uncle T', 'VJ Uncle T'],
       'vj shao khan': ['Shao Khan', 'VJ Shao Khan', 'VJ Khan'],
@@ -195,6 +230,10 @@ export class CatalogService {
       'mk kisuule': ['VJ Kisuule', 'MK Kisuule', 'VJ MK Kisuule', 'Kisuule'],
       'vj kisuule': ['VJ Kisuule', 'MK Kisuule', 'Kisuule'],
       'kisuule': ['VJ Kisuule', 'MK Kisuule', 'Kisuule'],
+      'vj mk kiwuule': ['VJ Kisuule', 'MK Kisuule', 'VJ MK Kisuule', 'Kisuule'],
+      'mk kiwuule': ['VJ Kisuule', 'MK Kisuule', 'VJ MK Kisuule', 'Kisuule'],
+      'vj kiwuule': ['VJ Kisuule', 'MK Kisuule', 'Kisuule'],
+      'kiwuule': ['VJ Kisuule', 'MK Kisuule', 'Kisuule'],
       'vj mk kiwule': ['VJ Kisuule', 'MK Kisuule', 'VJ MK Kisuule', 'Kisuule'],
       'mk kiwule': ['VJ Kisuule', 'MK Kisuule', 'VJ MK Kisuule', 'Kisuule'],
       'vj kiwule': ['VJ Kisuule', 'MK Kisuule', 'Kisuule'],
@@ -203,21 +242,29 @@ export class CatalogService {
       'vj aron': ['VJ Aron', 'VJ Aaron'],
       'vj fredy': ['VJ Freddie', 'VJ Fredy'],
       'vj freddie': ['VJ Freddie', 'VJ Fredy'],
-      'vj ashim': ['VJ Hashim', 'VJ Ashim'],
-      'vj hashim': ['VJ Hashim', 'VJ Ashim'],
+      'vj ashim': ['VJ Hashim', 'VJ Ashim', 'VJ Hash'],
+      'vj hashim': ['VJ Hashim', 'VJ Ashim', 'VJ Hash'],
       'vj dan de': ['VJ Dan Dee', 'VJ Dan De', 'VJ Dan'],
       'vj dan dee': ['VJ Dan Dee', 'VJ Dan De', 'VJ Dan'],
       'vj ivo': ['VJ IVO Kakorea', 'VJ Ivo'],
       'vj ivo kakorea': ['VJ IVO Kakorea', 'VJ Ivo'],
       'vj isma k': ['VJ Isma K', 'VJ Isma Pro'],
-      'vj kamran': ['VJ Kamran', 'VJ Kam']
+      'vj kamran': ['VJ Kamran', 'VJ Kam'],
+      'vj neil': ['VJ Neil', 'VJ Niel'],
+      'vj niel': ['VJ Neil', 'VJ Niel'],
+      'vj pax wo': ['VJ Pax Wo', 'VJ Pax Woo'],
+      'vj pax woo': ['VJ Pax Wo', 'VJ Pax Woo'],
+      'vj uli': ['VJ Uli', 'VJ Ulio'],
+      'vj ulio': ['VJ Uli', 'VJ Ulio'],
+      'vj ronage': ['VJ Ronage', 'VJ Ronnage'],
+      'vj ronnage': ['VJ Ronage', 'VJ Ronnage']
     };
 
     if (knownMap[lower]) {
       variants.push(...knownMap[lower]);
     }
 
-    if (lower.includes('kisuule') || lower.includes('kiwule')) {
+    if (lower.includes('kisuule') || lower.includes('kiwule') || lower.includes('kiwuule')) {
       variants.unshift('VJ Kisuule', 'MK Kisuule', 'Kisuule');
     }
 
@@ -270,14 +317,8 @@ export class CatalogService {
       }
 
       // Enforce strict VJ isolation: never let movies from another VJ leak into this VJ's catalog
-      if (strictVj) {
-        const normStrict = strictVj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
-        const normCard = cardVj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
-        const isKisuuleMatch = (normStrict.includes('kisuule') || normStrict.includes('kiwule')) && (normCard.includes('kisuule') || normCard.includes('kiwule'));
-        const isIcepMatch = normStrict.includes('icep') && (normCard.includes('icep') || normCard.includes('ice p'));
-        if (!isKisuuleMatch && !isIcepMatch && (!normCard || !normStrict || (!normCard.includes(normStrict) && !normStrict.includes(normCard)))) {
-          continue;
-        }
+      if (strictVj && !CatalogService.isVjMatch(cardVj, strictVj)) {
+        continue;
       }
 
       items.push({
@@ -335,14 +376,8 @@ export class CatalogService {
       const formattedVj = cardVj.toLowerCase().includes('vj') || isNonPrefixed ? cardVj : `VJ ${cardVj}`;
 
       // Enforce strict VJ isolation for series
-      if (strictVj) {
-        const normStrict = strictVj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
-        const normCard = formattedVj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
-        const isKisuuleMatch = (normStrict.includes('kisuule') || normStrict.includes('kiwule')) && (normCard.includes('kisuule') || normCard.includes('kiwule'));
-        const isIcepMatch = normStrict.includes('icep') && (normCard.includes('icep') || normCard.includes('ice p'));
-        if (!isKisuuleMatch && !isIcepMatch && (!normCard || !normStrict || (!normCard.includes(normStrict) && !normStrict.includes(normCard)))) {
-          continue;
-        }
+      if (strictVj && !CatalogService.isVjMatch(formattedVj, strictVj)) {
+        continue;
       }
 
       const titleSlugMatch = href.match(/title=([^&"']+)/i);
@@ -666,22 +701,12 @@ export class CatalogService {
         }
       }
 
-      // Guarantee every single VJ category shows a full grid of 24 playable movies!
-      // If authentic items are fewer than 24 on page 1, supplement with popular translated hits
-      // Tagged with options.vj so card badges match this VJ category perfectly
-      if (allVjItems.length < 24 && page === 1) {
-        const popular = await this.fetchTwolekedeCatalog(false, 1);
-        const existingIds = new Set(allVjItems.map(i => i.id));
-        const needed = 24 - allVjItems.length;
-        const supplements = popular
-          .filter(i => !existingIds.has(i.id))
-          .slice(0, needed)
-          .map(i => ({
-            ...i,
-            vj: options.vj!,
-            description: `${i.title} translated into Luganda by ${options.vj}. Available in 1080p FHD on Munowatch TV.`
-          }));
-        allVjItems = [...allVjItems, ...supplements];
+      // If this VJ has series on Twolekede (e.g. VJ Light, VJ Banks, VJ Sammy, VJ Freddie, VJ Waza), ensure full authentic items
+      if (allVjItems.length === 0 && page === 1) {
+        const vjSeries = await this.fetchTwolekedeSeriesByVj(options.vj, 1);
+        if (vjSeries.length > 0) {
+          allVjItems = vjSeries;
+        }
       }
 
       totalEstimated = 1200;
@@ -767,14 +792,7 @@ export class CatalogService {
 
     // Strictly ensure NO other VJs can leak into this VJ's movie listing
     if (options.vj) {
-      const cleanTargetVj = options.vj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
-      combined = combined.filter(i => {
-        const cVj = (i.vj || '').toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
-        if (!cVj) return false;
-        if ((cleanTargetVj.includes('kisuule') || cleanTargetVj.includes('kiwule')) && (cVj.includes('kisuule') || cVj.includes('kiwule'))) return true;
-        if (cleanTargetVj.includes('icep') && (cVj.includes('icep') || cVj.includes('ice p'))) return true;
-        return cVj.includes(cleanTargetVj) || cleanTargetVj.includes(cVj);
-      });
+      combined = combined.filter(i => CatalogService.isVjMatch(i.vj, options.vj!));
     }
 
     // Apply sort if requested
@@ -814,46 +832,17 @@ export class CatalogService {
       } else {
         // Fallback to checking series.php if specific category was empty
         const liveCatalogSeries = await this.fetchTwolekedeCatalog(true, page);
-        const matchedFromCatalog = liveCatalogSeries.filter(i => {
-          const cVj = (i.vj || '').toLowerCase().replace('vj-', '').replace('vj', '').replace('.', '').trim();
-          return cVj.includes(cleanTargetVj) || cleanTargetVj.includes(cVj);
-        });
+        const matchedFromCatalog = liveCatalogSeries.filter(i => CatalogService.isVjMatch(i.vj, options.vj!));
         combined = matchedFromCatalog;
       }
 
       // Fallback to rich catalog filtered strictly by VJ if upstream returned empty
       if (combined.length === 0) {
-        combined = RICH_CATALOG.filter(i => {
-          if (!i.isSeries) return false;
-          const cVj = (i.vj || '').toLowerCase().replace('vj-', '').replace('vj', '').replace('.', '').trim();
-          return cVj.includes(cleanTargetVj) || cleanTargetVj.includes(cVj);
-        });
-      }
-
-      // Guarantee every series VJ tab shows rich series results
-      if (combined.length < 16 && page === 1) {
-        const liveCatalogSeries = await this.fetchTwolekedeCatalog(true, 1);
-        const existingIds = new Set(combined.map(i => i.id));
-        const needed = 16 - combined.length;
-        const supplements = liveCatalogSeries
-          .filter(i => !existingIds.has(i.id))
-          .slice(0, needed)
-          .map(i => ({
-            ...i,
-            vj: options.vj!,
-            description: `${i.title} complete series translated into Luganda by ${options.vj}. Available in 1080p FHD on Munowatch TV.`
-          }));
-        combined = [...combined, ...supplements];
+        combined = RICH_CATALOG.filter(i => i.isSeries && CatalogService.isVjMatch(i.vj, options.vj!));
       }
 
       // Strictly ensure NO other VJs can leak into this VJ's series listing
-      combined = combined.filter(i => {
-        const cVj = (i.vj || '').toLowerCase().replace('vj-', '').replace('vj', '').replace('.', '').trim();
-        if (!cVj) return false;
-        if ((cleanTargetVj.includes('kisuule') || cleanTargetVj.includes('kiwule')) && (cVj.includes('kisuule') || cVj.includes('kiwule'))) return true;
-        if (cleanTargetVj.includes('icep') && (cVj.includes('icep') || cVj.includes('ice p'))) return true;
-        return cVj.includes(cleanTargetVj) || cleanTargetVj.includes(cVj);
-      });
+      combined = combined.filter(i => CatalogService.isVjMatch(i.vj, options.vj!));
     } else {
       let liveTwolekede = await this.fetchTwolekedeCatalog(true, page);
       combined = liveTwolekede.length > 0 ? liveTwolekede : await this.fetchUgaWatchCatalog(2, options);

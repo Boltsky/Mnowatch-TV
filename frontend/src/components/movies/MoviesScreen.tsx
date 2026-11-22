@@ -3,23 +3,11 @@ import { MediaItem, VjItem } from '../../types';
 import { TvMediaCard } from '../common/TvMediaCard';
 import { Sparkles, Calendar, Shuffle, Clock, X, Loader2, ArrowDownCircle, Tv, ChevronLeft, ChevronRight, Film } from 'lucide-react';
 import { api, isTrailerOrIntroUrl } from '../../services/api';
+import { filterByVj, isVjMatch } from '../../utils/vjUtils';
 
 const isTrailerOnly = (item: MediaItem) => {
   if (!item.streamUrl) return false;
   return isTrailerOrIntroUrl(item.streamUrl, item.title) && !item.id.startsWith('tk_') && !item.streamUrl.includes('preview.php') && !item.streamUrl.includes('twolekede');
-};
-
-const filterByVj = (items: MediaItem[], vj: string | null): MediaItem[] => {
-  if (!vj) return items;
-  const cleanTarget = vj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
-  if (!cleanTarget) return items;
-  return items.filter(item => {
-    const cleanCard = (item.vj || '').toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
-    if (!cleanCard) return false;
-    if ((cleanTarget.includes('kisuule') || cleanTarget.includes('kiwule')) && (cleanCard.includes('kisuule') || cleanCard.includes('kiwule'))) return true;
-    if (cleanTarget.includes('icep') && (cleanCard.includes('icep') || cleanCard.includes('ice p'))) return true;
-    return cleanCard.includes(cleanTarget) || cleanTarget.includes(cleanCard);
-  });
 };
 
 interface MoviesScreenProps {
@@ -68,17 +56,15 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
     return POPULAR_VJS;
   }, [vjs]);
 
-  // Strictly enforce client-side VJ and year filtering while guaranteeing loaded movies display
+  // Strictly enforce client-side VJ and year filtering
   const displayedMovies = useMemo(() => {
     let items = movieList;
     if (selectedVj) {
-      const filtered = filterByVj(items, selectedVj);
-      items = filtered.length > 0 ? filtered : items;
+      items = filterByVj(items, selectedVj);
     }
     if (selectedYear && selectedYear !== 'all') {
       const yr = selectedYear.trim();
-      const yearFiltered = items.filter(i => (i.year || '').trim() === yr || (i.year || '').includes(yr));
-      items = yearFiltered.length > 0 ? yearFiltered : items;
+      items = items.filter(i => (i.year || '').trim() === yr || (i.year || '').includes(yr));
     }
     return items;
   }, [movieList, selectedVj, selectedYear]);
@@ -99,7 +85,9 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
       setMovieList(cleanItems);
       setHasMore(cleanItems.length >= 12);
     } catch {
-      // Keep initial movies on error
+      if (selectedVj || selectedYear) {
+        setMovieList([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -272,7 +260,13 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
           {availableVjs.map(vj => (
             <button
               key={vj}
-              onClick={() => setSelectedVj(selectedVj === vj ? null : vj)}
+              onClick={() => {
+                const nextVj = selectedVj === vj ? null : vj;
+                setSelectedVj(nextVj);
+                if (nextVj) {
+                  setMovieList(prev => filterByVj(prev, nextVj));
+                }
+              }}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex-shrink-0 ${
                 selectedVj === vj
                   ? 'bg-[#10B981] text-black shadow-md'

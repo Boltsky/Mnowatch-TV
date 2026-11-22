@@ -3,23 +3,11 @@ import { MediaItem, VjItem } from '../../types';
 import { TvMediaCard } from '../common/TvMediaCard';
 import { Tv, Loader2, ArrowDownCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api, isTrailerOrIntroUrl } from '../../services/api';
+import { filterByVj, isVjMatch } from '../../utils/vjUtils';
 
 const isTrailerOnly = (item: MediaItem) => {
   if (!item.streamUrl) return false;
   return isTrailerOrIntroUrl(item.streamUrl, item.title) && !item.id.startsWith('tk_') && !item.streamUrl.includes('preview.php') && !item.streamUrl.includes('twolekede');
-};
-
-const filterByVj = (items: MediaItem[], vj: string | null): MediaItem[] => {
-  if (!vj) return items;
-  const cleanTarget = vj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
-  if (!cleanTarget) return items;
-  return items.filter(item => {
-    const cleanCard = (item.vj || '').toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').replace(/[^a-z0-9]/g, '').trim();
-    if (!cleanCard) return false;
-    if ((cleanTarget.includes('kisuule') || cleanTarget.includes('kiwule')) && (cleanCard.includes('kisuule') || cleanCard.includes('kiwule'))) return true;
-    if (cleanTarget.includes('icep') && (cleanCard.includes('icep') || cleanCard.includes('ice p'))) return true;
-    return cleanCard.includes(cleanTarget) || cleanTarget.includes(cleanCard);
-  });
 };
 
 interface SeriesScreenProps {

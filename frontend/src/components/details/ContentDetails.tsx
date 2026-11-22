@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Play, ArrowLeft, Star, Clock, Server, Check, Sparkles, BookOpen, Bookmark, BookmarkCheck, Headphones, Shield, Film, Loader2, AlertCircle, Tv } from 'lucide-react';
 import { MediaItem, Episode, PlaybackServer } from '../../types';
 import { api, isTrailerOrIntroUrl } from '../../services/api';
+import { isVjMatch } from '../../utils/vjUtils';
 import { TvMediaCard } from '../common/TvMediaCard';
 
 interface ContentDetailsProps {
@@ -95,7 +96,7 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
       // 1. Filter local cache first
       const localMatches = allMovies.filter(m => {
         if (m.id === movie.id) return false;
-        const vjMatch = cleanVj && m.vj.toLowerCase().includes(cleanVj);
+        const vjMatch = isVjMatch(m.vj, movie.vj);
         const genreMatch = primaryGenre && m.genre.toLowerCase().includes(primaryGenre);
         return vjMatch || genreMatch;
       });

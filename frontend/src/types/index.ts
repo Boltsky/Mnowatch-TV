@@ -24,6 +24,7 @@ export interface Season {
 
 export interface Episode {
   id?: string;
+  seasonNumber?: number;
   episodeNumber: number;
   title: string;
   duration?: string;

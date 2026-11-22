@@ -490,6 +490,58 @@ export class StreamProxyService {
   /**
    * Resolves direct media streaming link for any movie or series title on demand
    */
+  public static async resolveBunnyCdnStream(title: string, vj?: string): Promise<string | null> {
+    if (!title || title.trim().length < 2) return null;
+    const cleanTitle = title
+      .replace(/\[.*?\]|\(.*?\)/g, '')
+      .replace(/\b(?:by\s+vj|vj)\s+[a-z0-9_.-]*.*$/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const normTargetVj = vj ? vj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').trim() : '';
+
+    const candidateQueries = this.generateCandidateQueries(cleanTitle);
+    for (const q of candidateQueries.slice(0, 3)) {
+      try {
+        const resp = await fetch(`https://munowatch.com/search?q=${encodeURIComponent(q)}`, {
+          headers: {
+            'Cookie': this.MUNO_SESSION_COOKIE,
+            'Referer': 'https://munowatch.com/',
+            'User-Agent': this.DEFAULT_USER_AGENT
+          },
+          signal: AbortSignal.timeout(6000)
+        });
+
+        if (resp.ok) {
+          const html = await resp.text();
+          const cardRegex = /<a[^>]+href="(\/twolekede\?v=[^"'\s]+)"[^>]*>([\s\S]*?)<\/a>/g;
+          let cm: RegExpExecArray | null;
+          while ((cm = cardRegex.exec(html)) !== null) {
+            const watchHref = cm[1].replace(/&amp;/g, '&');
+            const inner = cm[2];
+            const imgM = inner.match(/<img[^>]+alt="([^"']+)"/i);
+            const vjM = inner.match(/<p[^>]*>([^<]+)<\/p>/i);
+            const cardTitle = imgM ? this.unescapeHtml(imgM[1]).trim() : '';
+            const cardVj = vjM ? vjM[1].trim() : '';
+            const normCardVj = cardVj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').trim();
+
+            if (normTargetVj && normCardVj && !normCardVj.includes(normTargetVj) && !normTargetVj.includes(normCardVj)) {
+              continue;
+            }
+
+            if (this.titlesMatch(title, cardTitle)) {
+              const bcdnStream = await this.resolveMunowatchWatchStream(watchHref);
+              if (bcdnStream && !this.isTrailerOrPromoUrl(bcdnStream, title)) {
+                return bcdnStream;
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+    return null;
+  }
+
   public static async resolveMediaStream(id: string, title?: string, vj?: string): Promise<string | null> {
     const isExplicitTwolekede = id.startsWith('tk_') || (!id.startsWith('myvj_') && !id.startsWith('muno_') && /^\d+$/.test(id));
     const cleanId = id.replace(/^(myvj_|tk_|ep_|muno_)/, '');
@@ -520,54 +572,8 @@ export class StreamProxyService {
 
     // 2. Search Munowatch catalog directly by title (with strict VJ verification)
     if (title && title.trim().length >= 2) {
-      const cleanTitle = title
-        .replace(/\[.*?\]|\(.*?\)/g, '')
-        .replace(/\b(?:by\s+vj|vj)\s+[a-z0-9_.-]*.*$/gi, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      const normTargetVj = vj ? vj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').trim() : '';
-
-      const candidateQueries = this.generateCandidateQueries(cleanTitle);
-      for (const q of candidateQueries.slice(0, 3)) {
-        try {
-          const resp = await fetch(`https://munowatch.com/search?q=${encodeURIComponent(q)}`, {
-            headers: {
-              'Cookie': this.MUNO_SESSION_COOKIE,
-              'Referer': 'https://munowatch.com/',
-              'User-Agent': this.DEFAULT_USER_AGENT
-            },
-            signal: AbortSignal.timeout(6000)
-          });
-
-          if (resp.ok) {
-            const html = await resp.text();
-            const cardRegex = /<a[^>]+href="(\/twolekede\?v=[^"'\s]+)"[^>]*>([\s\S]*?)<\/a>/g;
-            let cm: RegExpExecArray | null;
-            while ((cm = cardRegex.exec(html)) !== null) {
-              const watchHref = cm[1].replace(/&amp;/g, '&');
-              const inner = cm[2];
-              const imgM = inner.match(/<img[^>]+alt="([^"']+)"/i);
-              const vjM = inner.match(/<p[^>]*>([^<]+)<\/p>/i);
-              const cardTitle = imgM ? this.unescapeHtml(imgM[1]).trim() : '';
-              const cardVj = vjM ? vjM[1].trim() : '';
-              const normCardVj = cardVj.toLowerCase().replace(/^(?:vj\s*|vj-)/i, '').trim();
-
-              // If VJ is known and doesn't match card VJ, skip to prevent wrong movie translation hijacking
-              if (normTargetVj && normCardVj && !normCardVj.includes(normTargetVj) && !normTargetVj.includes(normCardVj)) {
-                continue;
-              }
-
-              if (this.titlesMatch(title, cardTitle)) {
-                const bcdnStream = await this.resolveMunowatchWatchStream(watchHref);
-                if (bcdnStream && !this.isTrailerOrPromoUrl(bcdnStream, title)) {
-                  return bcdnStream;
-                }
-              }
-            }
-          }
-        } catch {}
-      }
+      const bcdnStream = await this.resolveBunnyCdnStream(title, vj);
+      if (bcdnStream) return bcdnStream;
     }
 
     // 2. Search Twolekede using smart candidate query variations

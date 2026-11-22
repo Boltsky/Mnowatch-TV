@@ -127,10 +127,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
     setIsResolving(true);
 
     // 1. If series episode has explicit stream URL
-    if (episode?.streamUrl && episode.streamUrl.length > 10 && !isTrailerOrIntroUrl(episode.streamUrl, episode.title || item.title)) {
-      if (episode.streamUrl.includes('preview.php') || episode.streamUrl.includes('id=')) {
+    if (currentEpisode?.streamUrl && currentEpisode.streamUrl.length > 10 && !isTrailerOrIntroUrl(currentEpisode.streamUrl, currentEpisode.title || item.title)) {
+      if (currentEpisode.streamUrl.includes('preview.php') || currentEpisode.streamUrl.includes('id=')) {
         try {
-          const res = await api.resolveStream(episode.id || item.id, episode.title || item.title, item.vj);
+          const res = await api.resolveStream(currentEpisode.id || item.id, currentEpisode.title || item.title, item.vj);
           if (res.streamUrl && !isTrailerOrIntroUrl(res.streamUrl, item.title) && !isTrailerOrIntroUrl(res.directUrl, item.title)) {
             const finalUrl = currentServer.isProxy ? res.streamUrl : (res.directUrl || res.streamUrl);
             setResolvedStreamUrl(finalUrl);
@@ -139,7 +139,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
           }
         } catch {}
       }
-      const finalUrl = currentServer.isProxy ? api.getProxyStreamUrl(episode.streamUrl) : episode.streamUrl;
+      const finalUrl = currentServer.isProxy ? api.getProxyStreamUrl(currentEpisode.streamUrl) : currentEpisode.streamUrl;
       setResolvedStreamUrl(finalUrl);
       setIsResolving(false);
       return;
@@ -147,11 +147,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
 
     // 2. Always query verified stream resolver to validate title match and avoid wrong movie playback
     try {
-      const res = await api.resolveStream(item.id, item.title, item.vj);
+      const targetId = currentEpisode?.id || item.id;
+      const targetTitle = currentEpisode?.title || item.title;
+      const res = await api.resolveStream(targetId, targetTitle, item.vj);
       if (res.alternative) {
         setAlternative(res.alternative);
       }
-      if (res.streamUrl && !isTrailerOrIntroUrl(res.streamUrl, item.title) && !isTrailerOrIntroUrl(res.directUrl, item.title)) {
+      if (res.streamUrl && !isTrailerOrIntroUrl(res.streamUrl, targetTitle) && !isTrailerOrIntroUrl(res.directUrl, targetTitle)) {
         const finalUrl = currentServer.isProxy ? res.streamUrl : (res.directUrl || res.streamUrl);
         setResolvedStreamUrl(finalUrl);
       } else if (
@@ -164,7 +166,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
       } else {
         setHasError(true);
         setErrorMessage(
-          res.error || `A genuine full-length Ugandan translated stream is not currently available for "${item.title}". We do not stream promotional trailers or intro clips.`
+          res.error || `A genuine full-length Ugandan translated stream is not currently available for "${targetTitle}". We do not stream promotional trailers or intro clips.`
         );
       }
     } catch (err: any) {
@@ -180,7 +182,53 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
     } finally {
       setIsResolving(false);
     }
-  }, [item.id, item.title, item.streamUrl, episode, currentServer]);
+  }, [item.id, item.title, item.streamUrl, currentEpisode, currentServer]);
+
+  // Handle advancing to next episode
+  const handlePlayNextEpisode = useCallback(() => {
+    if (!nextEpisodeInfo) return;
+    if (upNextTimerRef.current) {
+      clearInterval(upNextTimerRef.current);
+      upNextTimerRef.current = null;
+    }
+    setUpNextCountdown(null);
+    setCurrentEpisode(nextEpisodeInfo.episode);
+    if (onPlayEpisode) {
+      onPlayEpisode(item, nextEpisodeInfo.episode);
+    }
+  }, [nextEpisodeInfo, item, onPlayEpisode]);
+
+  // Handle jumping to a specific episode from drawer
+  const handleSelectSpecificEpisode = useCallback((ep: Episode) => {
+    if (upNextTimerRef.current) {
+      clearInterval(upNextTimerRef.current);
+      upNextTimerRef.current = null;
+    }
+    setUpNextCountdown(null);
+    setShowEpisodesDrawer(false);
+    setCurrentEpisode(ep);
+    if (onPlayEpisode) {
+      onPlayEpisode(item, ep);
+    }
+  }, [item, onPlayEpisode]);
+
+  // Cancel up next countdown
+  const handleCancelUpNext = useCallback(() => {
+    if (upNextTimerRef.current) {
+      clearInterval(upNextTimerRef.current);
+      upNextTimerRef.current = null;
+    }
+    setUpNextCountdown(null);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (upNextTimerRef.current) {
+        clearInterval(upNextTimerRef.current);
+        upNextTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     triggerStreamResolution();
@@ -283,6 +331,26 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
     };
     const onPause = () => setIsPlaying(false);
 
+    const onEnded = () => {
+      setIsPlaying(false);
+      if (nextEpisodeInfo) {
+        let count = 5;
+        setUpNextCountdown(count);
+        if (upNextTimerRef.current) clearInterval(upNextTimerRef.current);
+        upNextTimerRef.current = setInterval(() => {
+          count -= 1;
+          if (count <= 0) {
+            clearInterval(upNextTimerRef.current);
+            upNextTimerRef.current = null;
+            setUpNextCountdown(null);
+            handlePlayNextEpisode();
+          } else {
+            setUpNextCountdown(count);
+          }
+        }, 1000);
+      }
+    };
+
     const onError = () => {
       setIsBuffering(false);
       // Automatically attempt proxy failover if direct playback failed (e.g. CORS restriction)
@@ -303,6 +371,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
     video.addEventListener('waiting', onWaiting);
     video.addEventListener('playing', onPlaying);
     video.addEventListener('pause', onPause);
+    video.addEventListener('ended', onEnded);
     video.addEventListener('error', onError);
 
     return () => {
@@ -311,9 +380,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
       video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('playing', onPlaying);
       video.removeEventListener('pause', onPause);
+      video.removeEventListener('ended', onEnded);
       video.removeEventListener('error', onError);
     };
-  }, [currentServer, activeStreamUrl]);
+  }, [currentServer, activeStreamUrl, nextEpisodeInfo, handlePlayNextEpisode]);
 
   // Controls playback toggle
   const togglePlay = () => {
@@ -591,7 +661,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
               </h2>
               <p className="text-xs text-zinc-400 flex items-center gap-2">
                 <span className="text-emerald-400 font-bold">{item.vj}</span>
-                {episode && <span>• Episode {episode.episodeNumber}: {episode.title}</span>}
+                {currentEpisode && (
+                  <span>
+                    • Season {currentEpisode.seasonNumber || 1} • Episode {currentEpisode.episodeNumber}
+                    {currentEpisode.title ? `: ${currentEpisode.title}` : ''}
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -684,6 +759,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
                 <RotateCw className="w-5 h-5" />
               </button>
 
+              {nextEpisodeInfo && (
+                <button
+                  onClick={handlePlayNextEpisode}
+                  className="hover:text-[#10B981] text-zinc-300 transition-colors p-1 rounded-lg hover:bg-white/10"
+                  title={`Next Episode (S${nextEpisodeInfo.seasonNumber}:E${nextEpisodeInfo.episode.episodeNumber} - ${nextEpisodeInfo.episode.title || ''})`}
+                >
+                  <SkipForward className="w-5 h-5" />
+                </button>
+              )}
+
               <button onClick={toggleMute} className="hover:text-white transition-colors">
                 {isMuted ? <VolumeX className="w-5 h-5 text-red-400" /> : <Volume2 className="w-5 h-5" />}
               </button>
@@ -694,6 +779,22 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Episodes Drawer Toggle Button */}
+              {item.isSeries && allEpisodes.length > 0 && (
+                <button
+                  onClick={() => setShowEpisodesDrawer(prev => !prev)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${
+                    showEpisodesDrawer
+                      ? 'bg-[#10B981] text-black border-[#10B981]'
+                      : 'bg-white/10 text-zinc-300 border-white/10 hover:text-white hover:bg-white/20'
+                  }`}
+                  title="View All Episodes"
+                >
+                  <ListVideo className="w-4 h-4" />
+                  <span className="hidden sm:inline">Episodes ({allEpisodes.length})</span>
+                </button>
+              )}
+
               {/* Picture-in-Picture Button */}
               <button
                 onClick={togglePiP}
@@ -727,6 +828,123 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
           </div>
         </div>
       </div>
+
+      {/* Up Next in 5s Countdown Card Overlay */}
+      {upNextCountdown !== null && nextEpisodeInfo && (
+        <div className="absolute bottom-24 right-4 sm:right-8 z-50 bg-[#0A192F]/95 backdrop-blur-md border border-[#10B981]/50 rounded-2xl p-4 shadow-2xl max-w-sm w-full animate-fadeIn">
+          <div className="flex items-start gap-3">
+            {nextEpisodeInfo.episode.thumbnailUrl ? (
+              <img
+                src={nextEpisodeInfo.episode.thumbnailUrl}
+                alt={nextEpisodeInfo.episode.title}
+                className="w-20 h-14 rounded-lg object-cover border border-[#1E293B]"
+              />
+            ) : (
+              <div className="w-20 h-14 rounded-lg bg-[#132845] flex items-center justify-center text-[#10B981]">
+                <Play className="w-6 h-6 fill-current" />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between text-[11px] font-bold text-[#10B981] uppercase tracking-wider mb-0.5">
+                <span>Up Next in {upNextCountdown}s</span>
+                <button onClick={handleCancelUpNext} className="text-[#94A3B8] hover:text-white">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <h4 className="text-sm font-bold text-white truncate">
+                {nextEpisodeInfo.episode.title || `Episode ${nextEpisodeInfo.episode.episodeNumber}`}
+              </h4>
+              <p className="text-xs text-[#94A3B8] truncate">
+                Season {nextEpisodeInfo.seasonNumber} • Episode {nextEpisodeInfo.episode.episodeNumber}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 mt-3 pt-2 border-t border-[#1E293B]">
+            <button
+              onClick={handlePlayNextEpisode}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-[#10B981] hover:bg-[#34D399] text-black font-bold text-xs rounded-xl shadow-md transition-all active:scale-95"
+            >
+              <Play className="w-3.5 h-3.5 fill-current" />
+              <span>Play Now</span>
+            </button>
+            <button
+              onClick={handleCancelUpNext}
+              className="py-2 px-3 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl transition-all"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Episodes Slide-Over Drawer */}
+      {showEpisodesDrawer && (
+        <div className="absolute inset-y-0 right-0 z-50 w-full sm:w-96 bg-[#0A192F]/98 backdrop-blur-xl border-l border-[#1E293B] shadow-2xl flex flex-col animate-slideLeft">
+          <div className="flex items-center justify-between p-4 border-b border-[#1E293B]">
+            <div className="flex items-center gap-2">
+              <ListVideo className="w-5 h-5 text-[#10B981]" />
+              <h3 className="text-sm font-bold text-white">Episodes ({allEpisodes.length})</h3>
+            </div>
+            <button
+              onClick={() => setShowEpisodesDrawer(false)}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-zinc-400 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            {allEpisodes.map(({ seasonNumber, episode: ep }, idx) => {
+              const isCurrent = (currentEpisode?.id && ep.id === currentEpisode.id) ||
+                (currentEpisode?.episodeNumber === ep.episodeNumber && (!currentEpisode?.seasonNumber || currentEpisode?.seasonNumber === seasonNumber));
+              return (
+                <div
+                  key={ep.id || `${seasonNumber}_${ep.episodeNumber}_${idx}`}
+                  onClick={() => handleSelectSpecificEpisode(ep)}
+                  className={`flex items-center gap-3 p-2.5 rounded-xl cursor-pointer transition-all border ${
+                    isCurrent
+                      ? 'bg-[#10B981]/20 border-[#10B981] text-white shadow-md'
+                      : 'bg-[#132845]/50 border-transparent hover:border-[#1E293B] hover:bg-[#132845] text-zinc-300'
+                  }`}
+                >
+                  <div className="relative w-16 h-11 flex-shrink-0 rounded-lg overflow-hidden bg-black/40">
+                    {ep.thumbnailUrl ? (
+                      <img src={ep.thumbnailUrl} alt={ep.title} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-[#10B981]">
+                        <Play className="w-4 h-4 fill-current" />
+                      </div>
+                    )}
+                    {isCurrent && (
+                      <div className="absolute inset-0 bg-[#10B981]/40 flex items-center justify-center">
+                        <Play className="w-4 h-4 fill-black text-black" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-[#10B981]">
+                        S{seasonNumber} : E{ep.episodeNumber}
+                      </span>
+                      {isCurrent && (
+                        <span className="text-[10px] font-black uppercase tracking-wider bg-[#10B981] text-black px-1.5 py-0.5 rounded">
+                          Playing
+                        </span>
+                      )}
+                    </div>
+                    <h5 className="text-xs font-semibold truncate text-white">
+                      {ep.title || `Episode ${ep.episodeNumber}`}
+                    </h5>
+                    {ep.duration && (
+                      <span className="text-[10px] text-zinc-400">{ep.duration}</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -3,6 +3,7 @@ import { MediaItem, VjItem } from '../../types';
 import { TvMediaCard } from '../common/TvMediaCard';
 import { Clapperboard, Layers, Loader2, ArrowDownCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api, isTrailerOrIntroUrl } from '../../services/api';
+import { isVjMatch } from '../../utils/vjUtils';
 
 const isTrailerOnly = (item: MediaItem) => {
   if (!item.streamUrl) return false;
@@ -142,8 +143,7 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
   const displayItems = useMemo(() => {
     if (liveItems.length > 0) return liveItems;
     if (activeTab === 'VJ') {
-      const cleanVj = selectedVj.toLowerCase().replace('vj', '').trim();
-      return movies.filter(m => m.vj.toLowerCase().includes(cleanVj));
+      return movies.filter(m => isVjMatch(m.vj, selectedVj));
     } else {
       const cleanGenre = selectedGenre.toLowerCase().trim();
       return movies.filter(m => m.genre.toLowerCase().includes(cleanGenre));
