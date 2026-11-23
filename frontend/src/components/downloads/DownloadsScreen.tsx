@@ -82,9 +82,9 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({
     if (item.type === 'series' && item.seasonNumber && item.episodeNumber) {
       const sNum = String(item.seasonNumber).padStart(2, '0');
       const eNum = String(item.episodeNumber).padStart(2, '0');
-      filename = `${cleanTitle} - S${sNum}E${eNum}${vjPart} - Munowatch.mp4`;
+      filename = `${cleanTitle} - S${sNum}E${eNum}${vjPart} - Bolt.mp4`;
     } else {
-      filename = `${cleanTitle}${vjPart} - Munowatch.mp4`;
+      filename = `${cleanTitle}${vjPart} - Bolt.mp4`;
     }
 
     offlineStorage.exportBlobToFile(item.blob, filename);

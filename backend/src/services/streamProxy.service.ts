@@ -213,7 +213,7 @@ export class StreamProxyService {
     const downloadParam = req.query.download === 'true' || req.query.download === '1';
     let attachmentFilename: string | undefined = undefined;
     if (downloadParam || req.query.filename) {
-      const customName = req.query.filename ? String(req.query.filename) : (titleParam ? `${titleParam} - Munowatch.mp4` : 'video.mp4');
+      const customName = req.query.filename ? String(req.query.filename) : (titleParam ? `${titleParam} - Bolt.mp4` : 'video.mp4');
       attachmentFilename = customName.replace(/[<>:"/\\|?*]+/g, '').trim();
     }
 
@@ -260,6 +260,9 @@ export class StreamProxyService {
           rejectUnauthorized: false
         },
         (upstreamRes) => {
+          // Clear initial connection timeout once upstream response headers arrive
+          upstreamReq.setTimeout(0);
+
           // If 301 / 302 / 307 redirect, resolve location against current parsedUrl
           if (
             (upstreamRes.statusCode === 301 || upstreamRes.statusCode === 302 || upstreamRes.statusCode === 307 || upstreamRes.statusCode === 308) &&
@@ -304,11 +307,20 @@ export class StreamProxyService {
             res.setHeader('Content-Disposition', `attachment; filename="${attachmentFilename.replace(/"/g, '')}"`);
           }
 
+          let totalBytes = 0;
+          if (upstreamRes.headers['content-length']) {
+            totalBytes = parseInt(upstreamRes.headers['content-length'] as string, 10);
+          }
+          if (!totalBytes && upstreamRes.headers['content-range']) {
+            const m = upstreamRes.headers['content-range'].match(/\/(\d+)/);
+            if (m) totalBytes = parseInt(m[1], 10);
+          }
+
           if (upstreamRes.headers['content-range']) {
             res.setHeader('Content-Range', upstreamRes.headers['content-range']);
           }
-          if (upstreamRes.headers['content-length']) {
-            res.setHeader('Content-Length', upstreamRes.headers['content-length']);
+          if (totalBytes > 0) {
+            res.setHeader('Content-Length', String(totalBytes));
           }
           if (upstreamRes.headers['content-type']) {
             res.setHeader('Content-Type', upstreamRes.headers['content-type']);
@@ -316,11 +328,26 @@ export class StreamProxyService {
             res.setHeader('Content-Type', currentUrl.includes('.m3u8') ? 'application/x-mpegURL' : 'video/mp4');
           }
 
+          upstreamRes.on('error', (err) => {
+            console.error('upstreamRes error:', err?.message);
+            if (!res.headersSent) {
+              res.status(502).end();
+            } else {
+              res.end();
+            }
+          });
+
+          res.on('error', (err) => {
+            console.error('client res error:', err?.message);
+            upstreamRes.destroy();
+            upstreamReq.destroy();
+          });
+
           upstreamRes.pipe(res);
         }
       );
 
-      // Prevent hanging sockets on slow/timing-out Cloudflare nodes (12s timeout)
+      // Prevent hanging sockets on slow/timing-out Cloudflare nodes (12s connect timeout)
       upstreamReq.setTimeout(12000, () => {
         upstreamReq.destroy(new Error('Upstream CDN connection timeout'));
       });
@@ -339,7 +366,9 @@ export class StreamProxyService {
       });
 
       req.on('close', () => {
-        upstreamReq.destroy();
+        try {
+          upstreamReq.destroy();
+        } catch {}
       });
 
       upstreamReq.end();
@@ -898,5 +927,70 @@ export class StreamProxyService {
   </div>
 </body>
 </html>`;
+  }
+
+  /**
+   * Probes upstream media stream to get Content-Length / file size
+   */
+  public static async probeFileSize(url: string): Promise<{ sizeBytes: number; formatted: string } | null> {
+    if (!url || typeof url !== 'string' || !url.startsWith('http')) return null;
+    try {
+      const parsedUrl = new URL(url);
+      const isTwolekedeOrMovviez = parsedUrl.hostname.includes('movviez.com') || parsedUrl.hostname.includes('twolekede.com');
+      const isMunoOrBunny = parsedUrl.hostname.includes('b-cdn.net') || parsedUrl.hostname.includes('munowatch.com');
+
+      const headers: Record<string, string> = {
+        'User-Agent': this.DEFAULT_USER_AGENT,
+        'Accept': '*/*',
+        'Range': 'bytes=0-1'
+      };
+      if (isTwolekedeOrMovviez) {
+        headers['Referer'] = 'https://twolekede.com/';
+        headers['Origin'] = 'https://twolekede.com';
+      } else if (isMunoOrBunny) {
+        headers['Referer'] = 'https://munowatch.com/';
+        headers['Origin'] = 'https://munowatch.com';
+      }
+
+      return await new Promise((resolve) => {
+        const client = parsedUrl.protocol === 'https:' ? https : http;
+        const req = client.request(parsedUrl, {
+          method: 'GET',
+          headers,
+          rejectUnauthorized: false
+        }, (res) => {
+          let totalBytes = 0;
+          const contentRange = res.headers['content-range'];
+          if (contentRange) {
+            const m = contentRange.match(/\/(\d+)/);
+            if (m) totalBytes = parseInt(m[1], 10);
+          }
+          if (!totalBytes && res.headers['content-length']) {
+            totalBytes = parseInt(res.headers['content-length'] as string, 10);
+          }
+
+          req.destroy();
+
+          if (totalBytes > 0) {
+            const formatted = totalBytes >= 1024 * 1024 * 1024
+              ? `${(totalBytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
+              : `${Math.round(totalBytes / (1024 * 1024))} MB`;
+            resolve({ sizeBytes: totalBytes, formatted });
+          } else {
+            resolve(null);
+          }
+        });
+
+        req.setTimeout(3500, () => {
+          req.destroy();
+          resolve(null);
+        });
+
+        req.on('error', () => resolve(null));
+        req.end();
+      });
+    } catch {
+      return null;
+    }
   }
 }

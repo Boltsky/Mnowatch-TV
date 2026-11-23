@@ -67,11 +67,15 @@ export class StreamController {
           } catch {}
         }
 
+        const probe = await StreamProxyService.probeFileSize(resolvedDirect);
+
         res.json({
           success: true,
           directUrl: resolvedDirect,
           streamUrl: proxyUrl,
-          servers
+          servers,
+          fileSize: probe?.sizeBytes,
+          fileSizeFormatted: probe?.formatted || (id.includes('_s') || id.includes('series') ? '350 MB' : '850 MB')
         });
       } else {
         const alternative = title ? await StreamProxyService.findAlternativeMovie(title) : null;
@@ -166,9 +170,9 @@ export class StreamController {
         if (season && episode) {
           const sNum = String(season).padStart(2, '0');
           const eNum = String(episode).padStart(2, '0');
-          downloadFilename = `${cleanTitle} - S${sNum}E${eNum}${vjPart} - Munowatch.mp4`;
+          downloadFilename = `${cleanTitle} - S${sNum}E${eNum}${vjPart} - Bolt.mp4`;
         } else {
-          downloadFilename = `${cleanTitle}${vjPart} - Munowatch.mp4`;
+          downloadFilename = `${cleanTitle}${vjPart} - Bolt.mp4`;
         }
       }
 

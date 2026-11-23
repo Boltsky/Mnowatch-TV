@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Play, 
   ArrowLeft, 
@@ -20,12 +20,13 @@ import {
   HardDrive,
   FileDown,
   CheckCircle2,
-  X
+  X,
+  Radio
 } from 'lucide-react';
 import { MediaItem, Episode, PlaybackServer } from '../../types';
 import { api, isTrailerOrIntroUrl } from '../../services/api';
 import { isVjMatch } from '../../utils/vjUtils';
-import { offlineStorage } from '../../services/offlineStorage.service';
+import { offlineStorage, ActiveDownload } from '../../services/offlineStorage.service';
 import { TvMediaCard } from '../common/TvMediaCard';
 
 interface ContentDetailsProps {
@@ -66,11 +67,47 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
   const [loadingRecs, setLoadingRecs] = useState<boolean>(false);
   const [downloadTarget, setDownloadTarget] = useState<{ item: MediaItem; episode?: Episode } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [isOfflineReady, setIsOfflineReady] = useState<boolean>(false);
+  const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+  const [activeDownloads, setActiveDownloads] = useState<ActiveDownload[]>([]);
+  const [estimatedFileSize, setEstimatedFileSize] = useState<string>('');
+
+  const refreshDownloadedStatus = useCallback(async () => {
+    try {
+      const list = await offlineStorage.getAllOfflineMedia();
+      setDownloadedIds(new Set(list.map(i => i.id)));
+    } catch {}
+  }, []);
 
   useEffect(() => {
-    offlineStorage.isMediaDownloaded(movie.id).then(setIsOfflineReady);
-  }, [movie.id]);
+    refreshDownloadedStatus();
+
+    const unsub = offlineStorage.subscribeActiveDownloads((dls) => {
+      setActiveDownloads([...dls]);
+      if (dls.some(d => d.status === 'completed')) {
+        refreshDownloadedStatus();
+      }
+    });
+
+    return () => unsub();
+  }, [refreshDownloadedStatus]);
+
+  // Resolve file size on mount or when movie changes
+  useEffect(() => {
+    let isMounted = true;
+    api.resolveStream(movie.id, movie.title, movie.vj).then(res => {
+      if (isMounted && res.fileSizeFormatted) {
+        setEstimatedFileSize(res.fileSizeFormatted);
+      }
+    }).catch(() => {});
+
+    return () => { isMounted = false; };
+  }, [movie.id, movie.title, movie.vj]);
+
+  const isMovieDownloaded = downloadedIds.has(movie.id);
+  const getEpDownloadId = (ep: Episode) => `${movie.id}_s${selectedSeason || 1}_e${ep.episodeNumber}`;
+  const isEpDownloaded = (ep: Episode) => downloadedIds.has(getEpDownloadId(ep)) || (ep.id ? downloadedIds.has(ep.id) : false);
+  const getEpActiveDownload = (ep: Episode) => activeDownloads.find(d => d.id === getEpDownloadId(ep) || d.id === ep.id);
+  const currentMovieDownload = activeDownloads.find(d => d.mediaId === movie.id && !d.episodeNumber);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -91,7 +128,7 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
       episode: target.episode,
       streamUrl: directCandidate
     });
-    offlineStorage.isMediaDownloaded(target.item.id).then(setIsOfflineReady);
+    refreshDownloadedStatus();
   };
 
   const handleDirectDeviceSave = (target: { item: MediaItem; episode?: Episode }) => {
@@ -100,21 +137,49 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
       ? selectedServer.streamUrl
       : undefined;
 
+    const cleanTitle = (target.item.title || 'Movie').replace(/[<>:"/\\|?*]+/g, '').trim();
+    const cleanVj = (target.item.vj || '').replace(/[<>:"/\\|?*]+/g, '').trim();
+    const vjPart = cleanVj ? ` (${cleanVj})` : '';
+    let boltFilename = '';
+    if (target.episode) {
+      const sNum = String(target.episode.seasonNumber || 1).padStart(2, '0');
+      const eNum = String(target.episode.episodeNumber).padStart(2, '0');
+      boltFilename = `${cleanTitle} - S${sNum}E${eNum}${vjPart} - Bolt.mp4`;
+    } else {
+      boltFilename = `${cleanTitle}${vjPart} - Bolt.mp4`;
+    }
+
     const downloadUrl = api.getDownloadUrl({
       id: target.episode?.id || target.item.id,
       title: target.item.title,
       vj: target.item.vj,
       season: target.episode?.seasonNumber,
       episode: target.episode?.episodeNumber,
+      filename: boltFilename,
       url: directCandidate
     });
     showToast(`Starting MP4 download for "${target.item.title}"...`);
+
+    // Use background hidden iframe to prevent displacing the current page
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = downloadUrl;
+    document.body.appendChild(iframe);
+    setTimeout(() => {
+      try { document.body.removeChild(iframe); } catch {}
+    }, 120000);
+
+    // Fallback anchor with target="_blank"
     const a = document.createElement('a');
     a.href = downloadUrl;
-    a.setAttribute('download', '');
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.setAttribute('download', boltFilename);
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
+    setTimeout(() => {
+      try { document.body.removeChild(a); } catch {}
+    }, 1000);
   };
 
   // 1. Fetch Genuine Individual Movie Details on Mount (matching Android getMovieDetails)
@@ -396,6 +461,36 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
               </div>
             )}
 
+            {/* Live In-Place Download Progress Card */}
+            {currentMovieDownload && (
+              <div className="pt-3 pb-1">
+                <div className="p-3.5 rounded-xl bg-gradient-to-r from-[#0d1f3b] to-[#0A192F] border border-[#10B981]/60 shadow-xl space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <Radio className="w-3.5 h-3.5 text-[#10B981] animate-pulse" />
+                      <span className="font-bold text-white">Downloading for Offline Watching...</span>
+                    </div>
+                    <span className="font-mono font-bold text-[#10B981]">{currentMovieDownload.progress}%</span>
+                  </div>
+                  <div className="w-full h-2 rounded-full bg-[#132845] overflow-hidden">
+                    <div 
+                      className="h-full rounded-full bg-gradient-to-r from-[#10B981] to-emerald-400 transition-all duration-300 shadow-sm shadow-[#10B981]/50"
+                      style={{ width: `${currentMovieDownload.progress}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-[#94A3B8]">
+                    <span>
+                      {offlineStorage.formatBytes(currentMovieDownload.loadedBytes)}
+                      {currentMovieDownload.totalBytes > 0 && ` of ${offlineStorage.formatBytes(currentMovieDownload.totalBytes)}`}
+                    </span>
+                    <span className="font-mono text-emerald-400 font-semibold">
+                      {offlineStorage.formatSpeed(currentMovieDownload.speedBps)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Primary Actions: Start Watching & Watchlist */}
             <div className="pt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
               {movie.isSeries ? (
@@ -446,28 +541,53 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
                 </button>
               )}
 
-              {/* Download Option Button */}
-              <button
-                onClick={() => setDownloadTarget({ item: movie, episode: movie.isSeries ? seasons[0]?.episodes?.[0] : undefined })}
-                className={`flex items-center justify-center gap-2.5 px-6 py-3.5 sm:py-4 rounded-xl text-sm font-bold border transition-all hover:scale-105 active:scale-95 ${
-                  isOfflineReady
-                    ? 'bg-[#10B981]/20 text-[#10B981] border-[#10B981]'
-                    : 'bg-[#0A192F] text-white border-[#132845] hover:border-[#10B981]'
-                }`}
-                title="Download movie for offline watching or store to device"
-              >
-                {isOfflineReady ? (
-                  <>
-                    <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
-                    <span>Offline Ready</span>
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4 text-[#10B981]" />
-                    <span>Download</span>
-                  </>
-                )}
-              </button>
+              {/* Live In-Progress Download State or Download/Downloaded Button */}
+              {currentMovieDownload ? (
+                <div className="flex items-center gap-3 px-5 py-3 sm:py-3.5 rounded-xl bg-[#0d1f3b] border border-[#10B981] shadow-lg shadow-[#10B981]/20">
+                  <div className="w-4 h-4 rounded-full border-2 border-[#10B981] border-t-transparent animate-spin flex-shrink-0" />
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-1.5 text-xs font-black text-white">
+                      <span>Downloading</span>
+                      <span className="font-mono text-[#10B981]">{currentMovieDownload.progress}%</span>
+                    </div>
+                    <span className="text-[10px] text-[#94A3B8] font-mono">
+                      {offlineStorage.formatBytes(currentMovieDownload.loadedBytes)}
+                      {currentMovieDownload.totalBytes > 0 && ` / ${offlineStorage.formatBytes(currentMovieDownload.totalBytes)}`}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => offlineStorage.cancelDownload(currentMovieDownload.id)}
+                    className="ml-2 p-1 text-[#94A3B8] hover:text-red-400 rounded hover:bg-white/5 transition-all"
+                    title="Cancel download"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setDownloadTarget({ item: movie, episode: movie.isSeries ? seasons[0]?.episodes?.[0] : undefined })}
+                  className={`flex items-center justify-center gap-2.5 px-6 py-3.5 sm:py-4 rounded-xl text-sm font-bold border transition-all hover:scale-105 active:scale-95 ${
+                    isMovieDownloaded
+                      ? 'bg-[#10B981]/20 text-[#10B981] border-[#10B981] shadow-lg shadow-[#10B981]/15'
+                      : 'bg-[#0A192F] text-white border-[#132845] hover:border-[#10B981]'
+                  }`}
+                  title={isMovieDownloaded ? 'Saved in offline storage. Click for options.' : 'Download movie for offline watching or store to device'}
+                >
+                  {isMovieDownloaded ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
+                      <span>Downloaded</span>
+                      {estimatedFileSize && <span className="text-[11px] text-[#10B981]/80 font-normal">({estimatedFileSize})</span>}
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4 text-[#10B981]" />
+                      <span>Download</span>
+                      {estimatedFileSize && <span className="text-[11px] text-[#94A3B8] font-normal">({estimatedFileSize})</span>}
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -535,6 +655,21 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
                       <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-md text-[10px] font-extrabold text-[#10B981] border border-white/10">
                         S{currentSeason.seasonNumber}:E{ep.episodeNumber}
                       </div>
+
+                      {/* Downloaded badge or live progress bar across bottom of thumbnail */}
+                      {getEpActiveDownload(ep) ? (
+                        <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-[#132845] overflow-hidden">
+                          <div 
+                            className="h-full bg-gradient-to-r from-[#10B981] to-emerald-300 transition-all duration-300"
+                            style={{ width: `${getEpActiveDownload(ep)!.progress}%` }}
+                          />
+                        </div>
+                      ) : isEpDownloaded(ep) ? (
+                        <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-[#10B981] text-black text-[9px] font-black uppercase flex items-center gap-1 shadow">
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>Downloaded</span>
+                        </div>
+                      ) : null}
                     </div>
                     <div className="pt-2.5 flex flex-col justify-between flex-1">
                       <div>
@@ -545,16 +680,38 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
                       <div className="flex items-center justify-between pt-2 text-[11px] text-[#94A3B8]">
                         <span>{ep.duration || '45m'}</span>
                         <div className="flex items-center gap-2">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDownloadTarget({ item: movie, episode: ep });
-                            }}
-                            className="p-1 rounded-md bg-white/5 hover:bg-[#10B981]/20 text-[#94A3B8] hover:text-[#10B981] transition-all"
-                            title={`Download Episode ${ep.episodeNumber}`}
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                          </button>
+                          {getEpActiveDownload(ep) ? (
+                            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#10B981]/15 border border-[#10B981]/40 text-[#10B981] text-[10px] font-mono">
+                              <div className="w-2.5 h-2.5 rounded-full border border-[#10B981] border-t-transparent animate-spin" />
+                              <span>{getEpActiveDownload(ep)!.progress}%</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  offlineStorage.cancelDownload(getEpActiveDownload(ep)!.id);
+                                }}
+                                className="text-[#94A3B8] hover:text-red-400 ml-0.5"
+                                title="Cancel"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ) : isEpDownloaded(ep) ? (
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-[#10B981] bg-[#10B981]/15 px-2 py-0.5 rounded border border-[#10B981]/30">
+                              <CheckCircle2 className="w-3 h-3 text-[#10B981]" />
+                              <span>Downloaded</span>
+                            </span>
+                          ) : (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDownloadTarget({ item: movie, episode: ep });
+                              }}
+                              className="p-1 rounded-md bg-white/5 hover:bg-[#10B981]/20 text-[#94A3B8] hover:text-[#10B981] transition-all"
+                              title={`Download Episode ${ep.episodeNumber}`}
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           <span className="text-[#10B981] font-semibold group-hover:underline flex items-center gap-1">
                             <Play className="w-2.5 h-2.5 fill-[#10B981]" /> Watch
                           </span>
@@ -618,7 +775,14 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-lg font-black text-white">Download Options</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-black text-white">Download Options</h3>
+                  {estimatedFileSize && (
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#10B981]/20 text-[#10B981] border border-[#10B981]/40">
+                      {estimatedFileSize}
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-[#94A3B8] mt-0.5 line-clamp-1">
                   {downloadTarget.item.title}
                   {downloadTarget.episode && ` • S${downloadTarget.episode.seasonNumber || 1}:E${downloadTarget.episode.episodeNumber}`}
@@ -642,9 +806,14 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
                 <div className="p-2.5 rounded-lg bg-[#10B981]/15 text-[#10B981] flex-shrink-0 group-hover:scale-110 transition-transform">
                   <HardDrive className="w-5 h-5" />
                 </div>
-                <div>
-                  <div className="text-sm font-bold text-white group-hover:text-[#10B981]">
-                    Download for Offline Watching
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-bold text-white group-hover:text-[#10B981] flex items-center justify-between">
+                    <span>Download for Offline Watching</span>
+                    {estimatedFileSize && (
+                      <span className="text-[11px] font-mono font-semibold text-[#10B981]">
+                        ~{estimatedFileSize}
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-[#94A3B8] mt-0.5">
                     Saves to browser offline storage. Watch inside Munowatch anytime without internet or mobile data.
@@ -660,12 +829,17 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
                 <div className="p-2.5 rounded-lg bg-[#10B981]/15 text-[#10B981] flex-shrink-0 group-hover:scale-110 transition-transform">
                   <FileDown className="w-5 h-5" />
                 </div>
-                <div>
-                  <div className="text-sm font-bold text-white group-hover:text-[#10B981]">
-                    Save MP4 to Local Storage
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-bold text-white group-hover:text-[#10B981] flex items-center justify-between">
+                    <span>Save MP4 to Local Storage</span>
+                    {estimatedFileSize && (
+                      <span className="text-[11px] font-mono font-semibold text-[#10B981]">
+                        ~{estimatedFileSize}
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-[#94A3B8] mt-0.5">
-                    Directly downloads standalone .mp4 file to your Downloads folder to play in VLC or transfer to USB.
+                    Directly downloads standalone .mp4 file to your Downloads folder (ending in <span className="text-white font-mono">- Bolt.mp4</span>) to play in VLC or transfer to USB.
                   </div>
                 </div>
               </button>

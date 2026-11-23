@@ -351,8 +351,26 @@ export const api = {
     return { items: filtered, count: filtered.length, total: filtered.length, page: 1, hasMore: false };
   },
 
-  async resolveStream(id: string, title?: string, vj?: string): Promise<{ streamUrl: string; directUrl: string; servers?: any[]; error?: string; unavailable?: boolean; alternative?: { id: string; title: string } }> {
-    const fetchAttempt = async (): Promise<{ streamUrl: string; directUrl: string; servers?: any[]; error?: string; unavailable?: boolean; alternative?: { id: string; title: string } }> => {
+  async resolveStream(id: string, title?: string, vj?: string): Promise<{
+    streamUrl: string;
+    directUrl: string;
+    servers?: any[];
+    error?: string;
+    unavailable?: boolean;
+    alternative?: { id: string; title: string };
+    fileSize?: number;
+    fileSizeFormatted?: string;
+  }> {
+    const fetchAttempt = async (): Promise<{
+      streamUrl: string;
+      directUrl: string;
+      servers?: any[];
+      error?: string;
+      unavailable?: boolean;
+      alternative?: { id: string; title: string };
+      fileSize?: number;
+      fileSizeFormatted?: string;
+    }> => {
       const params = new URLSearchParams();
       params.append('id', id);
       if (title) params.append('title', title);
@@ -362,7 +380,13 @@ export const api = {
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.streamUrl && !isTrailerOrIntroUrl(data.streamUrl, title) && !isTrailerOrIntroUrl(data.directUrl, title)) {
-          return { streamUrl: data.streamUrl, directUrl: data.directUrl, servers: data.servers };
+          return {
+            streamUrl: data.streamUrl,
+            directUrl: data.directUrl,
+            servers: data.servers,
+            fileSize: data.fileSize,
+            fileSizeFormatted: data.fileSizeFormatted
+          };
         } else if (data.unavailable || !data.success) {
           return {
             streamUrl: '',

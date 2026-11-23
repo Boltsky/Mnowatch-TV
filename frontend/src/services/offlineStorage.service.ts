@@ -261,7 +261,14 @@ export const offlineStorage = {
       }
 
       const contentLengthHeader = response.headers.get('content-length');
-      const totalBytes = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
+      let totalBytes = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
+      if (!totalBytes) {
+        const contentRangeHeader = response.headers.get('content-range');
+        if (contentRangeHeader) {
+          const m = contentRangeHeader.match(/\/(\d+)/);
+          if (m) totalBytes = parseInt(m[1], 10);
+        }
+      }
       activeItem.totalBytes = totalBytes;
 
       if (!response.body) {
