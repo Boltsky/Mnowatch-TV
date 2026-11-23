@@ -442,6 +442,43 @@ export const App: React.FC = () => {
     return list;
   }, [featuredItem, homeRails, allMovies]);
 
+  // Proactively enrich any slide that still has a generic description with genuine synopsis from API
+  useEffect(() => {
+    if (featuredSlides.length === 0) return;
+    const genericSlides = featuredSlides.filter(s =>
+      !s.description ||
+      s.description.includes('translated into Luganda by') ||
+      s.description.includes('Full HD 1080p release available')
+    );
+    if (genericSlides.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      for (const slide of genericSlides) {
+        if (cancelled) break;
+        try {
+          const detailed = await api.getMovieDetails(slide.id, slide.title);
+          if (detailed && detailed.description && !detailed.description.includes('translated into Luganda by')) {
+            if (featuredItem && featuredItem.id === slide.id) {
+              setFeaturedItem(prev => prev ? { ...prev, ...detailed } : detailed);
+            }
+            setHomeRails(prevRails =>
+              prevRails.map(rail => ({
+                ...rail,
+                items: rail.items.map(item => item.id === slide.id ? { ...item, ...detailed } : item)
+              }))
+            );
+            setAllMovies(prev =>
+              prev.map(item => item.id === slide.id ? { ...item, ...detailed } : item)
+            );
+          }
+        } catch {}
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [featuredSlides, featuredItem]);
+
   return (
     <div className="min-h-screen bg-[#010318] text-[#F8FAFC] pb-20 md:pb-8 flex flex-col">
       {/* 1. Fullscreen Video Player overlay */}

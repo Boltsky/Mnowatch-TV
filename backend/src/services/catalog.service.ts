@@ -636,11 +636,13 @@ export class CatalogService {
           title: title,
           type: isSeries ? 'series' : 'movie',
           vj: vj,
-          genre: isSeries ? 'Ugandan Translated Series' : 'Action / Adventure',
-          year: '2024',
+          genre: isSeries ? 'Ugandan Translated Series' : CatalogService.inferGenre(title, ''),
+          year: '2025',
           rating: '8.8',
           duration: isSeries ? 'TV Series' : '2h 10m',
-          description: `${title} translated into Luganda by ${vj}. Full HD 1080p release available on Munowatch TV.`,
+          description: isSeries
+            ? `${title} multi-season translated series by ${vj} on Munowatch TV.`
+            : `Ugandan translated release by ${vj} in high-definition 1080p FHD.`,
           posterUrl: poster,
           backdropUrl: poster,
           streamUrl: id ? `https://twolekede.com/preview.php?id=${id}` : '',
@@ -870,6 +872,69 @@ export class CatalogService {
   }
 
   /**
+   * Intelligently deduce high-fidelity genres from movie titles and descriptions
+   */
+  public static inferGenre(title: string, desc: string): string {
+    const t = `${title} ${desc}`.toLowerCase();
+    if (t.includes('animated') || t.includes('animation') || t.includes('cartoon') || t.includes('tadeo') || t.includes('disney') || t.includes('pixar') || t.includes('dragon') || t.includes('kung fu panda')) {
+      return 'Animation / Adventure';
+    }
+    if (t.includes('horror') || t.includes('haunted') || t.includes('ghost') || t.includes('demon') || t.includes('witch') || t.includes('exorcist') || t.includes('undead') || t.includes('evil dead')) {
+      return 'Horror / Thriller';
+    }
+    if (t.includes('comedy') || t.includes('hilarious') || t.includes('humor') || t.includes('parody') || t.includes('funny') || t.includes('stand up')) {
+      return 'Comedy';
+    }
+    if (t.includes('romance') || t.includes('romantic') || t.includes('love') || t.includes('marriage') || t.includes('wedding') || t.includes('husband') || t.includes('wife')) {
+      return 'Drama / Romance';
+    }
+    if (t.includes('sci-fi') || t.includes('science fiction') || t.includes('alien') || t.includes('space') || t.includes('galaxy') || t.includes('robot') || t.includes('cyber') || t.includes('mutant')) {
+      return 'Sci-Fi / Action';
+    }
+    if (t.includes('syndicate') || t.includes('detective') || t.includes('cop') || t.includes('police') || t.includes('mafia') || t.includes('cartel') || t.includes('gangster') || t.includes('jailer') || t.includes('prison') || t.includes('crime')) {
+      return 'Action / Crime / Thriller';
+    }
+    if (t.includes('colonial') || t.includes('british india') || t.includes('war') || t.includes('battle') || t.includes('historical') || t.includes('dynasty') || t.includes('empire') || t.includes('warrior')) {
+      return 'Action / Historical / Epic';
+    }
+    if (t.includes('drama') || t.includes('inspirational') || t.includes('biography') || t.includes('struggle') || t.includes('family')) {
+      return 'Drama';
+    }
+    return 'Action / Adventure';
+  }
+
+  /**
+   * Enrich catalog items with genuine descriptions, release years, and inferred genres
+   */
+  public static async enrichItemsWithDetails(items: MediaItem[], baseUrl: string = ''): Promise<MediaItem[]> {
+    return Promise.all(
+      items.map(async (item) => {
+        try {
+          const cleanId = item.id.replace(/^(myvj_|tk_)/, '');
+          if (/^\d+$/.test(cleanId)) {
+            const details = await this.getMovieDetails(`tk_${cleanId}`, item.title, baseUrl);
+            if (details) {
+              const hasRealDesc = details.description &&
+                !details.description.includes('translated into Luganda by') &&
+                !details.description.includes('Full HD 1080p release available');
+              return {
+                ...item,
+                description: hasRealDesc ? details.description : item.description,
+                year: (details.year && details.year !== '2024') ? details.year : (item.year || '2025'),
+                vj: details.vj || item.vj,
+                genre: details.genre || item.genre,
+                rating: details.rating || item.rating,
+                duration: details.duration || item.duration
+              };
+            }
+          }
+        } catch {}
+        return item;
+      })
+    );
+  }
+
+  /**
    * Home rails populated from live database
    */
   public static async getHomeRails(baseUrl: string): Promise<CatalogRail[]> {
@@ -885,13 +950,20 @@ export class CatalogService {
       this.fetchTwolekedeCatalog(true, 1)
     ]);
 
+    // Concurrently enrich top latest releases with full genuine Twolekede descriptions & metadata
+    const topEnrichedLatest = await this.enrichItemsWithDetails(twolekedeLatest.slice(0, 10), baseUrl);
+    const twolekedeLatestFull = [
+      ...topEnrichedLatest,
+      ...twolekedeLatest.slice(10)
+    ];
+
     const attachProxy = (items: MediaItem[]) => items.map(i => this.enrichWithServers(i, baseUrl));
 
     const rails: CatalogRail[] = [
       {
         id: "rail_trending",
         title: "🔥 Newly Uploaded Translated Movies",
-        items: attachProxy(twolekedeLatest.length > 0 ? twolekedeLatest.slice(0, 16) : RICH_CATALOG.filter(i => !i.isSeries).slice(0, 8))
+        items: attachProxy(twolekedeLatestFull.length > 0 ? twolekedeLatestFull.slice(0, 16) : RICH_CATALOG.filter(i => !i.isSeries).slice(0, 8))
       },
       {
         id: "rail_junior",
@@ -920,7 +992,7 @@ export class CatalogService {
         id: "rail_action",
         title: "🥊 High-Octane Action & Thrillers",
         genre: "Action",
-        items: attachProxy(twolekedeLatest.length > 10 ? twolekedeLatest.slice(10, 22) : RICH_CATALOG.filter(i => i.genre.includes("Action")))
+        items: attachProxy(twolekedeLatestFull.length > 10 ? twolekedeLatestFull.slice(10, 22) : RICH_CATALOG.filter(i => i.genre.includes("Action")))
       }
     ];
 
@@ -1493,7 +1565,12 @@ export class CatalogService {
 
         if (resp.ok) {
           const html = await resp.text();
-          const unescape = (s: string) => s.replace(/&amp;/g, '&').replace(/&#38;/g, '&').replace(/&quot;/g, '"');
+          const unescape = (s: string) => StreamProxyService.unescapeHtml(s)
+            .replace(/&#039;/g, "'")
+            .replace(/&#39;/g, "'")
+            .replace(/&apos;/g, "'")
+            .replace(/&quot;/g, '"')
+            .replace(/&amp;/g, '&');
           const titleMatch = (html.match(/<div class="details-section">\s*<h1>([^<]*)<\/h1>/) || html.match(/<h1[^>]*>([^<]*)<\/h1>/));
           const descMatch = html.match(/<div class="description">\s*([\s\S]*?)\s*<\/div>/) ||
                             html.match(/<div class="overview">\s*([\s\S]*?)\s*<\/div>/) ||
@@ -1501,10 +1578,11 @@ export class CatalogService {
 
           if (titleMatch) {
             const movieTitle = unescape(titleMatch[1]).trim();
-            const desc = descMatch ? unescape(descMatch[1]).trim() : '';
+            const rawDesc = descMatch ? descMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+            const desc = unescape(rawDesc);
 
             const yearMatch = html.match(/<span class="year">([^<]*)<\/span>/);
-            const year = yearMatch ? yearMatch[1].trim() : '2024';
+            const year = yearMatch ? yearMatch[1].trim() : '2025';
 
             const vjMatch = html.match(/<span class="category-tag">([^<]*)<\/span>/);
             let vj = vjMatch ? vjMatch[1].trim() : 'VJ Junior';
@@ -1524,16 +1602,18 @@ export class CatalogService {
               correctedDesc = 'Desperado (Xi Zhuang Bao Tu / 西装暴徒): A formidable former operative fights his way through a criminal syndicate in this high-octane martial arts thriller, translated into Luganda by VJ Jingo.';
             }
 
+            const inferredGenre = CatalogService.inferGenre(movieTitle, correctedDesc);
+
             const item: MediaItem = {
               id: `tk_${cleanId}`,
               title: movieTitle,
               type: 'movie',
               vj: vj,
-              genre: 'Action / Adventure',
+              genre: inferredGenre,
               year: correctedYear,
               rating: '8.8',
               duration: '2h 05m',
-              description: correctedDesc || `Luganda translation by ${vj} available on Munowatch TV.`,
+              description: correctedDesc || `Luganda translation by ${vj} available in 1080p FHD on Munowatch TV.`,
               posterUrl: posterUrl,
               backdropUrl: posterUrl,
               streamUrl: '',

@@ -127,7 +127,8 @@ export const TvHeroBanner: React.FC<TvHeroBannerProps> = ({
             )}
             <span className="text-[11px] sm:text-xs font-semibold text-[#94A3B8]">
               1080p FHD • {currentItem.year || '2025'}
-              {currentItem.genre ? ` • ${currentItem.genre.split(/[,/&]/)[0].trim()}` : ''}
+              {currentItem.genre ? ` • ${currentItem.genre.split('/').slice(0, 2).map(g => g.trim()).join(' • ')}` : ''}
+              {currentItem.duration ? ` • ${currentItem.duration}` : ''}
             </span>
           </div>
 
