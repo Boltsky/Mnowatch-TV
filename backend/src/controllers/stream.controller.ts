@@ -101,21 +101,62 @@ export class StreamController {
     const episode = req.query.episode as string;
 
     try {
-      if (!targetUrl && (id || title)) {
-        let resolved = await StreamProxyService.resolveMediaStream(id, title, vj);
-        if (!resolved && title) {
-          resolved = await StreamProxyService.resolveBunnyCdnStream(title, vj);
-        }
-        if (resolved && !StreamProxyService.isTrailerOrPromoUrl(resolved, title)) {
-          targetUrl = resolved;
+      // 1. Recursively unwrap nested proxy URLs to prevent self-calling loops & 502 Bad Gateway
+      while (targetUrl.includes('/stream/proxy?url=')) {
+        const idx = targetUrl.indexOf('/stream/proxy?url=');
+        const raw = targetUrl.substring(idx + 18);
+        try {
+          targetUrl = decodeURIComponent(raw);
+        } catch {
+          targetUrl = raw;
         }
       }
 
-      if (!targetUrl) {
+      // 2. Auto-resolve Twolekede preview HTML pages to genuine media stream URLs
+      if (targetUrl.includes('preview.php') || targetUrl.includes('twolekede.com/preview')) {
+        const match = targetUrl.match(/id=(\d+)/);
+        if (match) {
+          const direct = await StreamProxyService.resolveTwolekedeStreamById(match[1], title);
+          if (direct) {
+            targetUrl = direct;
+          } else {
+            targetUrl = ''; // Clear so resolveMediaStream handles it below
+          }
+        } else {
+          targetUrl = '';
+        }
+      }
+
+      // 3. If stream is not direct or empty, resolve fresh genuine direct CDN stream
+      if (!targetUrl || (!targetUrl.includes('.mp4') && !targetUrl.includes('secure.php') && !targetUrl.includes('b-cdn.net'))) {
+        if (id || title) {
+          let resolved = await StreamProxyService.resolveMediaStream(id, title, vj);
+          if (!resolved && title) {
+            resolved = await StreamProxyService.resolveBunnyCdnStream(title, vj);
+          }
+          if (resolved && !StreamProxyService.isTrailerOrPromoUrl(resolved, title)) {
+            targetUrl = resolved;
+          }
+        }
+      }
+
+      if (!targetUrl || targetUrl.includes('preview.php')) {
         res.status(404).send('Movie download stream could not be resolved or is currently unavailable.');
         return;
       }
 
+      // 4. Reject promotional trailers / clips
+      if (StreamProxyService.isTrailerOrPromoUrl(targetUrl, title)) {
+        res.status(400).send('Trailer and promo downloads are strictly blocked.');
+        return;
+      }
+
+      targetUrl = targetUrl.trim();
+      if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+        targetUrl = 'https://' + targetUrl.replace(/^\/+/, '');
+      }
+
+      // 5. Format clean, sanitized attachment filename
       let downloadFilename = filename ? filename.replace(/[<>:"/\\|?*]+/g, '').trim() : '';
       if (!downloadFilename) {
         const cleanTitle = (title || 'Munowatch_Movie').replace(/[<>:"/\\|?*]+/g, '').trim();

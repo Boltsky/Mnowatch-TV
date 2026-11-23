@@ -495,13 +495,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
   };
 
   const handleDownloadFromPlayer = () => {
+    const directCandidate = resolvedStreamUrl && !resolvedStreamUrl.includes('/stream/proxy') && !resolvedStreamUrl.includes('preview.php') && !resolvedStreamUrl.startsWith('blob:')
+      ? resolvedStreamUrl
+      : undefined;
+
     const downloadUrl = api.getDownloadUrl({
       id: currentEpisode?.id || item.id,
       title: currentEpisode?.title || item.title,
       vj: item.vj,
       season: currentEpisode?.seasonNumber,
       episode: currentEpisode?.episodeNumber,
-      url: resolvedStreamUrl || currentServer.streamUrl
+      url: directCandidate
     });
     window.location.href = downloadUrl;
   };

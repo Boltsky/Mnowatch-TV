@@ -162,24 +162,47 @@ export class StreamProxyService {
       return;
     }
 
+    // Unwrap nested proxy URLs recursively to prevent self-referential loops & 502 Bad Gateway
+    while (targetUrl.includes('/stream/proxy?url=')) {
+      const idx = targetUrl.indexOf('/stream/proxy?url=');
+      const raw = targetUrl.substring(idx + 18);
+      try {
+        targetUrl = decodeURIComponent(raw);
+      } catch {
+        targetUrl = raw;
+      }
+    }
+
     targetUrl = targetUrl.trim();
     if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
       targetUrl = 'https://' + targetUrl.replace(/^\/+/, '');
     }
 
+    const titleParam = req.query.title ? String(req.query.title) : undefined;
+
     // Auto-resolve Twolekede preview HTML pages to genuine media stream URLs
     if (targetUrl.includes('preview.php?id=') || targetUrl.includes('twolekede.com/preview')) {
       const match = targetUrl.match(/id=(\d+)/);
       if (match) {
-        const direct = await this.resolveTwolekedeStreamById(match[1]);
+        const direct = await this.resolveTwolekedeStreamById(match[1], titleParam);
         if (direct) {
           targetUrl = direct;
+        } else {
+          // Fallback to searching/resolving media stream
+          const fallback = await this.resolveMediaStream(`tk_${match[1]}`, titleParam);
+          if (fallback) {
+            targetUrl = fallback;
+          }
         }
       }
     }
 
+    if (targetUrl.includes('preview.php') || targetUrl.includes('twolekede.com/preview')) {
+      res.status(404).json({ error: 'Genuine media stream could not be resolved from preview page.' });
+      return;
+    }
+
     // Strict trailer rejection: never proxy trailers or promo clips
-    const titleParam = req.query.title ? String(req.query.title) : undefined;
     if (this.isTrailerOrPromoUrl(targetUrl, titleParam)) {
       res.status(400).json({
         error: 'Trailer and promo playback blocked. Munowatch exclusively streams full-length Ugandan translated movies.'

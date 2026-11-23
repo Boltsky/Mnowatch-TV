@@ -80,23 +80,33 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
   const handleStartOfflineSave = async (target: { item: MediaItem; episode?: Episode }) => {
     setDownloadTarget(null);
     showToast(`Downloading "${target.item.title}${target.episode ? ` - Ep ${target.episode.episodeNumber}` : ''}" for offline watching...`);
+    
+    // Direct candidate only if genuine CDN stream, not proxy or HTML preview page
+    const directCandidate = selectedServer && !selectedServer.isProxy && !selectedServer.streamUrl.includes('/stream/proxy') && !selectedServer.streamUrl.includes('preview.php')
+      ? selectedServer.streamUrl
+      : undefined;
+
     await offlineStorage.startOfflineDownload({
       item: target.item,
       episode: target.episode,
-      streamUrl: selectedServer?.streamUrl || movie.streamUrl
+      streamUrl: directCandidate
     });
     offlineStorage.isMediaDownloaded(target.item.id).then(setIsOfflineReady);
   };
 
   const handleDirectDeviceSave = (target: { item: MediaItem; episode?: Episode }) => {
     setDownloadTarget(null);
+    const directCandidate = selectedServer && !selectedServer.isProxy && !selectedServer.streamUrl.includes('/stream/proxy') && !selectedServer.streamUrl.includes('preview.php')
+      ? selectedServer.streamUrl
+      : undefined;
+
     const downloadUrl = api.getDownloadUrl({
       id: target.episode?.id || target.item.id,
       title: target.item.title,
       vj: target.item.vj,
       season: target.episode?.seasonNumber,
       episode: target.episode?.episodeNumber,
-      url: selectedServer?.streamUrl || movie.streamUrl
+      url: directCandidate
     });
     showToast(`Starting MP4 download for "${target.item.title}"...`);
     window.location.href = downloadUrl;

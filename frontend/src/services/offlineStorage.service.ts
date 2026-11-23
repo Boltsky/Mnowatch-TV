@@ -229,13 +229,16 @@ export const offlineStorage = {
     try {
       // 1. Resolve media stream URL if not provided directly
       let directUrl = initialUrl || '';
+      if (directUrl.includes('/stream/proxy') || directUrl.includes('preview.php')) {
+        directUrl = '';
+      }
       if (!directUrl) {
         const targetId = episode?.id || item.id;
         const res = await api.resolveStream(targetId, item.title, item.vj);
-        if (res.streamUrl) {
-          directUrl = res.streamUrl;
-        } else if (res.directUrl) {
+        if (res.directUrl && !res.directUrl.includes('preview.php')) {
           directUrl = res.directUrl;
+        } else if (res.streamUrl) {
+          directUrl = res.streamUrl;
         }
       }
 
@@ -244,7 +247,7 @@ export const offlineStorage = {
       }
 
       // Always route through high-speed CORS safe proxy to guarantee chunked streaming & total content-length
-      const fetchUrl = api.getProxyStreamUrl(directUrl);
+      const fetchUrl = directUrl.includes('/stream/proxy?url=') ? directUrl : api.getProxyStreamUrl(directUrl);
 
       const response = await fetch(fetchUrl, {
         signal: abortController.signal,
