@@ -38,6 +38,20 @@ export interface PlaybackServer {
   quality: string;
   streamUrl: string;
   isProxy: boolean;
+  tier?: 'fhd' | 'saver';
+  fileSize?: number;
+  fileSizeFormatted?: string;
+}
+
+export interface StreamQualityOption {
+  id: 'fhd' | 'saver';
+  label: string;
+  name: string;
+  quality: string;
+  fileSize?: number;
+  fileSizeFormatted: string;
+  directUrl: string;
+  streamUrl: string;
 }
 
 export interface CatalogRail {

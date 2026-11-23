@@ -637,6 +637,89 @@ export class StreamProxyService {
     return null;
   }
 
+  /**
+   * Resolves both 1080p Full HD (BunnyCDN master) and Data Saver (Twolekede compressed) stream sources
+   */
+  public static async resolveAllQualityStreams(
+    id: string,
+    title?: string,
+    vj?: string
+  ): Promise<{
+    fhdStream: string | null;
+    saverStream: string | null;
+  }> {
+    let fhdStream: string | null = null;
+    let saverStream: string | null = null;
+
+    const isExplicitTwolekede = id.startsWith('tk_') || (!id.startsWith('myvj_') && !id.startsWith('muno_') && /^\d+$/.test(id));
+    const isExplicitMuno = id.startsWith('muno_');
+    const cleanId = id.replace(/^(myvj_|tk_|ep_|muno_)/, '');
+
+    // 1. Direct explicit Twolekede lookup (Data Saver tier)
+    if (isExplicitTwolekede && /^\d+$/.test(cleanId)) {
+      const resolved = await this.resolveTwolekedeStreamById(cleanId, title);
+      if (resolved && !this.isTrailerOrPromoUrl(resolved, title) && this.urlMatchesTitle(resolved, title)) {
+        saverStream = resolved;
+      }
+    }
+
+    // 2. Direct explicit Munowatch lookup (1080p Full HD tier)
+    if (isExplicitMuno) {
+      const resolved = await this.resolveMunowatchWatchStream(`/twolekede?mid=${cleanId}`);
+      if (resolved && !this.isTrailerOrPromoUrl(resolved, title) && this.urlMatchesTitle(resolved, title)) {
+        fhdStream = resolved;
+      }
+    }
+
+    // 3. Search BunnyCDN master stream by title & VJ if not resolved yet
+    if (!fhdStream && title && title.trim().length >= 2) {
+      fhdStream = await this.resolveBunnyCdnStream(title, vj);
+    }
+
+    // 4. Search Twolekede Data Saver stream by title if not resolved yet
+    if (!saverStream && title && title.trim().length >= 2) {
+      const candidateQueries = this.generateCandidateQueries(title);
+      for (const q of candidateQueries.slice(0, 3)) {
+        try {
+          const resp = await fetch(`https://twolekede.com/search.php?q=${encodeURIComponent(q)}`, {
+            headers: {
+              'Referer': 'https://twolekede.com/',
+              'User-Agent': this.DEFAULT_USER_AGENT
+            },
+            signal: AbortSignal.timeout(5000)
+          });
+          if (resp.ok) {
+            const html = await resp.text();
+            const cardRegex = /<a href="(?:moviedetails|seriesdetails|preview)\.php\?id=(\d+)"[^>]*>[\s\S]*?<h3 class="content-title">([^<]*)<\/h3>/g;
+            let m: RegExpExecArray | null;
+            while ((m = cardRegex.exec(html)) !== null) {
+              const matchedId = m[1];
+              const cardTitle = this.unescapeHtml(m[2]).trim();
+              if (this.titlesMatch(title, cardTitle)) {
+                const stream = await this.resolveTwolekedeStreamById(matchedId, title);
+                if (stream && !this.isTrailerOrPromoUrl(stream, title) && this.urlMatchesTitle(stream, title)) {
+                  saverStream = stream;
+                  break;
+                }
+              }
+            }
+            if (saverStream) break;
+          }
+        } catch {}
+      }
+    }
+
+    // 5. Fallback for UgaWatch API if both are still missing
+    if (!fhdStream && !saverStream) {
+      const uga = await this.resolveUgaWatchStream(cleanId, title);
+      if (uga && !this.isTrailerOrPromoUrl(uga, title)) {
+        fhdStream = uga;
+      }
+    }
+
+    return { fhdStream, saverStream };
+  }
+
   public static async resolveMediaStream(id: string, title?: string, vj?: string): Promise<string | null> {
     const isExplicitTwolekede = id.startsWith('tk_') || (!id.startsWith('myvj_') && !id.startsWith('muno_') && /^\d+$/.test(id));
     const cleanId = id.replace(/^(myvj_|tk_|ep_|muno_)/, '');

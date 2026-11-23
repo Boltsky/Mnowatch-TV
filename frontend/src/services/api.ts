@@ -1,4 +1,4 @@
-import { MediaItem, CatalogRail, VjItem } from '../types';
+import { MediaItem, CatalogRail, VjItem, StreamQualityOption } from '../types';
 
 /**
  * Validates whether a URL or filename represents a promotional trailer, teaser, or intro clip
@@ -355,6 +355,7 @@ export const api = {
     streamUrl: string;
     directUrl: string;
     servers?: any[];
+    qualities?: StreamQualityOption[];
     error?: string;
     unavailable?: boolean;
     alternative?: { id: string; title: string };
@@ -365,6 +366,7 @@ export const api = {
       streamUrl: string;
       directUrl: string;
       servers?: any[];
+      qualities?: StreamQualityOption[];
       error?: string;
       unavailable?: boolean;
       alternative?: { id: string; title: string };
@@ -384,6 +386,7 @@ export const api = {
             streamUrl: data.streamUrl,
             directUrl: data.directUrl,
             servers: data.servers,
+            qualities: data.qualities,
             fileSize: data.fileSize,
             fileSizeFormatted: data.fileSizeFormatted
           };
@@ -460,6 +463,7 @@ export const api = {
     season?: number;
     episode?: number;
     filename?: string;
+    quality?: 'fhd' | 'saver';
   }): string {
     const params = new URLSearchParams();
     if (target.url) params.set('url', target.url);
@@ -469,6 +473,7 @@ export const api = {
     if (target.season) params.set('season', String(target.season));
     if (target.episode) params.set('episode', String(target.episode));
     if (target.filename) params.set('filename', target.filename);
+    if (target.quality) params.set('quality', target.quality);
     return `${API_BASE}/stream/download?${params.toString()}`;
   }
 };

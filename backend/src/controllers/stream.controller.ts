@@ -17,65 +17,124 @@ export class StreamController {
     }
 
     try {
-      const resolvedDirect = await StreamProxyService.resolveMediaStream(id, title, vj);
-      if (resolvedDirect && !StreamProxyService.isTrailerOrPromoUrl(resolvedDirect, title)) {
+      let { fhdStream, saverStream } = await StreamProxyService.resolveAllQualityStreams(id, title, vj);
+
+      if (!fhdStream && !saverStream) {
+        const legacy = await StreamProxyService.resolveMediaStream(id, title, vj);
+        if (legacy && !StreamProxyService.isTrailerOrPromoUrl(legacy, title)) {
+          if (legacy.includes('b-cdn.net')) {
+            fhdStream = legacy;
+          } else {
+            saverStream = legacy;
+          }
+        }
+      }
+
+      if (fhdStream || saverStream) {
         const protocol = req.headers['x-forwarded-proto'] || req.protocol;
         const host = req.headers['x-forwarded-host'] || req.get('host');
         const baseUrl = `${protocol}://${host}`;
-        const proxyUrl = `${baseUrl}/api/v1/stream/proxy?url=${encodeURIComponent(resolvedDirect)}${title ? `&title=${encodeURIComponent(title)}` : ''}`;
 
-        const servers = [
-          {
-            id: 'server-direct',
-            name: resolvedDirect.includes('b-cdn.net') ? 'Server 1 (BunnyCDN High-Speed - Direct)' : 'Server 1 (Direct CDN Stream)',
+        // Concurrently probe file sizes for both quality streams
+        const [fhdProbe, saverProbe] = await Promise.all([
+          fhdStream ? StreamProxyService.probeFileSize(fhdStream) : null,
+          saverStream ? StreamProxyService.probeFileSize(saverStream) : null
+        ]);
+
+        const qualities: Array<{
+          id: 'fhd' | 'saver';
+          label: string;
+          name: string;
+          quality: string;
+          fileSize?: number;
+          fileSizeFormatted: string;
+          directUrl: string;
+          streamUrl: string;
+        }> = [];
+
+        const servers: any[] = [];
+
+        if (fhdStream) {
+          const fhdProxy = `${baseUrl}/api/v1/stream/proxy?url=${encodeURIComponent(fhdStream)}${title ? `&title=${encodeURIComponent(title)}` : ''}`;
+          const fhdSize = fhdProbe?.formatted || '1.6 GB';
+          qualities.push({
+            id: 'fhd',
+            label: '1080p Full HD',
+            name: '1080p Full HD (Master)',
             quality: '1080p Full HD',
-            streamUrl: resolvedDirect,
+            fileSize: fhdProbe?.sizeBytes,
+            fileSizeFormatted: fhdSize,
+            directUrl: fhdStream,
+            streamUrl: fhdProxy
+          });
+          servers.push({
+            id: 'server-fhd-direct',
+            name: '1080p Full HD (Direct CDN)',
+            quality: `1080p Full HD (${fhdSize})`,
+            tier: 'fhd',
+            fileSize: fhdProbe?.sizeBytes,
+            fileSizeFormatted: fhdSize,
+            streamUrl: fhdStream,
             isProxy: false
-          },
-          {
-            id: 'server-proxy',
-            name: 'Server 2 (Munowatch High-Speed Proxy - CORS Safe)',
-            quality: '1080p FHD',
-            streamUrl: proxyUrl,
+          });
+          servers.push({
+            id: 'server-fhd-proxy',
+            name: '1080p Full HD (CORS Safe)',
+            quality: `1080p Full HD (${fhdSize})`,
+            tier: 'fhd',
+            fileSize: fhdProbe?.sizeBytes,
+            fileSizeFormatted: fhdSize,
+            streamUrl: fhdProxy,
             isProxy: true
-          }
-        ];
-
-        // Heterogeneous CDN failover: provide independent BunnyCDN edge stream when available
-        if (title && !resolvedDirect.includes('b-cdn.net')) {
-          try {
-            const bcdnDirect = await StreamProxyService.resolveBunnyCdnStream(title, vj);
-            if (bcdnDirect && bcdnDirect !== resolvedDirect && !StreamProxyService.isTrailerOrPromoUrl(bcdnDirect, title)) {
-              const bcdnProxy = `${baseUrl}/api/v1/stream/proxy?url=${encodeURIComponent(bcdnDirect)}${title ? `&title=${encodeURIComponent(title)}` : ''}`;
-              servers.push(
-                {
-                  id: 'server-bunny-direct',
-                  name: 'Server 3 (BunnyCDN Edge - Direct)',
-                  quality: '1080p FHD',
-                  streamUrl: bcdnDirect,
-                  isProxy: false
-                },
-                {
-                  id: 'server-bunny-proxy',
-                  name: 'Server 4 (BunnyCDN Edge - CORS Safe)',
-                  quality: '1080p FHD',
-                  streamUrl: bcdnProxy,
-                  isProxy: true
-                }
-              );
-            }
-          } catch {}
+          });
         }
 
-        const probe = await StreamProxyService.probeFileSize(resolvedDirect);
+        if (saverStream) {
+          const saverProxy = `${baseUrl}/api/v1/stream/proxy?url=${encodeURIComponent(saverStream)}${title ? `&title=${encodeURIComponent(title)}` : ''}`;
+          const saverSize = saverProbe?.formatted || (id.includes('_s') || id.includes('series') ? '350 MB' : '286 MB');
+          qualities.push({
+            id: 'saver',
+            label: 'Data Saver',
+            name: 'Data Saver (Mobile Compressed)',
+            quality: '720p / Data Saver',
+            fileSize: saverProbe?.sizeBytes,
+            fileSizeFormatted: saverSize,
+            directUrl: saverStream,
+            streamUrl: saverProxy
+          });
+          servers.push({
+            id: 'server-saver-direct',
+            name: 'Data Saver (Direct CDN)',
+            quality: `Data Saver (${saverSize})`,
+            tier: 'saver',
+            fileSize: saverProbe?.sizeBytes,
+            fileSizeFormatted: saverSize,
+            streamUrl: saverStream,
+            isProxy: false
+          });
+          servers.push({
+            id: 'server-saver-proxy',
+            name: 'Data Saver (CORS Safe)',
+            quality: `Data Saver (${saverSize})`,
+            tier: 'saver',
+            fileSize: saverProbe?.sizeBytes,
+            fileSizeFormatted: saverSize,
+            streamUrl: saverProxy,
+            isProxy: true
+          });
+        }
+
+        // Default: prefer 1080p Full HD if available, else Data Saver
+        const primaryQuality = qualities.find(q => q.id === 'fhd') || qualities[0];
 
         res.json({
           success: true,
-          directUrl: resolvedDirect,
-          streamUrl: proxyUrl,
-          servers,
-          fileSize: probe?.sizeBytes,
-          fileSizeFormatted: probe?.formatted || (id.includes('_s') || id.includes('series') ? '350 MB' : '850 MB')
+          directUrl: primaryQuality.directUrl,
+          streamUrl: primaryQuality.streamUrl,
+          fileSize: primaryQuality.fileSize,
+          fileSizeFormatted: primaryQuality.fileSizeFormatted,
+          qualities,
+          servers
         });
       } else {
         const alternative = title ? await StreamProxyService.findAlternativeMovie(title) : null;
@@ -103,6 +162,7 @@ export class StreamController {
     const filename = (req.query.filename as string) || '';
     const season = req.query.season as string;
     const episode = req.query.episode as string;
+    const quality = (req.query.quality as string) || '';
 
     try {
       // 1. Recursively unwrap nested proxy URLs to prevent self-calling loops & 502 Bad Gateway
@@ -131,15 +191,26 @@ export class StreamController {
         }
       }
 
-      // 3. If stream is not direct or empty, resolve fresh genuine direct CDN stream
+      // 3. If stream is not direct or empty, resolve fresh genuine direct CDN stream with quality preference
       if (!targetUrl || (!targetUrl.includes('.mp4') && !targetUrl.includes('secure.php') && !targetUrl.includes('b-cdn.net'))) {
         if (id || title) {
-          let resolved = await StreamProxyService.resolveMediaStream(id, title, vj);
-          if (!resolved && title) {
-            resolved = await StreamProxyService.resolveBunnyCdnStream(title, vj);
+          const { fhdStream, saverStream } = await StreamProxyService.resolveAllQualityStreams(id, title, vj);
+          if (quality === 'saver' && saverStream) {
+            targetUrl = saverStream;
+          } else if (quality === 'fhd' && fhdStream) {
+            targetUrl = fhdStream;
+          } else {
+            targetUrl = fhdStream || saverStream || '';
           }
-          if (resolved && !StreamProxyService.isTrailerOrPromoUrl(resolved, title)) {
-            targetUrl = resolved;
+
+          if (!targetUrl) {
+            let resolved = await StreamProxyService.resolveMediaStream(id, title, vj);
+            if (!resolved && title) {
+              resolved = await StreamProxyService.resolveBunnyCdnStream(title, vj);
+            }
+            if (resolved && !StreamProxyService.isTrailerOrPromoUrl(resolved, title)) {
+              targetUrl = resolved;
+            }
           }
         }
       }

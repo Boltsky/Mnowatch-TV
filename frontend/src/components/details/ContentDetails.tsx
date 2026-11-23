@@ -21,7 +21,7 @@ import {
   X,
   Radio
 } from 'lucide-react';
-import { MediaItem, Episode, PlaybackServer } from '../../types';
+import { MediaItem, Episode, PlaybackServer, StreamQualityOption } from '../../types';
 import { api, isTrailerOrIntroUrl } from '../../services/api';
 import { isVjMatch } from '../../utils/vjUtils';
 import { offlineStorage, ActiveDownload } from '../../services/offlineStorage.service';
@@ -67,6 +67,8 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
   const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
   const [activeDownloads, setActiveDownloads] = useState<ActiveDownload[]>([]);
   const [estimatedFileSize, setEstimatedFileSize] = useState<string>('');
+  const [qualities, setQualities] = useState<StreamQualityOption[]>([]);
+  const [selectedQuality, setSelectedQuality] = useState<StreamQualityOption | null>(null);
 
   const refreshDownloadedStatus = useCallback(async () => {
     try {
@@ -88,17 +90,54 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
     return () => unsub();
   }, [refreshDownloadedStatus]);
 
-  // Resolve file size on mount or when movie changes
+  // Resolve video qualities and file size on mount or when movie changes
   useEffect(() => {
     let isMounted = true;
     api.resolveStream(movie.id, movie.title, movie.vj).then(res => {
-      if (isMounted && res.fileSizeFormatted) {
+      if (!isMounted) return;
+
+      if (res.qualities && res.qualities.length > 0) {
+        setQualities(res.qualities);
+        // Prefer 1080p Full HD by default, fallback to Data Saver
+        const fhd = res.qualities.find(q => q.id === 'fhd');
+        const defaultQ = fhd || res.qualities[0];
+        setSelectedQuality(defaultQ);
+        if (defaultQ.fileSizeFormatted) {
+          setEstimatedFileSize(defaultQ.fileSizeFormatted);
+        }
+      } else if (res.fileSizeFormatted) {
         setEstimatedFileSize(res.fileSizeFormatted);
+      }
+
+      if (res.servers && res.servers.length > 0) {
+        setMovie(prev => ({
+          ...prev,
+          servers: res.servers,
+          streamUrl: res.streamUrl || prev.streamUrl
+        }));
+        const matchingServer = res.servers.find(s => s.tier === 'fhd' && s.isProxy) ||
+                              res.servers.find(s => s.tier === 'fhd') ||
+                              res.servers.find(s => s.isProxy) ||
+                              res.servers[0];
+        setSelectedServer(matchingServer);
       }
     }).catch(() => {});
 
     return () => { isMounted = false; };
   }, [movie.id, movie.title, movie.vj]);
+
+  const handleSelectQuality = (q: StreamQualityOption) => {
+    setSelectedQuality(q);
+    if (q.fileSizeFormatted) {
+      setEstimatedFileSize(q.fileSizeFormatted);
+    }
+    if (movie.servers && movie.servers.length > 0) {
+      const match = movie.servers.find(s => s.tier === q.id && s.isProxy) ||
+                    movie.servers.find(s => s.tier === q.id) ||
+                    movie.servers[0];
+      if (match) setSelectedServer(match);
+    }
+  };
 
   const isMovieDownloaded = downloadedIds.has(movie.id);
   const getEpDownloadId = (ep: Episode) => `${movie.id}_s${selectedSeason || 1}_e${ep.episodeNumber}`;
@@ -112,9 +151,9 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
   };
 
   const handleDirectDeviceSave = (target: { item: MediaItem; episode?: Episode }) => {
-    const directCandidate = selectedServer && !selectedServer.isProxy && !selectedServer.streamUrl.includes('/stream/proxy') && !selectedServer.streamUrl.includes('preview.php')
+    const directCandidate = selectedQuality?.directUrl || (selectedServer && !selectedServer.isProxy && !selectedServer.streamUrl.includes('/stream/proxy') && !selectedServer.streamUrl.includes('preview.php')
       ? selectedServer.streamUrl
-      : undefined;
+      : undefined);
 
     const cleanTitle = (target.item.title || 'Movie').replace(/[<>:"/\\|?*]+/g, '').trim();
     const cleanVj = (target.item.vj || '').replace(/[<>:"/\\|?*]+/g, '').trim();
@@ -135,7 +174,8 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
       season: target.episode?.seasonNumber,
       episode: target.episode?.episodeNumber,
       filename: boltFilename,
-      url: directCandidate
+      url: directCandidate,
+      quality: selectedQuality?.id
     });
 
     const targetKey = target.episode ? getEpDownloadId(target.episode) : target.item.id;
@@ -409,8 +449,45 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
               </div>
             </div>
 
-            {/* Streaming Server Selector Pills */}
-            {movie.servers && movie.servers.length > 0 && (
+            {/* Quality Tier Selector (1080p Full HD vs Data Saver) */}
+            {qualities && qualities.length > 1 ? (
+              <div className="pt-2 space-y-2">
+                <span className="text-xs uppercase tracking-wider font-extrabold text-[#94A3B8] flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-[#10B981]" />
+                  Choose Video Quality:
+                </span>
+                <div className="flex flex-wrap gap-2.5">
+                  {qualities.map((q) => {
+                    const isSelected = selectedQuality?.id === q.id;
+                    return (
+                      <button
+                        key={q.id}
+                        onClick={() => handleSelectQuality(q)}
+                        className={`px-4 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 border transition-all ${
+                          isSelected
+                            ? 'bg-[#10B981] text-black border-[#10B981] shadow-lg shadow-[#10B981]/25 scale-105'
+                            : 'bg-[#0A192F] text-[#F8FAFC] border-[#1b3457] hover:border-[#10B981]'
+                        }`}
+                      >
+                        {isSelected ? (
+                          <Check className="w-3.5 h-3.5 text-black stroke-[3]" />
+                        ) : q.id === 'fhd' ? (
+                          <Sparkles className="w-3.5 h-3.5 text-[#10B981]" />
+                        ) : (
+                          <Radio className="w-3.5 h-3.5 text-[#94A3B8]" />
+                        )}
+                        <span>{q.label}</span>
+                        <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
+                          isSelected ? 'bg-black/20 text-black font-extrabold' : 'bg-white/10 text-[#10B981] font-semibold'
+                        }`}>
+                          {q.fileSizeFormatted}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : movie.servers && movie.servers.length > 1 ? (
               <div className="pt-2 space-y-2">
                 <span className="text-xs uppercase font-bold text-[#94A3B8] flex items-center gap-1.5">
                   <Server className="w-3.5 h-3.5 text-[#10B981]" />
@@ -434,7 +511,7 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
                   ))}
                 </div>
               </div>
-            )}
+            ) : null}
 
             {/* Unavailable Stream Notice Banner */}
             {(!movie.streamUrl || isTrailerOrIntroUrl(movie.streamUrl, movie.title) || movie.isStreamAvailable === false) && !movie.id.startsWith('tk_') && (
