@@ -98,23 +98,25 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
   const [alternative, setAlternative] = useState<{ id: string; title: string } | null>(null);
   const [isResolving, setIsResolving] = useState<boolean>(false);
 
-  // Available servers (strictly filtered to eliminate trailers and promos)
-  const rawServers: PlaybackServer[] = item.servers && item.servers.length > 0
+  // Available servers (strictly filtered to eliminate trailers, promos, and preview pages)
+  const rawServers: PlaybackServer[] = (item.servers && item.servers.length > 0
     ? item.servers
     : (item.streamUrl && !isTrailerOrIntroUrl(item.streamUrl, item.title) ? [
         { id: 's1', name: 'Server 1 (BunnyCDN High-Speed)', quality: '1080p FHD', streamUrl: item.streamUrl, isProxy: false },
         { id: 's2', name: 'Server 2 (Munowatch Web Streamer - CORS Safe)', quality: '1080p FHD', streamUrl: api.getProxyStreamUrl(item.streamUrl), isProxy: true }
-      ] : []);
+      ] : []))
+    .filter(s => s.streamUrl && !s.streamUrl.includes('preview.php') && !isTrailerOrIntroUrl(s.streamUrl, item.title));
 
-  const availableServers = rawServers.filter(s => s.streamUrl && !isTrailerOrIntroUrl(s.streamUrl, item.title));
+  const availableServers = rawServers;
 
   const [currentServer, setCurrentServer] = useState<PlaybackServer>(
-    initialServer && !isTrailerOrIntroUrl(initialServer.streamUrl, item.title)
+    initialServer && !isTrailerOrIntroUrl(initialServer.streamUrl, item.title) && !initialServer.streamUrl.includes('preview.php')
       ? initialServer
       : (availableServers.find(s => s.isProxy) || availableServers[0] || {
-          id: 's2',
-          name: 'Server 2 (Munowatch Web Streamer - CORS Safe)',
-          quality: '1080p FHD',
+          id: 'server-fhd-proxy',
+          name: '1080p Full HD (CORS Safe)',
+          quality: '1080p Full HD',
+          tier: 'fhd',
           streamUrl: '',
           isProxy: true
         })
@@ -164,12 +166,25 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
       if (res.alternative) {
         setAlternative(res.alternative);
       }
-      if (res.streamUrl && !isTrailerOrIntroUrl(res.streamUrl, targetTitle) && !isTrailerOrIntroUrl(res.directUrl, targetTitle)) {
+      if (res.servers && res.servers.length > 0) {
+        const cleanServers = res.servers.filter(s => s.streamUrl && !s.streamUrl.includes('preview.php'));
+        const matchedServer = cleanServers.find(s => s.tier === currentServer.tier && s.isProxy) ||
+                             cleanServers.find(s => s.isProxy) ||
+                             cleanServers[0];
+        if (matchedServer) {
+          setCurrentServer(matchedServer);
+          setResolvedStreamUrl(matchedServer.streamUrl);
+          setIsResolving(false);
+          return;
+        }
+      }
+      if (res.streamUrl && !isTrailerOrIntroUrl(res.streamUrl, targetTitle) && !isTrailerOrIntroUrl(res.directUrl, targetTitle) && !res.streamUrl.includes('preview.php')) {
         const finalUrl = currentServer.isProxy ? res.streamUrl : (res.directUrl || res.streamUrl);
         setResolvedStreamUrl(finalUrl);
       } else if (
         item.streamUrl &&
         !isTrailerOrIntroUrl(item.streamUrl, item.title) &&
+        !item.streamUrl.includes('preview.php') &&
         (item.streamUrl.includes('movviez.com') || (item.streamUrl.includes('b-cdn.net') && !item.streamUrl.includes('trailer256')))
       ) {
         const finalUrl = currentServer.isProxy ? api.getProxyStreamUrl(item.streamUrl) : item.streamUrl;
@@ -181,7 +196,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
         );
       }
     } catch (err: any) {
-      if (item.streamUrl && !isTrailerOrIntroUrl(item.streamUrl, item.title)) {
+      if (item.streamUrl && !isTrailerOrIntroUrl(item.streamUrl, item.title) && !item.streamUrl.includes('preview.php')) {
         const finalUrl = currentServer.isProxy ? api.getProxyStreamUrl(item.streamUrl) : item.streamUrl;
         setResolvedStreamUrl(finalUrl);
       } else {
@@ -373,8 +388,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
           return;
         }
       }
+      // If current proxy stream stalled, attempt automatic failover to alternative quality server
+      const altServer = availableServers.find(s => s.id !== currentServer.id && s.isProxy && s.streamUrl && !s.streamUrl.includes('preview.php'));
+      if (altServer && altServer.streamUrl !== activeStreamUrl) {
+        setCurrentServer(altServer);
+        setResolvedStreamUrl(altServer.streamUrl);
+        return;
+      }
       setHasError(true);
-      setErrorMessage('Media connection stalled. Switching to secure CORS failover...');
+      setErrorMessage('Media connection temporarily stalled. Please retry or choose another server.');
     };
 
     video.addEventListener('timeupdate', onTimeUpdate);
@@ -495,9 +517,21 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
   };
 
   const handleDownloadFromPlayer = () => {
-    const directCandidate = resolvedStreamUrl && !resolvedStreamUrl.includes('/stream/proxy') && !resolvedStreamUrl.includes('preview.php') && !resolvedStreamUrl.startsWith('blob:')
+    const rawDirect = resolvedStreamUrl && !resolvedStreamUrl.includes('/stream/proxy') && !resolvedStreamUrl.includes('preview.php') && !resolvedStreamUrl.startsWith('blob:')
       ? resolvedStreamUrl
       : undefined;
+
+    const cleanTitle = (currentEpisode?.title || item.title || 'Movie').replace(/[<>:"/\\|?*]+/g, '').trim();
+    const cleanVj = (item.vj || '').replace(/[<>:"/\\|?*]+/g, '').trim();
+    const vjPart = cleanVj ? ` (${cleanVj})` : '';
+    let boltFilename = '';
+    if (currentEpisode) {
+      const sNum = String(currentEpisode.seasonNumber || 1).padStart(2, '0');
+      const eNum = String(currentEpisode.episodeNumber).padStart(2, '0');
+      boltFilename = `${cleanTitle} - S${sNum}E${eNum}${vjPart} - Bolt.mp4`;
+    } else {
+      boltFilename = `${cleanTitle}${vjPart} - Bolt.mp4`;
+    }
 
     const downloadUrl = api.getDownloadUrl({
       id: currentEpisode?.id || item.id,
@@ -505,14 +539,18 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
       vj: item.vj,
       season: currentEpisode?.seasonNumber,
       episode: currentEpisode?.episodeNumber,
-      url: directCandidate
+      filename: boltFilename,
+      url: rawDirect,
+      quality: currentServer.tier === 'saver' ? 'saver' : 'fhd'
     });
     const a = document.createElement('a');
     a.href = downloadUrl;
-    a.setAttribute('download', '');
+    a.setAttribute('download', boltFilename);
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
+    setTimeout(() => {
+      try { document.body.removeChild(a); } catch {}
+    }, 2000);
   };
 
   // Double tap gestures (±10s Seek, Double-tap center for Play/Pause)

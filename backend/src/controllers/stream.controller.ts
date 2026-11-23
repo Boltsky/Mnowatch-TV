@@ -165,21 +165,28 @@ export class StreamController {
     const quality = (req.query.quality as string) || '';
 
     try {
-      // 1. Recursively unwrap nested proxy URLs to prevent self-calling loops & 502 Bad Gateway
-      while (targetUrl.includes('/stream/proxy?url=')) {
-        const idx = targetUrl.indexOf('/stream/proxy?url=');
-        const raw = targetUrl.substring(idx + 18);
-        try {
-          targetUrl = decodeURIComponent(raw);
-        } catch {
-          targetUrl = raw;
+      // 1. Recursively unwrap and decode proxy URLs to extract the raw underlying target
+      let prevUrl = '';
+      while (targetUrl !== prevUrl) {
+        prevUrl = targetUrl;
+        if (targetUrl.includes('/stream/proxy?url=')) {
+          const idx = targetUrl.indexOf('/stream/proxy?url=');
+          targetUrl = targetUrl.substring(idx + 18);
         }
+        try {
+          const decoded = decodeURIComponent(targetUrl);
+          if (decoded !== targetUrl) {
+            targetUrl = decoded;
+          }
+        } catch {}
       }
 
+      let resolvedId = id;
       // 2. Auto-resolve Twolekede preview HTML pages to genuine media stream URLs
       if (targetUrl.includes('preview.php') || targetUrl.includes('twolekede.com/preview')) {
-        const match = targetUrl.match(/id=(\d+)/);
+        const match = targetUrl.match(/(?:preview\.php\?id=|[?&]id=)(\d+)/);
         if (match) {
+          if (!resolvedId) resolvedId = `tk_${match[1]}`;
           const direct = await StreamProxyService.resolveTwolekedeStreamById(match[1], title);
           if (direct) {
             targetUrl = direct;
@@ -192,19 +199,19 @@ export class StreamController {
       }
 
       // 3. If stream is not direct or empty, resolve fresh genuine direct CDN stream with quality preference
-      if (!targetUrl || (!targetUrl.includes('.mp4') && !targetUrl.includes('secure.php') && !targetUrl.includes('b-cdn.net'))) {
-        if (id || title) {
-          const { fhdStream, saverStream } = await StreamProxyService.resolveAllQualityStreams(id, title, vj);
-          if (quality === 'saver' && saverStream) {
-            targetUrl = saverStream;
-          } else if (quality === 'fhd' && fhdStream) {
-            targetUrl = fhdStream;
+      if (!targetUrl || (!targetUrl.includes('.mp4') && !targetUrl.includes('.mkv') && !targetUrl.includes('secure.php') && !targetUrl.includes('b-cdn.net'))) {
+        if (resolvedId || title) {
+          const { fhdStream, saverStream } = await StreamProxyService.resolveAllQualityStreams(resolvedId, title, vj);
+          if (quality === 'saver') {
+            targetUrl = saverStream || fhdStream || '';
+          } else if (quality === 'fhd') {
+            targetUrl = fhdStream || saverStream || '';
           } else {
             targetUrl = fhdStream || saverStream || '';
           }
 
           if (!targetUrl) {
-            let resolved = await StreamProxyService.resolveMediaStream(id, title, vj);
+            let resolved = await StreamProxyService.resolveMediaStream(resolvedId, title, vj);
             if (!resolved && title) {
               resolved = await StreamProxyService.resolveBunnyCdnStream(title, vj);
             }

@@ -1517,9 +1517,6 @@ export class CatalogService {
               posterUrl = `https://twolekede.com/${posterUrl.replace(/^\/+/, '')}`;
             }
 
-            const streamUrl = `https://twolekede.com/preview.php?id=${cleanId}`;
-            const proxyUrl = `${baseUrl}/api/v1/stream/proxy?url=${encodeURIComponent(streamUrl)}`;
-
             let correctedYear = year;
             let correctedDesc = desc;
             if (cleanId === '117980' || (movieTitle.toLowerCase() === 'desperado' && vj.toLowerCase().includes('jingo'))) {
@@ -1539,12 +1536,9 @@ export class CatalogService {
               description: correctedDesc || `Luganda translation by ${vj} available on Munowatch TV.`,
               posterUrl: posterUrl,
               backdropUrl: posterUrl,
-              streamUrl: streamUrl,
+              streamUrl: '',
               isSeries: false,
-              servers: [
-                { id: 's2', name: 'Server 2 (Munowatch Web Streamer - CORS Safe)', quality: '1080p Full HD', streamUrl: proxyUrl, isProxy: true },
-                { id: 's1', name: 'Server 1 (High-Speed Direct)', quality: '1080p FHD', streamUrl: streamUrl, isProxy: false }
-              ]
+              servers: []
             };
 
             this.setInCache(cacheKey, item, 60 * 60 * 1000);

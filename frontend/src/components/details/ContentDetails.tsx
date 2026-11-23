@@ -151,9 +151,10 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
   };
 
   const handleDirectDeviceSave = (target: { item: MediaItem; episode?: Episode }) => {
-    const directCandidate = selectedQuality?.directUrl || (selectedServer && !selectedServer.isProxy && !selectedServer.streamUrl.includes('/stream/proxy') && !selectedServer.streamUrl.includes('preview.php')
-      ? selectedServer.streamUrl
-      : undefined);
+    const rawDirect = selectedQuality?.directUrl || (selectedServer && !selectedServer.isProxy ? selectedServer.streamUrl : undefined);
+    const directCandidate = rawDirect && !rawDirect.includes('/stream/proxy') && !rawDirect.includes('preview.php')
+      ? rawDirect
+      : undefined;
 
     const cleanTitle = (target.item.title || 'Movie').replace(/[<>:"/\\|?*]+/g, '').trim();
     const cleanVj = (target.item.vj || '').replace(/[<>:"/\\|?*]+/g, '').trim();
@@ -175,7 +176,7 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
       episode: target.episode?.episodeNumber,
       filename: boltFilename,
       url: directCandidate,
-      quality: selectedQuality?.id
+      quality: selectedQuality?.id || 'fhd'
     });
 
     const targetKey = target.episode ? getEpDownloadId(target.episode) : target.item.id;
@@ -183,26 +184,24 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
 
     showToast(`Downloading "${boltFilename}" to Local Storage...`);
 
-    // Use background hidden iframe to prevent displacing the current page
+    // 1. Direct browser download trigger without blank tab popups
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.setAttribute('download', boltFilename);
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      try { document.body.removeChild(a); } catch {}
+    }, 2000);
+
+    // 2. Fallback iframe for older mobile webviews
     const iframe = document.createElement('iframe');
     iframe.style.display = 'none';
     iframe.src = downloadUrl;
     document.body.appendChild(iframe);
     setTimeout(() => {
       try { document.body.removeChild(iframe); } catch {}
-    }, 120000);
-
-    // Fallback anchor with target="_blank"
-    const a = document.createElement('a');
-    a.href = downloadUrl;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    a.setAttribute('download', boltFilename);
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      try { document.body.removeChild(a); } catch {}
-    }, 1000);
+    }, 60000);
   };
 
   // 1. Fetch Genuine Individual Movie Details on Mount (matching Android getMovieDetails)
@@ -215,16 +214,16 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
       try {
         const fullDetails = await api.getMovieDetails(initialItem.id, initialItem.title);
         if (!isCancelled && fullDetails) {
-          const cleanServers = fullDetails.servers?.filter(s => s.streamUrl && !isTrailerOrIntroUrl(s.streamUrl, fullDetails.title || initialItem.title)) || [];
+          const cleanServers = fullDetails.servers?.filter(s => s.streamUrl && !isTrailerOrIntroUrl(s.streamUrl, fullDetails.title || initialItem.title) && !s.streamUrl.includes('preview.php')) || [];
           const isTrailer = isTrailerOrIntroUrl(fullDetails.streamUrl, fullDetails.title || initialItem.title);
-          const sanitizedStreamUrl = isTrailer ? '' : (fullDetails.streamUrl || '');
+          const sanitizedStreamUrl = isTrailer || (fullDetails.streamUrl && fullDetails.streamUrl.includes('preview.php')) ? '' : (fullDetails.streamUrl || '');
           const isAvailable = fullDetails.isStreamAvailable !== false && !isTrailer && (sanitizedStreamUrl.length > 0 || cleanServers.length > 0 || fullDetails.id.startsWith('tk_'));
 
           setMovie(prev => ({
             ...prev,
             ...fullDetails,
-            streamUrl: sanitizedStreamUrl,
-            servers: cleanServers,
+            streamUrl: sanitizedStreamUrl || prev.streamUrl,
+            servers: cleanServers.length > 0 ? cleanServers : prev.servers,
             isStreamAvailable: isAvailable,
             // Keep existing poster/backdrop if better
             posterUrl: fullDetails.posterUrl || prev.posterUrl,
@@ -557,7 +556,11 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
                 <button
                   onClick={() => {
                     const firstEp = seasons[0]?.episodes?.[0];
-                    onPlay(movie, firstEp, selectedServer);
+                    const targetServer = (selectedServer && !selectedServer.streamUrl.includes('preview.php') ? selectedServer : null) ||
+                      movie.servers?.find(s => s.tier === (selectedQuality?.id || 'fhd') && s.isProxy) ||
+                      movie.servers?.find(s => s.isProxy) ||
+                      movie.servers?.[0];
+                    onPlay(movie, firstEp, targetServer);
                   }}
                   className="flex items-center justify-center gap-3 px-8 py-3.5 sm:py-4 rounded-xl bg-[#10B981] hover:bg-[#34D399] text-black font-extrabold text-sm sm:text-base shadow-xl shadow-[#10B981]/30 transition-all hover:scale-105 active:scale-95"
                 >
@@ -570,7 +573,13 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
                 </button>
               ) : (
                 <button
-                  onClick={() => onPlay(movie, undefined, selectedServer)}
+                  onClick={() => {
+                    const targetServer = (selectedServer && !selectedServer.streamUrl.includes('preview.php') ? selectedServer : null) ||
+                      movie.servers?.find(s => s.tier === (selectedQuality?.id || 'fhd') && s.isProxy) ||
+                      movie.servers?.find(s => s.isProxy) ||
+                      movie.servers?.[0];
+                    onPlay(movie, undefined, targetServer);
+                  }}
                   className="flex items-center justify-center gap-3 px-8 py-3.5 sm:py-4 rounded-xl bg-[#10B981] hover:bg-[#34D399] text-black font-extrabold text-sm sm:text-base shadow-xl shadow-[#10B981]/30 transition-all hover:scale-105 active:scale-95"
                 >
                   <Play className="w-5 h-5 fill-black" />

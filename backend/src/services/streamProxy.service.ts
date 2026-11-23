@@ -307,20 +307,30 @@ export class StreamProxyService {
             res.setHeader('Content-Disposition', `attachment; filename="${attachmentFilename.replace(/"/g, '')}"`);
           }
 
-          let totalBytes = 0;
-          if (upstreamRes.headers['content-length']) {
-            totalBytes = parseInt(upstreamRes.headers['content-length'] as string, 10);
-          }
-          if (!totalBytes && upstreamRes.headers['content-range']) {
-            const m = upstreamRes.headers['content-range'].match(/\/(\d+)/);
-            if (m) totalBytes = parseInt(m[1], 10);
-          }
-
           if (upstreamRes.headers['content-range']) {
             res.setHeader('Content-Range', upstreamRes.headers['content-range']);
           }
-          if (totalBytes > 0) {
-            res.setHeader('Content-Length', String(totalBytes));
+
+          let responseContentLength: number | null = null;
+          if (upstreamRes.headers['content-length']) {
+            responseContentLength = parseInt(upstreamRes.headers['content-length'] as string, 10);
+          } else if (responseStatusCode === 206 && upstreamRes.headers['content-range']) {
+            // For 206 Partial Content, Content-Length must be the size of this specific chunk, NOT the total file size!
+            const rangeMatch = String(upstreamRes.headers['content-range']).match(/bytes\s+(\d+)-(\d+)\/(\d+|\*)/i);
+            if (rangeMatch) {
+              const start = parseInt(rangeMatch[1], 10);
+              const end = parseInt(rangeMatch[2], 10);
+              responseContentLength = (end - start) + 1;
+            }
+          } else if (responseStatusCode === 200 && upstreamRes.headers['content-range']) {
+            const totalMatch = String(upstreamRes.headers['content-range']).match(/\/(\d+)/);
+            if (totalMatch) {
+              responseContentLength = parseInt(totalMatch[1], 10);
+            }
+          }
+
+          if (responseContentLength !== null && !isNaN(responseContentLength) && responseContentLength >= 0) {
+            res.setHeader('Content-Length', String(responseContentLength));
           }
           if (upstreamRes.headers['content-type']) {
             res.setHeader('Content-Type', upstreamRes.headers['content-type']);
