@@ -17,8 +17,6 @@ import {
   AlertCircle, 
   Tv,
   Download,
-  HardDrive,
-  FileDown,
   CheckCircle2,
   X,
   Radio
@@ -65,7 +63,6 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
   const [selectedSeason, setSelectedSeason] = useState<number>(1);
   const [recommendations, setRecommendations] = useState<MediaItem[]>([]);
   const [loadingRecs, setLoadingRecs] = useState<boolean>(false);
-  const [downloadTarget, setDownloadTarget] = useState<{ item: MediaItem; episode?: Episode } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
   const [activeDownloads, setActiveDownloads] = useState<ActiveDownload[]>([]);
@@ -114,25 +111,7 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  const handleStartOfflineSave = async (target: { item: MediaItem; episode?: Episode }) => {
-    setDownloadTarget(null);
-    showToast(`Downloading "${target.item.title}${target.episode ? ` - Ep ${target.episode.episodeNumber}` : ''}" for offline watching...`);
-    
-    // Direct candidate only if genuine CDN stream, not proxy or HTML preview page
-    const directCandidate = selectedServer && !selectedServer.isProxy && !selectedServer.streamUrl.includes('/stream/proxy') && !selectedServer.streamUrl.includes('preview.php')
-      ? selectedServer.streamUrl
-      : undefined;
-
-    await offlineStorage.startOfflineDownload({
-      item: target.item,
-      episode: target.episode,
-      streamUrl: directCandidate
-    });
-    refreshDownloadedStatus();
-  };
-
   const handleDirectDeviceSave = (target: { item: MediaItem; episode?: Episode }) => {
-    setDownloadTarget(null);
     const directCandidate = selectedServer && !selectedServer.isProxy && !selectedServer.streamUrl.includes('/stream/proxy') && !selectedServer.streamUrl.includes('preview.php')
       ? selectedServer.streamUrl
       : undefined;
@@ -158,7 +137,11 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
       filename: boltFilename,
       url: directCandidate
     });
-    showToast(`Starting MP4 download for "${target.item.title}"...`);
+
+    const targetKey = target.episode ? getEpDownloadId(target.episode) : target.item.id;
+    setDownloadedIds(prev => new Set(prev).add(targetKey));
+
+    showToast(`Downloading "${boltFilename}" to Local Storage...`);
 
     // Use background hidden iframe to prevent displacing the current page
     const iframe = document.createElement('iframe');
@@ -565,13 +548,13 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
                 </div>
               ) : (
                 <button
-                  onClick={() => setDownloadTarget({ item: movie, episode: movie.isSeries ? seasons[0]?.episodes?.[0] : undefined })}
+                  onClick={() => handleDirectDeviceSave({ item: movie, episode: movie.isSeries ? seasons[0]?.episodes?.[0] : undefined })}
                   className={`flex items-center justify-center gap-2.5 px-6 py-3.5 sm:py-4 rounded-xl text-sm font-bold border transition-all hover:scale-105 active:scale-95 ${
                     isMovieDownloaded
                       ? 'bg-[#10B981]/20 text-[#10B981] border-[#10B981] shadow-lg shadow-[#10B981]/15'
                       : 'bg-[#0A192F] text-white border-[#132845] hover:border-[#10B981]'
                   }`}
-                  title={isMovieDownloaded ? 'Saved in offline storage. Click for options.' : 'Download movie for offline watching or store to device'}
+                  title="Download Video to Local Storage"
                 >
                   {isMovieDownloaded ? (
                     <>
@@ -582,7 +565,7 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
                   ) : (
                     <>
                       <Download className="w-4 h-4 text-[#10B981]" />
-                      <span>Download</span>
+                      <span>Download Video to Local Storage</span>
                       {estimatedFileSize && <span className="text-[11px] text-[#94A3B8] font-normal">({estimatedFileSize})</span>}
                     </>
                   )}
@@ -704,10 +687,10 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setDownloadTarget({ item: movie, episode: ep });
+                                handleDirectDeviceSave({ item: movie, episode: ep });
                               }}
                               className="p-1 rounded-md bg-white/5 hover:bg-[#10B981]/20 text-[#94A3B8] hover:text-[#10B981] transition-all"
-                              title={`Download Episode ${ep.episodeNumber}`}
+                              title={`Download Episode ${ep.episodeNumber} to Local Storage`}
                             >
                               <Download className="w-3.5 h-3.5" />
                             </button>
@@ -760,91 +743,6 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
         <div className="fixed top-16 right-4 z-50 flex items-center gap-2 px-4 py-3 bg-[#10B981] text-black font-bold rounded-xl shadow-2xl animate-in fade-in slide-in-from-top-4 duration-200">
           <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
           <span className="text-sm">{toastMessage}</span>
-        </div>
-      )}
-
-      {/* Download Options Modal Dialog */}
-      {downloadTarget && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setDownloadTarget(null)}
-        >
-          <div 
-            className="w-full max-w-md bg-[#0A192F] border border-[#1b3457] rounded-2xl p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-black text-white">Download Options</h3>
-                  {estimatedFileSize && (
-                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#10B981]/20 text-[#10B981] border border-[#10B981]/40">
-                      {estimatedFileSize}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-[#94A3B8] mt-0.5 line-clamp-1">
-                  {downloadTarget.item.title}
-                  {downloadTarget.episode && ` • S${downloadTarget.episode.seasonNumber || 1}:E${downloadTarget.episode.episodeNumber}`}
-                  {downloadTarget.item.vj && ` (${downloadTarget.item.vj})`}
-                </p>
-              </div>
-              <button 
-                onClick={() => setDownloadTarget(null)}
-                className="p-1 rounded-lg text-[#94A3B8] hover:text-white hover:bg-white/10"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {/* Option 1: In-App Offline Watching */}
-              <button
-                onClick={() => handleStartOfflineSave(downloadTarget)}
-                className="w-full flex items-start gap-3.5 p-4 rounded-xl bg-[#0d1f3b] border border-[#1b3457] hover:border-[#10B981] hover:bg-[#10B981]/10 text-left transition-all group"
-              >
-                <div className="p-2.5 rounded-lg bg-[#10B981]/15 text-[#10B981] flex-shrink-0 group-hover:scale-110 transition-transform">
-                  <HardDrive className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold text-white group-hover:text-[#10B981] flex items-center justify-between">
-                    <span>Download for Offline Watching</span>
-                    {estimatedFileSize && (
-                      <span className="text-[11px] font-mono font-semibold text-[#10B981]">
-                        ~{estimatedFileSize}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-[#94A3B8] mt-0.5">
-                    Saves to browser offline storage. Watch inside Munowatch anytime without internet or mobile data.
-                  </div>
-                </div>
-              </button>
-
-              {/* Option 2: Save MP4 to Local Device Disk */}
-              <button
-                onClick={() => handleDirectDeviceSave(downloadTarget)}
-                className="w-full flex items-start gap-3.5 p-4 rounded-xl bg-[#0d1f3b] border border-[#1b3457] hover:border-[#10B981] hover:bg-[#10B981]/10 text-left transition-all group"
-              >
-                <div className="p-2.5 rounded-lg bg-[#10B981]/15 text-[#10B981] flex-shrink-0 group-hover:scale-110 transition-transform">
-                  <FileDown className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold text-white group-hover:text-[#10B981] flex items-center justify-between">
-                    <span>Save MP4 to Local Storage</span>
-                    {estimatedFileSize && (
-                      <span className="text-[11px] font-mono font-semibold text-[#10B981]">
-                        ~{estimatedFileSize}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-[#94A3B8] mt-0.5">
-                    Directly downloads standalone .mp4 file to your Downloads folder (ending in <span className="text-white font-mono">- Bolt.mp4</span>) to play in VLC or transfer to USB.
-                  </div>
-                </div>
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </div>
