@@ -109,7 +109,12 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
       url: directCandidate
     });
     showToast(`Starting MP4 download for "${target.item.title}"...`);
-    window.location.href = downloadUrl;
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.setAttribute('download', '');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   // 1. Fetch Genuine Individual Movie Details on Mount (matching Android getMovieDetails)

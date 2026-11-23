@@ -273,6 +273,25 @@ export class StreamProxyService {
 
           const responseStatusCode = upstreamRes.statusCode || 200;
 
+          // If upstream CDN returns Cloudflare/server error (e.g. 502, 521, 522, 503)
+          if (responseStatusCode >= 500) {
+            upstreamRes.destroy();
+            if (!res.headersSent) {
+              if (attachmentFilename) {
+                res.status(503).send(StreamProxyService.renderErrorPage(
+                  'Media Server Temporarily Offline',
+                  `The media CDN node hosting this file is currently unreachable on Cloudflare (HTTP ${responseStatusCode}). Please choose another movie or try again shortly.`
+                ));
+              } else {
+                res.status(503).json({
+                  error: 'Upstream media CDN node is temporarily offline on Cloudflare',
+                  statusCode: responseStatusCode
+                });
+              }
+            }
+            return;
+          }
+
           // Forward essential media streaming headers
           res.status(responseStatusCode);
           res.setHeader('Access-Control-Allow-Origin', '*');
@@ -301,9 +320,21 @@ export class StreamProxyService {
         }
       );
 
+      // Prevent hanging sockets on slow/timing-out Cloudflare nodes (12s timeout)
+      upstreamReq.setTimeout(12000, () => {
+        upstreamReq.destroy(new Error('Upstream CDN connection timeout'));
+      });
+
       upstreamReq.on('error', (err) => {
         if (!res.headersSent) {
-          res.status(502).json({ error: 'Upstream media connection error', message: err.message });
+          if (attachmentFilename) {
+            res.status(503).send(StreamProxyService.renderErrorPage(
+              'Media Node Timeout',
+              `The media host did not respond in time (${err.message}). The upstream node may be undergoing maintenance.`
+            ));
+          } else {
+            res.status(502).json({ error: 'Upstream media connection error', message: err.message });
+          }
         }
       });
 
@@ -839,5 +870,33 @@ export class StreamProxyService {
       } catch {}
     }
     return null;
+  }
+
+  public static renderErrorPage(heading: string, explanation: string): string {
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${heading} - Munowatch</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { background: #010318; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 1.5rem; text-align: center; }
+    .card { background: #0A192F; border: 1px solid #132845; padding: 2.5rem 2rem; border-radius: 1.25rem; max-width: 480px; box-shadow: 0 20px 40px rgba(0,0,0,0.6); }
+    .badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #F87171; font-size: 0.75rem; font-weight: 800; text-transform: uppercase; margin-bottom: 1rem; }
+    h1 { color: #fff; font-size: 1.4rem; font-weight: 900; margin: 0 0 0.75rem; }
+    p { color: #94A3B8; font-size: 0.9rem; line-height: 1.6; margin: 0 0 1.5rem; }
+    .btn { display: inline-block; background: #10B981; color: #000; padding: 0.75rem 1.5rem; border-radius: 0.75rem; font-weight: 800; font-size: 0.85rem; text-decoration: none; transition: transform 0.15s ease; }
+    .btn:hover { transform: scale(1.03); background: #34D399; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">Notice</div>
+    <h1>${heading}</h1>
+    <p>${explanation}</p>
+    <a href="https://munowatch-bolt.onrender.com" class="btn">Return to Munowatch</a>
+  </div>
+</body>
+</html>`;
   }
 }

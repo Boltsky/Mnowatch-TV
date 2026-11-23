@@ -507,7 +507,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
       episode: currentEpisode?.episodeNumber,
       url: directCandidate
     });
-    window.location.href = downloadUrl;
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.setAttribute('download', '');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   // Double tap gestures (±10s Seek, Double-tap center for Play/Pause)
