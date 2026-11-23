@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { 
   Play, 
   ArrowLeft, 
@@ -19,7 +19,9 @@ import {
   Download,
   CheckCircle2,
   X,
-  Radio
+  Radio,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { MediaItem, Episode, PlaybackServer, StreamQualityOption } from '../../types';
 import { api, isTrailerOrIntroUrl } from '../../services/api';
@@ -69,6 +71,15 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
   const [estimatedFileSize, setEstimatedFileSize] = useState<string>('');
   const [qualities, setQualities] = useState<StreamQualityOption[]>([]);
   const [selectedQuality, setSelectedQuality] = useState<StreamQualityOption | null>(null);
+
+  const recScrollRef = useRef<HTMLDivElement>(null);
+
+  const scrollRecs = (direction: 'left' | 'right') => {
+    if (recScrollRef.current) {
+      const scrollAmount = direction === 'left' ? -480 : 480;
+      recScrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    }
+  };
 
   const refreshDownloadedStatus = useCallback(async () => {
     try {
@@ -327,9 +338,9 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#010318] text-white pb-24 md:pb-16 animate-fadeIn">
+    <div className="min-h-screen bg-[#010318] text-white pb-24 md:pb-16 animate-fadeIn relative overflow-x-hidden">
       {/* Sticky Cinematic Top Navigation Bar */}
-      <div className="sticky top-0 z-40 flex items-center justify-between px-4 sm:px-8 py-3.5 bg-[#010318]/85 backdrop-blur-md border-b border-[#132845]/70">
+      <div className="sticky top-0 z-40 flex items-center justify-between px-4 sm:px-8 py-3.5 bg-[#010318]/90 backdrop-blur-md border-b border-[#132845]/70">
         <button
           onClick={onBack}
           className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs sm:text-sm border border-white/10 transition-all hover:scale-105 active:scale-95"
@@ -348,22 +359,23 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
         </div>
       </div>
 
-      {/* Hero Backdrop with Atmospheric Gradient Blend */}
-      <div className="relative w-full h-[45vh] sm:h-[55vh] min-h-[320px] max-h-[500px] overflow-hidden">
+      {/* Atmospheric Ambient Hero Backdrop (Layered behind, not pushing content down) */}
+      <div className="absolute top-0 left-0 right-0 h-[680px] overflow-hidden pointer-events-none z-0">
         <img
           src={movie.backdropUrl || movie.posterUrl}
           alt={movie.title}
-          className="w-full h-full object-cover object-center filter brightness-[0.65] contrast-[1.1] scale-105"
+          className="w-full h-full object-cover object-top filter brightness-[0.32] contrast-[1.15] scale-105"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#010318] via-[#010318]/70 to-transparent" />
-        <div className="absolute inset-0 bg-radial-gradient from-transparent to-[#010318]/80 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#010318] via-[#010318]/75 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#010318]/95 via-[#010318]/65 to-transparent" />
+        <div className="absolute inset-0 bg-radial-gradient from-transparent via-[#010318]/40 to-[#010318]/90" />
       </div>
 
-      {/* Main Details Presentation matching Android TV DetailsScreen.kt with 2400px widescreen expansion */}
-      <div className="w-full max-w-[2400px] mx-auto px-4 sm:px-8 md:px-12 -mt-32 sm:-mt-44 relative z-10 space-y-10">
-        <div className="flex flex-col md:flex-row gap-6 sm:gap-10 items-start">
-          {/* Main Elevated Poster matching Android TV Poster Frame */}
-          <div className="w-48 sm:w-56 md:w-72 aspect-[2/3] rounded-2xl overflow-hidden shadow-2xl shadow-black/80 border-2 border-[#10B981]/50 flex-shrink-0 bg-[#0A192F] relative group mx-auto md:mx-0">
+      {/* Main Details Presentation: Balanced, Extended Top Webpage */}
+      <div className="w-full max-w-[2000px] mx-auto px-4 sm:px-8 md:px-12 pt-6 sm:pt-8 relative z-10 space-y-10">
+        <div className="flex flex-col md:flex-row gap-8 lg:gap-12 items-start">
+          {/* Extended High-Resolution Movie Poster */}
+          <div className="w-64 sm:w-72 md:w-80 lg:w-[360px] xl:w-[410px] aspect-[2/3] rounded-2xl overflow-hidden shadow-2xl shadow-black/90 border-2 border-[#10B981]/50 flex-shrink-0 bg-[#0A192F] relative group mx-auto md:mx-0 transition-all duration-300 hover:scale-[1.01] hover:border-[#10B981] hover:shadow-[#10B981]/25">
             <img src={movie.posterUrl} alt={movie.title} className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
               <span className="text-xs font-bold text-[#10B981]">Ugandan Translated</span>
@@ -794,7 +806,7 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
           </div>
         )}
 
-        {/* MORE LIKE THIS Section matching Android TV DetailsScreen.kt (Lines 523-566) */}
+        {/* MORE LIKE THIS Section matching Android TV DetailsScreen.kt */}
         {recommendations.length > 0 && (
           <div className="mt-14 pt-8 border-t border-[#132845] space-y-5 animate-fadeIn">
             <div className="flex items-center justify-between">
@@ -807,18 +819,65 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
                   • {recommendations.length} Related Titles
                 </span>
               </div>
+
+              {/* Header Navigation Scroll Buttons */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => scrollRecs('left')}
+                  className="p-2 rounded-xl bg-[#0A192F] hover:bg-[#10B981] hover:text-black text-white border border-[#132845] transition-all hover:scale-105 active:scale-95 shadow-md flex items-center justify-center"
+                  title="Scroll Left (or use mouse wheel)"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => scrollRecs('right')}
+                  className="p-2 rounded-xl bg-[#0A192F] hover:bg-[#10B981] hover:text-black text-white border border-[#132845] transition-all hover:scale-105 active:scale-95 shadow-md flex items-center justify-center"
+                  title="Scroll Right"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
-            {/* Horizontal Scrolling Row of Recommended Movies */}
-            <div className="flex items-center gap-3 sm:gap-4 overflow-x-auto no-scrollbar py-2 -mx-4 px-4 sm:mx-0 sm:px-0">
-              {recommendations.map((recMovie) => (
-                <TvMediaCard
-                  key={recMovie.id}
-                  item={recMovie}
-                  onClick={() => handleCardClick(recMovie)}
-                  cardWidth="w-32 sm:w-40 md:w-48"
-                />
-              ))}
+            {/* Horizontal Scrolling Row with Controls & Mouse Wheel Support */}
+            <div className="relative group/rail">
+              {/* Floating Left Chevron */}
+              <button
+                onClick={() => scrollRecs('left')}
+                className="hidden md:flex absolute -left-3 lg:-left-5 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full bg-black/85 hover:bg-[#10B981] hover:text-black text-white border border-[#10B981]/40 items-center justify-center opacity-0 group-hover/rail:opacity-100 transition-all shadow-2xl backdrop-blur-md hover:scale-110 active:scale-95"
+                title="Scroll Left"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+
+              <div
+                ref={recScrollRef}
+                onWheel={(e) => {
+                  if (e.deltaY !== 0 && recScrollRef.current) {
+                    recScrollRef.current.scrollLeft += e.deltaY;
+                  }
+                }}
+                className="flex items-center gap-3.5 sm:gap-4 overflow-x-auto vj-horizontal-scrollbar scroll-smooth py-3 px-1 -mx-4 sm:mx-0 select-none"
+                style={{ WebkitOverflowScrolling: 'touch' }}
+              >
+                {recommendations.map((recMovie) => (
+                  <TvMediaCard
+                    key={recMovie.id}
+                    item={recMovie}
+                    onClick={() => handleCardClick(recMovie)}
+                    cardWidth="w-36 sm:w-44 md:w-52"
+                  />
+                ))}
+              </div>
+
+              {/* Floating Right Chevron */}
+              <button
+                onClick={() => scrollRecs('right')}
+                className="hidden md:flex absolute -right-3 lg:-right-5 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full bg-black/85 hover:bg-[#10B981] hover:text-black text-white border border-[#10B981]/40 items-center justify-center opacity-0 group-hover/rail:opacity-100 transition-all shadow-2xl backdrop-blur-md hover:scale-110 active:scale-95"
+                title="Scroll Right"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
             </div>
           </div>
         )}
