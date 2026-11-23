@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from 'react';
 import { MediaItem, CatalogRail, Episode, PlaybackServer, VjItem } from './types';
 import { api, FALLBACK_VJS } from './services/api';
 import { TvTopBar } from './components/common/TvTopBar';
@@ -406,6 +406,42 @@ export const App: React.FC = () => {
     }
   };
 
+  // Slideshow carousel items for Home Hero Banner: latest releases & top trending movies
+  const featuredSlides = useMemo<MediaItem[]>(() => {
+    const list: MediaItem[] = [];
+    const seen = new Set<string>();
+
+    const add = (m?: MediaItem | null) => {
+      if (!m || !m.id || seen.has(m.id)) return;
+      seen.add(m.id);
+      list.push(m);
+    };
+
+    // 1. First add the featured premiere item (e.g. Deadpool & Wolverine)
+    if (featuredItem) add(featuredItem);
+
+    // 2. Add top releases from home rails (Trending, New Releases, etc.)
+    if (homeRails && homeRails.length > 0) {
+      for (const rail of homeRails) {
+        for (const item of (rail.items || []).slice(0, 4)) {
+          add(item);
+          if (list.length >= 8) break;
+        }
+        if (list.length >= 8) break;
+      }
+    }
+
+    // 3. Fallback/supplement from allMovies if needed
+    if (allMovies && allMovies.length > 0 && list.length < 8) {
+      for (const m of allMovies.slice(0, 10)) {
+        add(m);
+        if (list.length >= 8) break;
+      }
+    }
+
+    return list;
+  }, [featuredItem, homeRails, allMovies]);
+
   return (
     <div className="min-h-screen bg-[#010318] text-[#F8FAFC] pb-20 md:pb-8 flex flex-col">
       {/* 1. Fullscreen Video Player overlay */}
@@ -451,14 +487,15 @@ export const App: React.FC = () => {
             {visitedScreens.has('home') && (
               <div style={{ display: currentScreen === 'home' ? 'block' : 'none' }}>
                 <main className="p-4 sm:p-8 md:p-10 w-full max-w-[2400px] mx-auto space-y-6">
-                  {/* 1. Featured Hero Banner matching TvHeroBanner in HomeScreen.kt */}
-                  {featuredItem && (
+                  {/* 1. Featured Hero Banner Slideshow Carousel matching Android TV hero */}
+                  {featuredSlides.length > 0 && (
                     <TvHeroBanner
-                      item={featuredItem}
-                      isFavorite={watchlist.some(w => w.id === featuredItem.id)}
-                      onPlayClick={() => handlePlay(featuredItem)}
-                      onFavoriteClick={() => toggleFavorite(featuredItem)}
-                      onDetailsClick={() => handleItemClick(featuredItem)}
+                      items={featuredSlides}
+                      item={featuredSlides[0]}
+                      isFavorite={(target) => watchlist.some(w => w.id === target.id)}
+                      onPlayClick={(target) => handlePlay(target)}
+                      onFavoriteClick={(target) => toggleFavorite(target)}
+                      onDetailsClick={(target) => handleItemClick(target)}
                     />
                   )}
 
