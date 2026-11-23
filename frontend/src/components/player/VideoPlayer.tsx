@@ -99,28 +99,31 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
   const [isResolving, setIsResolving] = useState<boolean>(false);
 
   // Available servers (strictly filtered to eliminate trailers, promos, and preview pages)
-  const rawServers: PlaybackServer[] = (item.servers && item.servers.length > 0
-    ? item.servers
-    : (item.streamUrl && !isTrailerOrIntroUrl(item.streamUrl, item.title) ? [
-        { id: 's1', name: 'Server 1 (BunnyCDN High-Speed)', quality: '1080p FHD', streamUrl: item.streamUrl, isProxy: false },
-        { id: 's2', name: 'Server 2 (Munowatch Web Streamer - CORS Safe)', quality: '1080p FHD', streamUrl: api.getProxyStreamUrl(item.streamUrl), isProxy: true }
-      ] : []))
-    .filter(s => s.streamUrl && !s.streamUrl.includes('preview.php') && !isTrailerOrIntroUrl(s.streamUrl, item.title));
+  const [availableServers, setAvailableServers] = useState<PlaybackServer[]>(() => {
+    return (item.servers && item.servers.length > 0
+      ? item.servers
+      : (item.streamUrl && !isTrailerOrIntroUrl(item.streamUrl, item.title) ? [
+          { id: 's1', name: 'Server 1 (BunnyCDN High-Speed)', quality: '1080p FHD', streamUrl: item.streamUrl, isProxy: false },
+          { id: 's2', name: 'Server 2 (Munowatch Web Streamer - CORS Safe)', quality: '1080p FHD', streamUrl: api.getProxyStreamUrl(item.streamUrl), isProxy: true }
+        ] : []))
+      .filter(s => s.streamUrl && !s.streamUrl.includes('preview.php') && !isTrailerOrIntroUrl(s.streamUrl, item.title));
+  });
 
-  const availableServers = rawServers;
+  const preferredTierRef = useRef<string>(initialServer?.tier || 'fhd');
 
-  const [currentServer, setCurrentServer] = useState<PlaybackServer>(
-    initialServer && !isTrailerOrIntroUrl(initialServer.streamUrl, item.title) && !initialServer.streamUrl.includes('preview.php')
-      ? initialServer
-      : (availableServers.find(s => s.isProxy) || availableServers[0] || {
-          id: 'server-fhd-proxy',
-          name: '1080p Full HD (CORS Safe)',
-          quality: '1080p Full HD',
-          tier: 'fhd',
-          streamUrl: '',
-          isProxy: true
-        })
-  );
+  const [currentServer, setCurrentServer] = useState<PlaybackServer>(() => {
+    if (initialServer && !isTrailerOrIntroUrl(initialServer.streamUrl, item.title) && !initialServer.streamUrl.includes('preview.php')) {
+      return initialServer;
+    }
+    return availableServers.find(s => s.isProxy) || availableServers[0] || {
+      id: 'server-fhd-proxy',
+      name: '1080p Full HD (CORS Safe)',
+      quality: '1080p Full HD',
+      tier: 'fhd',
+      streamUrl: '',
+      isProxy: true
+    };
+  });
 
   const [resolvedStreamUrl, setResolvedStreamUrl] = useState<string>('');
 
@@ -131,7 +134,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
     // 0. Offline Local Storage Playback (blob: URL)
     const blobUrl = currentEpisode?.streamUrl?.startsWith('blob:')
       ? currentEpisode.streamUrl
-      : (item.streamUrl?.startsWith('blob:') ? item.streamUrl : (currentServer.streamUrl?.startsWith('blob:') ? currentServer.streamUrl : null));
+      : (item.streamUrl?.startsWith('blob:') ? item.streamUrl : null);
 
     if (blobUrl) {
       setResolvedStreamUrl(blobUrl);
@@ -141,21 +144,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
 
     // 1. If series episode has explicit stream URL
     if (currentEpisode?.streamUrl && currentEpisode.streamUrl.length > 10 && !isTrailerOrIntroUrl(currentEpisode.streamUrl, currentEpisode.title || item.title)) {
-      if (currentEpisode.streamUrl.includes('preview.php') || currentEpisode.streamUrl.includes('id=')) {
-        try {
-          const res = await api.resolveStream(currentEpisode.id || item.id, currentEpisode.title || item.title, item.vj);
-          if (res.streamUrl && !isTrailerOrIntroUrl(res.streamUrl, item.title) && !isTrailerOrIntroUrl(res.directUrl, item.title)) {
-            const finalUrl = currentServer.isProxy ? res.streamUrl : (res.directUrl || res.streamUrl);
-            setResolvedStreamUrl(finalUrl);
-            setIsResolving(false);
-            return;
-          }
-        } catch {}
+      if (!currentEpisode.streamUrl.includes('preview.php') && !currentEpisode.streamUrl.includes('id=')) {
+        const finalUrl = api.getProxyStreamUrl(currentEpisode.streamUrl);
+        setResolvedStreamUrl(finalUrl);
+        setIsResolving(false);
+        return;
       }
-      const finalUrl = currentServer.isProxy ? api.getProxyStreamUrl(currentEpisode.streamUrl) : currentEpisode.streamUrl;
-      setResolvedStreamUrl(finalUrl);
-      setIsResolving(false);
-      return;
     }
 
     // 2. Always query verified stream resolver to validate title match and avoid wrong movie playback
@@ -168,18 +162,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
       }
       if (res.servers && res.servers.length > 0) {
         const cleanServers = res.servers.filter(s => s.streamUrl && !s.streamUrl.includes('preview.php'));
-        const matchedServer = cleanServers.find(s => s.tier === currentServer.tier && s.isProxy) ||
-                             cleanServers.find(s => s.isProxy) ||
-                             cleanServers[0];
-        if (matchedServer) {
-          setCurrentServer(matchedServer);
-          setResolvedStreamUrl(matchedServer.streamUrl);
-          setIsResolving(false);
-          return;
+        if (cleanServers.length > 0) {
+          setAvailableServers(cleanServers);
+          const matchedServer = cleanServers.find(s => s.tier === preferredTierRef.current && s.isProxy) ||
+                               cleanServers.find(s => s.isProxy) ||
+                               cleanServers[0];
+          if (matchedServer) {
+            setCurrentServer(matchedServer);
+            setResolvedStreamUrl(matchedServer.streamUrl);
+            return;
+          }
         }
       }
       if (res.streamUrl && !isTrailerOrIntroUrl(res.streamUrl, targetTitle) && !isTrailerOrIntroUrl(res.directUrl, targetTitle) && !res.streamUrl.includes('preview.php')) {
-        const finalUrl = currentServer.isProxy ? res.streamUrl : (res.directUrl || res.streamUrl);
+        const finalUrl = res.streamUrl;
         setResolvedStreamUrl(finalUrl);
       } else if (
         item.streamUrl &&
@@ -187,7 +183,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
         !item.streamUrl.includes('preview.php') &&
         (item.streamUrl.includes('movviez.com') || (item.streamUrl.includes('b-cdn.net') && !item.streamUrl.includes('trailer256')))
       ) {
-        const finalUrl = currentServer.isProxy ? api.getProxyStreamUrl(item.streamUrl) : item.streamUrl;
+        const finalUrl = api.getProxyStreamUrl(item.streamUrl);
         setResolvedStreamUrl(finalUrl);
       } else {
         setHasError(true);
@@ -197,7 +193,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
       }
     } catch (err: any) {
       if (item.streamUrl && !isTrailerOrIntroUrl(item.streamUrl, item.title) && !item.streamUrl.includes('preview.php')) {
-        const finalUrl = currentServer.isProxy ? api.getProxyStreamUrl(item.streamUrl) : item.streamUrl;
+        const finalUrl = api.getProxyStreamUrl(item.streamUrl);
         setResolvedStreamUrl(finalUrl);
       } else {
         setHasError(true);
@@ -208,7 +204,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
     } finally {
       setIsResolving(false);
     }
-  }, [item.id, item.title, item.streamUrl, currentEpisode, currentServer]);
+  }, [item.id, item.title, item.streamUrl, currentEpisode?.id, currentEpisode?.streamUrl, item.vj]);
 
   // Handle advancing to next episode
   const handlePlayNextEpisode = useCallback(() => {
@@ -617,7 +613,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
       />
 
       {/* Resolving Stream Overlay */}
-      {isResolving && (
+      {!activeStreamUrl && isResolving && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/85 z-40 p-6 text-center space-y-3">
           <div className="w-14 h-14 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin" />
           <p className="text-white font-bold text-base">Connecting to Ugandan media stream node...</p>
@@ -762,7 +758,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
                   <button
                     key={srv.id}
                     onClick={() => {
+                      preferredTierRef.current = srv.tier || 'fhd';
                       setCurrentServer(srv);
+                      setResolvedStreamUrl(srv.streamUrl);
                       setShowServerMenu(false);
                     }}
                     className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium text-left transition-all ${
