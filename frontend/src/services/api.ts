@@ -426,5 +426,25 @@ export const api = {
     if (!streamUrl) return '';
     if (streamUrl.includes('/stream/proxy?url=')) return streamUrl;
     return `${API_BASE}/stream/proxy?url=${encodeURIComponent(streamUrl)}`;
+  },
+
+  getDownloadUrl(target: {
+    url?: string;
+    id?: string;
+    title?: string;
+    vj?: string;
+    season?: number;
+    episode?: number;
+    filename?: string;
+  }): string {
+    const params = new URLSearchParams();
+    if (target.url) params.set('url', target.url);
+    if (target.id) params.set('id', target.id);
+    if (target.title) params.set('title', target.title);
+    if (target.vj) params.set('vj', target.vj);
+    if (target.season) params.set('season', String(target.season));
+    if (target.episode) params.set('episode', String(target.episode));
+    if (target.filename) params.set('filename', target.filename);
+    return `${API_BASE}/stream/download?${params.toString()}`;
   }
 };

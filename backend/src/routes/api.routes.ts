@@ -20,6 +20,9 @@ router.get('/catalog/search', CatalogController.search);
 // Media Streaming Proxy with HTTP 206 Range support
 router.get('/stream/proxy', StreamController.proxy);
 
+// Media Download endpoint with Content-Disposition attachment headers
+router.get('/stream/download', StreamController.download);
+
 // Real-time on-demand stream resolver
 router.get('/stream/resolve', StreamController.resolve);
 

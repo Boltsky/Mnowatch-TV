@@ -14,6 +14,8 @@ import { SearchScreen } from './components/search/SearchScreen';
 import { SettingsScreen } from './components/settings/SettingsScreen';
 import { ContentDetails } from './components/details/ContentDetails';
 import { VideoPlayer } from './components/player/VideoPlayer';
+import { DownloadsScreen } from './components/downloads/DownloadsScreen';
+import { offlineStorage, OfflineMediaItem } from './services/offlineStorage.service';
 
 export const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<string>('home');
@@ -38,7 +40,7 @@ export const App: React.FC = () => {
   // Set of visited screens for Keep-Alive caching (lazy-mount on first visit, preserve thereafter)
   const [visitedScreens, setVisitedScreens] = useState<Set<string>>(() => {
     const rawHash = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
-    const screen = ['movies', 'series', 'categories', 'search', 'settings'].find(s => rawHash.startsWith(s)) || 'home';
+    const screen = ['movies', 'series', 'categories', 'downloads', 'search', 'settings'].find(s => rawHash.startsWith(s)) || 'home';
     return new Set(['home', screen]);
   });
 
@@ -107,7 +109,7 @@ export const App: React.FC = () => {
       return { type: 'title' as const, id: decodeURIComponent(rawHash.replace('title/', '')) };
     }
     const cleanScreen = rawHash.split('?')[0].toLowerCase();
-    if (['home', 'movies', 'series', 'categories', 'search', 'settings'].includes(cleanScreen)) {
+    if (['home', 'movies', 'series', 'categories', 'downloads', 'search', 'settings'].includes(cleanScreen)) {
       return { type: 'screen' as const, screen: cleanScreen };
     }
     return { type: 'screen' as const, screen: 'home' };
@@ -327,6 +329,48 @@ export const App: React.FC = () => {
       localStorage.setItem('munowatch_history', JSON.stringify(updated));
     } catch {}
   };
+
+  const handlePlayOffline = useCallback((item: OfflineMediaItem) => {
+    const playbackUrl = offlineStorage.createPlaybackUrl(item.blob);
+    const mediaItem: MediaItem = {
+      id: item.id,
+      title: item.title,
+      type: item.type,
+      vj: item.vj || 'Munowatch Offline',
+      genre: item.genres?.join(' / ') || 'Offline Media',
+      year: item.year || '2024',
+      rating: '9.0',
+      duration: item.duration || 'Full Length',
+      description: `Offline playback of ${item.title} (${item.vj || 'Ugandan Translated'}) stored in local device storage.`,
+      posterUrl: item.poster || '',
+      backdropUrl: item.poster || '',
+      streamUrl: playbackUrl,
+      isStreamAvailable: true,
+      isSeries: item.type === 'series'
+    };
+
+    const episode: Episode | undefined = item.type === 'series' && item.episodeNumber ? {
+      id: item.id,
+      episodeNumber: item.episodeNumber,
+      seasonNumber: item.seasonNumber || 1,
+      title: item.episodeTitle || `Episode ${item.episodeNumber}`,
+      streamUrl: playbackUrl
+    } : undefined;
+
+    setSelectedItem(null);
+    setPlayerTarget({
+      item: mediaItem,
+      episode,
+      server: {
+        id: 'server-offline',
+        name: 'Offline Local Storage (No Internet Required)',
+        quality: 'Original Local Media',
+        streamUrl: playbackUrl,
+        isProxy: false
+      }
+    });
+    window.location.hash = `#/watch/${encodeURIComponent(item.id)}`;
+  }, []);
 
   const toggleFavorite = (item: MediaItem) => {
     const exists = watchlist.some(w => w.id === item.id);
@@ -564,6 +608,16 @@ export const App: React.FC = () => {
                   movies={[...allMovies, ...allSeries]}
                   vjs={vjList}
                   onItemClick={handleItemClick}
+                />
+              </div>
+            )}
+
+            {/* --- SCREEN: DOWNLOADS & OFFLINE HUB --- */}
+            {visitedScreens.has('downloads') && (
+              <div style={{ display: currentScreen === 'downloads' ? 'block' : 'none' }}>
+                <DownloadsScreen
+                  onPlayOffline={handlePlayOffline}
+                  onNavigate={navigateTo}
                 />
               </div>
             )}

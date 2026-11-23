@@ -90,4 +90,56 @@ export class StreamController {
       res.status(500).json({ error: 'Stream resolution failed', message: e.message });
     }
   }
+
+  public static async download(req: Request, res: Response): Promise<void> {
+    let targetUrl = (req.query.url as string) || '';
+    const id = (req.query.id as string) || '';
+    const title = (req.query.title as string) || '';
+    const vj = (req.query.vj as string) || '';
+    const filename = (req.query.filename as string) || '';
+    const season = req.query.season as string;
+    const episode = req.query.episode as string;
+
+    try {
+      if (!targetUrl && (id || title)) {
+        let resolved = await StreamProxyService.resolveMediaStream(id, title, vj);
+        if (!resolved && title) {
+          resolved = await StreamProxyService.resolveBunnyCdnStream(title, vj);
+        }
+        if (resolved && !StreamProxyService.isTrailerOrPromoUrl(resolved, title)) {
+          targetUrl = resolved;
+        }
+      }
+
+      if (!targetUrl) {
+        res.status(404).send('Movie download stream could not be resolved or is currently unavailable.');
+        return;
+      }
+
+      let downloadFilename = filename ? filename.replace(/[<>:"/\\|?*]+/g, '').trim() : '';
+      if (!downloadFilename) {
+        const cleanTitle = (title || 'Munowatch_Movie').replace(/[<>:"/\\|?*]+/g, '').trim();
+        const cleanVj = (vj || '').replace(/[<>:"/\\|?*]+/g, '').trim();
+        const vjPart = cleanVj ? ` (${cleanVj})` : '';
+
+        if (season && episode) {
+          const sNum = String(season).padStart(2, '0');
+          const eNum = String(episode).padStart(2, '0');
+          downloadFilename = `${cleanTitle} - S${sNum}E${eNum}${vjPart} - Munowatch.mp4`;
+        } else {
+          downloadFilename = `${cleanTitle}${vjPart} - Munowatch.mp4`;
+        }
+      }
+
+      if (!downloadFilename.toLowerCase().endsWith('.mp4') && !downloadFilename.toLowerCase().endsWith('.mkv')) {
+        downloadFilename += '.mp4';
+      }
+
+      StreamProxyService.pipeStream(targetUrl, req, res, 0, downloadFilename);
+    } catch (err: any) {
+      if (!res.headersSent) {
+        res.status(500).send(`Download failed: ${err.message}`);
+      }
+    }
+  }
 }

@@ -187,10 +187,17 @@ export class StreamProxyService {
       return;
     }
 
-    this.pipeStream(targetUrl, req, res, 0);
+    const downloadParam = req.query.download === 'true' || req.query.download === '1';
+    let attachmentFilename: string | undefined = undefined;
+    if (downloadParam || req.query.filename) {
+      const customName = req.query.filename ? String(req.query.filename) : (titleParam ? `${titleParam} - Munowatch.mp4` : 'video.mp4');
+      attachmentFilename = customName.replace(/[<>:"/\\|?*]+/g, '').trim();
+    }
+
+    this.pipeStream(targetUrl, req, res, 0, attachmentFilename);
   }
 
-  private static pipeStream(currentUrl: string, req: Request, res: Response, redirectCount: number = 0): void {
+  public static pipeStream(currentUrl: string, req: Request, res: Response, redirectCount: number = 0, attachmentFilename?: string): void {
     if (redirectCount > 5) {
       if (!res.headersSent) {
         res.status(508).json({ error: 'Too many redirects from media server' });
@@ -237,7 +244,7 @@ export class StreamProxyService {
           ) {
             const nextLocation = new URL(upstreamRes.headers.location, parsedUrl).href;
             upstreamRes.destroy();
-            this.pipeStream(nextLocation, req, res, redirectCount + 1);
+            this.pipeStream(nextLocation, req, res, redirectCount + 1, attachmentFilename);
             return;
           }
 
@@ -248,7 +255,12 @@ export class StreamProxyService {
           res.setHeader('Access-Control-Allow-Origin', '*');
           res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
           res.setHeader('Access-Control-Allow-Headers', 'Range, Accept, Origin, Content-Type');
+          res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Content-Disposition, Accept-Ranges');
           res.setHeader('Accept-Ranges', 'bytes');
+
+          if (attachmentFilename) {
+            res.setHeader('Content-Disposition', `attachment; filename="${attachmentFilename.replace(/"/g, '')}"`);
+          }
 
           if (upstreamRes.headers['content-range']) {
             res.setHeader('Content-Range', upstreamRes.headers['content-range']);

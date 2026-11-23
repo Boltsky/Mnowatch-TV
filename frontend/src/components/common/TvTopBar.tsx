@@ -12,6 +12,7 @@ export const TvTopBar: React.FC<TvTopBarProps> = ({ currentRoute, onNavigate }) 
     { route: 'movies', title: 'Movies' },
     { route: 'series', title: 'Series' },
     { route: 'categories', title: 'Categories' },
+    { route: 'downloads', title: 'Downloads' },
     { route: 'search', title: 'Search' },
     { route: 'settings', title: 'Settings' },
   ];

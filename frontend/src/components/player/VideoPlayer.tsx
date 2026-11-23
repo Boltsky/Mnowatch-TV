@@ -3,7 +3,7 @@ import Hls from 'hls.js';
 import { 
   Play, Pause, RotateCcw, RotateCw, Maximize, Minimize, 
   ArrowLeft, Volume2, VolumeX, Server, Check, AlertCircle, RefreshCw,
-  Cast, PictureInPicture2, SkipForward, ListVideo, X, Sparkles
+  Cast, PictureInPicture2, SkipForward, ListVideo, X, Sparkles, Download
 } from 'lucide-react';
 import { MediaItem, Episode, Season, PlaybackServer } from '../../types';
 import { api, isTrailerOrIntroUrl } from '../../services/api';
@@ -125,6 +125,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
   const triggerStreamResolution = useCallback(async () => {
     setHasError(false);
     setIsResolving(true);
+
+    // 0. Offline Local Storage Playback (blob: URL)
+    const blobUrl = currentEpisode?.streamUrl?.startsWith('blob:')
+      ? currentEpisode.streamUrl
+      : (item.streamUrl?.startsWith('blob:') ? item.streamUrl : (currentServer.streamUrl?.startsWith('blob:') ? currentServer.streamUrl : null));
+
+    if (blobUrl) {
+      setResolvedStreamUrl(blobUrl);
+      setIsResolving(false);
+      return;
+    }
 
     // 1. If series episode has explicit stream URL
     if (currentEpisode?.streamUrl && currentEpisode.streamUrl.length > 10 && !isTrailerOrIntroUrl(currentEpisode.streamUrl, currentEpisode.title || item.title)) {
@@ -483,6 +494,18 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
     } catch {}
   };
 
+  const handleDownloadFromPlayer = () => {
+    const downloadUrl = api.getDownloadUrl({
+      id: currentEpisode?.id || item.id,
+      title: currentEpisode?.title || item.title,
+      vj: item.vj,
+      season: currentEpisode?.seasonNumber,
+      episode: currentEpisode?.episodeNumber,
+      url: resolvedStreamUrl || currentServer.streamUrl
+    });
+    window.location.href = downloadUrl;
+  };
+
   // Double tap gestures (±10s Seek, Double-tap center for Play/Pause)
   const lastTapRef = useRef<number>(0);
   const handleTouchZone = (e: React.TouchEvent | React.MouseEvent) => {
@@ -811,6 +834,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
                 title="Cast to TV / Big Screen"
               >
                 <Cast className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+
+              {/* Direct Download Button */}
+              <button
+                onClick={handleDownloadFromPlayer}
+                className="hover:text-[#10B981] text-zinc-300 transition-colors p-1 rounded-lg hover:bg-white/10"
+                title="Download MP4 to Local Storage"
+              >
+                <Download className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
 
               <span className="hidden sm:inline-block px-2 py-0.5 rounded bg-white/10 text-[10px] font-bold text-emerald-400">
