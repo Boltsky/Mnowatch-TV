@@ -480,7 +480,7 @@ export const App: React.FC = () => {
   }, [featuredSlides, featuredItem]);
 
   return (
-    <div className="min-h-screen bg-[#010318] text-[#F8FAFC] pb-20 md:pb-8 flex flex-col">
+    <div className="min-h-screen bg-[#010318] text-[#F8FAFC] pb-28 sm:pb-24 md:pb-8 flex flex-col">
       {/* 1. Fullscreen Video Player overlay */}
       {playerTarget && (
         <VideoPlayer

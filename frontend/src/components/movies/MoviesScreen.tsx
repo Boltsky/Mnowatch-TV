@@ -152,14 +152,14 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
   }, [hasMore, loadingMore, loading, handleLoadMore]);
 
   return (
-    <div className="p-4 sm:p-8 md:p-10 w-full max-w-[2400px] mx-auto space-y-6 animate-fadeIn">
+    <div className="p-3 sm:p-6 md:p-10 w-full max-w-[2400px] mx-auto space-y-4 sm:space-y-6 animate-fadeIn">
       {/* Top Filter and Action Bar matching Android MoviesScreen */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#132845] pb-4">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#132845] pb-4">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           {/* Latest Sort Pill */}
           <button
             onClick={() => setSortMode('LATEST')}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-lg text-xs font-bold transition-all touch-manipulation ${
               sortMode === 'LATEST'
                 ? 'bg-[#10B981] text-black shadow-lg shadow-[#10B981]/30'
                 : 'bg-[#0A192F] text-[#94A3B8] hover:text-white border border-[#1E293B]'
@@ -172,7 +172,7 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
           {/* Random Reshuffle Pill */}
           <button
             onClick={() => setSortMode(sortMode === 'RANDOM' ? 'LATEST' : 'RANDOM')}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-lg text-xs font-bold transition-all touch-manipulation ${
               sortMode === 'RANDOM'
                 ? 'bg-[#10B981] text-black shadow-lg shadow-[#10B981]/30'
                 : 'bg-[#0A192F] text-[#94A3B8] hover:text-white border border-[#1E293B]'
@@ -185,7 +185,7 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
           {/* Old Movies Pill */}
           <button
             onClick={() => setSortMode(sortMode === 'OLD_MOVIES' ? 'LATEST' : 'OLD_MOVIES')}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-lg text-xs font-bold transition-all touch-manipulation ${
               sortMode === 'OLD_MOVIES'
                 ? 'bg-[#10B981] text-black shadow-lg shadow-[#10B981]/30'
                 : 'bg-[#0A192F] text-[#94A3B8] hover:text-white border border-[#1E293B]'
@@ -198,7 +198,7 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
           {/* Filter by Year Button matching Android TV dialog */}
           <button
             onClick={() => setIsYearDialogOpen(true)}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-lg text-xs font-bold transition-all touch-manipulation ${
               selectedYear
                 ? 'bg-[#34D399] text-black border border-[#10B981]'
                 : 'bg-[#0A192F] text-[#94A3B8] hover:text-white border border-[#1E293B]'
@@ -220,13 +220,13 @@ export const MoviesScreen: React.FC<MoviesScreenProps> = ({ movies: initialMovie
         </div>
 
         {/* Count badge */}
-        <span className="text-xs font-bold text-[#94A3B8]">
+        <span className="text-xs font-bold text-[#94A3B8] self-end sm:self-auto">
           <strong className="text-white">{displayedMovies.length}</strong> Movies Loaded
         </span>
       </div>
 
       {/* VJ Horizontal Quick-Filter Bar with full roster & PC scroll controls */}
-      <div className="relative flex items-center gap-1.5 w-full">
+      <div className="relative flex items-center gap-1.5 w-full -mx-3 px-3 sm:mx-0 sm:px-0">
         {/* PC Left Scroll Arrow Button */}
         <button
           type="button"

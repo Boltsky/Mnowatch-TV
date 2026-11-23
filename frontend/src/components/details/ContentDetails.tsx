@@ -375,7 +375,7 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
       <div className="w-full max-w-[2000px] mx-auto px-4 sm:px-8 md:px-12 pt-6 sm:pt-8 relative z-10 space-y-10">
         <div className="flex flex-col md:flex-row gap-8 lg:gap-12 items-start">
           {/* Extended High-Resolution Movie Poster */}
-          <div className="w-64 sm:w-72 md:w-80 lg:w-[360px] xl:w-[410px] aspect-[2/3] rounded-2xl overflow-hidden shadow-2xl shadow-black/90 border-2 border-[#10B981]/50 flex-shrink-0 bg-[#0A192F] relative group mx-auto md:mx-0 transition-all duration-300 hover:scale-[1.01] hover:border-[#10B981] hover:shadow-[#10B981]/25">
+          <div className="w-52 xs:w-60 sm:w-72 md:w-80 lg:w-[360px] xl:w-[410px] aspect-[2/3] rounded-2xl overflow-hidden shadow-2xl shadow-black/90 border-2 border-[#10B981]/50 flex-shrink-0 bg-[#0A192F] relative group mx-auto md:mx-0 transition-all duration-300 hover:scale-[1.01] hover:border-[#10B981] hover:shadow-[#10B981]/25">
             <img src={movie.posterUrl} alt={movie.title} className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
               <span className="text-xs font-bold text-[#10B981]">Ugandan Translated</span>
@@ -857,7 +857,7 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
                     recScrollRef.current.scrollLeft += e.deltaY;
                   }
                 }}
-                className="flex items-center gap-3.5 sm:gap-4 overflow-x-auto vj-horizontal-scrollbar scroll-smooth py-3 px-1 -mx-4 sm:mx-0 select-none"
+                className="flex items-center gap-3.5 sm:gap-4 overflow-x-auto vj-horizontal-scrollbar scroll-smooth py-3 px-4 sm:px-1 -mx-4 sm:mx-0 select-none"
                 style={{ WebkitOverflowScrolling: 'touch' }}
               >
                 {recommendations.map((recMovie) => (

@@ -163,26 +163,26 @@ export const SeriesScreen: React.FC<SeriesScreenProps> = ({ series: initialSerie
   }, [seriesList, selectedVj]);
 
   return (
-    <div className="p-4 sm:p-8 md:p-10 w-full max-w-[2400px] mx-auto space-y-6 animate-fadeIn">
+    <div className="p-3 sm:p-6 md:p-10 w-full max-w-[2400px] mx-auto space-y-4 sm:space-y-6 animate-fadeIn">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-[#132845] pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#132845] pb-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#10B981]/15 border border-[#10B981]/40 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-[#10B981]/15 border border-[#10B981]/40 flex items-center justify-center flex-shrink-0">
             <Tv className="w-5 h-5 text-[#10B981]" />
           </div>
           <div>
-            <h1 className="text-xl sm:text-2xl font-black text-white">Ugandan Translated Series</h1>
+            <h1 className="text-lg sm:text-2xl font-black text-white">Ugandan Translated Series</h1>
             <p className="text-xs text-[#94A3B8]">Full multi-season series with Veejay voiceovers</p>
           </div>
         </div>
 
-        <span className="text-xs font-bold text-[#94A3B8]">
+        <span className="text-xs font-bold text-[#94A3B8] self-end sm:self-auto">
           <strong className="text-white">{displayedSeries.length}</strong> Series Loaded
         </span>
       </div>
 
       {/* VJ Filter Pills with PC scroll controls */}
-      <div className="relative flex items-center gap-1.5 w-full">
+      <div className="relative flex items-center gap-1.5 w-full -mx-3 px-3 sm:mx-0 sm:px-0">
         {/* PC Left Scroll Arrow Button */}
         <button
           type="button"

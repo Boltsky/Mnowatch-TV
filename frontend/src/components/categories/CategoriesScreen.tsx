@@ -151,42 +151,42 @@ export const CategoriesScreen: React.FC<CategoriesScreenProps> = ({
   }, [liveItems, movies, activeTab, selectedVj, selectedGenre]);
 
   return (
-    <div className="p-4 sm:p-8 md:p-10 w-full max-w-[2400px] mx-auto space-y-6 animate-fadeIn">
+    <div className="p-3 sm:p-6 md:p-10 w-full max-w-[2400px] mx-auto space-y-4 sm:space-y-6 animate-fadeIn">
       {/* Category Type Tab Switcher matching Android CategoriesScreen */}
-      <div className="flex items-center justify-between border-b border-[#132845] pb-4">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#132845] pb-4">
+        <div className="flex items-center gap-2 sm:gap-3">
           <button
             onClick={() => setActiveTab('VJ')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all touch-manipulation ${
               activeTab === 'VJ'
                 ? 'bg-[#10B981] text-black shadow-lg shadow-[#10B981]/30'
                 : 'bg-[#0A192F] text-[#94A3B8] hover:text-white border border-[#1E293B]'
             }`}
           >
-            <Clapperboard className="w-4 h-4" />
+            <Clapperboard className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>Ugandan VJs</span>
           </button>
 
           <button
             onClick={() => setActiveTab('GENRE')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all touch-manipulation ${
               activeTab === 'GENRE'
                 ? 'bg-[#10B981] text-black shadow-lg shadow-[#10B981]/30'
                 : 'bg-[#0A192F] text-[#94A3B8] hover:text-white border border-[#1E293B]'
             }`}
           >
-            <Layers className="w-4 h-4" />
+            <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>Genres & Themes</span>
           </button>
         </div>
 
-        <span className="text-xs font-bold text-[#94A3B8]">
+        <span className="text-xs font-bold text-[#94A3B8] self-end sm:self-auto">
           Showing <strong className="text-white">{displayItems.length}</strong>{totalTitles > displayItems.length ? ` of ${totalTitles}` : ''} Titles
         </span>
       </div>
 
       {/* Categories Horizontal Pills Row with PC scroll controls */}
-      <div className="relative flex items-center gap-1.5 w-full">
+      <div className="relative flex items-center gap-1.5 w-full -mx-3 px-3 sm:mx-0 sm:px-0">
         {/* PC Left Scroll Arrow Button */}
         <button
           type="button"

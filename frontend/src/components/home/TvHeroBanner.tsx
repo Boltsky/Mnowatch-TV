@@ -58,7 +58,7 @@ export const TvHeroBanner: React.FC<TvHeroBannerProps> = ({
 
   return (
     <div 
-      className="relative w-full h-[320px] sm:h-[400px] md:h-[460px] lg:h-[480px] rounded-3xl overflow-hidden bg-[#0A192F] border border-[#1E293B] shadow-2xl mb-6 sm:mb-8 group select-none"
+      className="relative w-full h-[360px] sm:h-[420px] md:h-[460px] lg:h-[480px] rounded-2xl sm:rounded-3xl overflow-hidden bg-[#0A192F] border border-[#1E293B] shadow-2xl mb-6 sm:mb-8 group select-none"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
     >
@@ -133,7 +133,7 @@ export const TvHeroBanner: React.FC<TvHeroBannerProps> = ({
           </div>
 
           {/* Title */}
-          <h1 className="text-2xl sm:text-4xl md:text-5xl font-black text-white tracking-tight line-clamp-1 drop-shadow-2xl">
+          <h1 className="text-xl sm:text-3xl md:text-5xl font-black text-white tracking-tight line-clamp-1 drop-shadow-2xl">
             {currentItem.title}
           </h1>
 
@@ -146,32 +146,32 @@ export const TvHeroBanner: React.FC<TvHeroBannerProps> = ({
           <div className="flex flex-wrap items-center gap-2 sm:gap-3 pt-1 sm:pt-2">
             <button
               onClick={() => onPlayClick(currentItem)}
-              className="flex items-center gap-2 px-5 sm:px-8 py-2.5 sm:py-3.5 rounded-xl bg-[#10B981] hover:bg-[#34D399] text-black font-extrabold text-xs sm:text-base shadow-xl shadow-[#10B981]/30 transition-all hover:scale-105 active:scale-95 tv-card-focus"
+              className="flex items-center gap-1.5 sm:gap-2 px-4 sm:px-8 py-2 sm:py-3.5 rounded-xl bg-[#10B981] hover:bg-[#34D399] text-black font-extrabold text-xs sm:text-base shadow-xl shadow-[#10B981]/30 transition-all hover:scale-105 active:scale-95 tv-card-focus touch-manipulation"
             >
-              <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-black" />
+              <Play className="w-3.5 h-3.5 sm:w-5 sm:h-5 fill-black" />
               <span>Play Now</span>
             </button>
 
             <button
               onClick={() => onDetailsClick(currentItem)}
-              className="flex items-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3.5 rounded-xl bg-[#0A192F] hover:bg-[#132845] text-white font-semibold text-xs sm:text-base border border-[#1E293B] hover:border-[#10B981]/50 transition-all hover:scale-105 active:scale-95"
+              className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-6 py-2 sm:py-3.5 rounded-xl bg-[#0A192F] hover:bg-[#132845] text-white font-semibold text-xs sm:text-base border border-[#1E293B] hover:border-[#10B981]/50 transition-all hover:scale-105 active:scale-95 touch-manipulation"
             >
-              <Info className="w-4 h-4 text-[#34D399]" />
+              <Info className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#34D399]" />
               <span>Details</span>
             </button>
 
             <button
               onClick={() => onFavoriteClick(currentItem)}
-              className="flex items-center gap-2 px-3.5 sm:px-5 py-2.5 sm:py-3.5 rounded-xl bg-[#0A192F] hover:bg-[#132845] text-white font-semibold text-xs sm:text-base border border-[#1E293B] hover:border-[#10B981]/50 transition-all hover:scale-105 active:scale-95"
+              className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2 sm:py-3.5 rounded-xl bg-[#0A192F] hover:bg-[#132845] text-white font-semibold text-xs sm:text-base border border-[#1E293B] hover:border-[#10B981]/50 transition-all hover:scale-105 active:scale-95 touch-manipulation"
             >
               {isCurrentFavorite ? (
                 <>
-                  <BookmarkCheck className="w-4 h-4 text-[#10B981]" />
+                  <BookmarkCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#10B981]" />
                   <span className="text-[#10B981]">Saved</span>
                 </>
               ) : (
                 <>
-                  <Bookmark className="w-4 h-4 text-[#94A3B8]" />
+                  <Bookmark className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#94A3B8]" />
                   <span className="text-[#94A3B8]">Watchlist</span>
                 </>
               )}
@@ -202,10 +202,10 @@ export const TvHeroBanner: React.FC<TvHeroBannerProps> = ({
       {slides.length > 1 && (
         <button
           onClick={prevSlide}
-          className="absolute left-3 top-1/2 -translate-y-1/2 z-30 w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-black/70 hover:bg-[#10B981] text-white hover:text-black border border-white/10 hover:border-[#10B981] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-2xl backdrop-blur-md active:scale-95"
+          className="absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 z-30 w-8 h-8 sm:w-11 sm:h-11 rounded-full bg-black/60 hover:bg-[#10B981] text-white hover:text-black border border-white/10 hover:border-[#10B981] flex items-center justify-center opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-all shadow-2xl backdrop-blur-md active:scale-95 touch-manipulation"
           title="Previous Movie"
         >
-          <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
+          <ChevronLeft className="w-4 h-4 sm:w-6 sm:h-6" />
         </button>
       )}
 
@@ -213,23 +213,23 @@ export const TvHeroBanner: React.FC<TvHeroBannerProps> = ({
       {slides.length > 1 && (
         <button
           onClick={nextSlide}
-          className="absolute right-3 top-1/2 -translate-y-1/2 z-30 w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-black/70 hover:bg-[#10B981] text-white hover:text-black border border-white/10 hover:border-[#10B981] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-2xl backdrop-blur-md active:scale-95"
+          className="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 z-30 w-8 h-8 sm:w-11 sm:h-11 rounded-full bg-black/60 hover:bg-[#10B981] text-white hover:text-black border border-white/10 hover:border-[#10B981] flex items-center justify-center opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-all shadow-2xl backdrop-blur-md active:scale-95 touch-manipulation"
           title="Next Movie"
         >
-          <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
+          <ChevronRight className="w-4 h-4 sm:w-6 sm:h-6" />
         </button>
       )}
 
       {/* 6. Bottom Slide Indicator Dots / Segmented Bars */}
       {slides.length > 1 && (
-        <div className="absolute bottom-4 right-4 sm:bottom-6 sm:right-8 z-30 flex items-center gap-1.5 sm:gap-2 bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10">
+        <div className="absolute bottom-2.5 right-2.5 sm:bottom-6 sm:right-8 z-30 flex items-center gap-1 sm:gap-2 bg-black/60 backdrop-blur-md px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full border border-white/10">
           {slides.map((s, idx) => (
             <button
               key={s.id || idx}
               onClick={() => setCurrentIndex(idx)}
-              className={`h-1.5 sm:h-2 rounded-full transition-all duration-300 ${
+              className={`h-1.5 sm:h-2 rounded-full transition-all duration-300 touch-manipulation ${
                 idx === safeIndex
-                  ? 'w-6 sm:w-8 bg-[#10B981] shadow-lg shadow-[#10B981]/50'
+                  ? 'w-5 sm:w-8 bg-[#10B981] shadow-lg shadow-[#10B981]/50'
                   : 'w-1.5 sm:w-2 bg-white/30 hover:bg-white/60'
               }`}
               title={`Jump to slide ${idx + 1}: ${s.title}`}

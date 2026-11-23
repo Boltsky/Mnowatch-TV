@@ -708,28 +708,29 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
 
       {/* Over-The-Screen Display (OSD) Controls */}
       <div
-        className={`absolute inset-0 flex flex-col justify-between p-4 sm:p-6 md:p-8 bg-gradient-to-t from-black/90 via-transparent to-black/80 transition-opacity duration-300 ${
+        className={`absolute inset-0 flex flex-col justify-between p-3 sm:p-6 md:p-8 bg-gradient-to-t from-black/90 via-transparent to-black/80 transition-opacity duration-300 select-none ${
           showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >
         {/* Top bar: Back button, Title & Server Switcher */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               onClick={onBack}
-              className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-all backdrop-blur-md active:scale-95"
+              className="p-2 sm:p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-all backdrop-blur-md active:scale-95 touch-manipulation flex-shrink-0"
+              title="Back"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
-            <div>
-              <h2 className="text-base sm:text-lg font-bold text-white line-clamp-1">
+            <div className="min-w-0">
+              <h2 className="text-sm sm:text-lg font-bold text-white truncate">
                 {item.title}
               </h2>
-              <p className="text-xs text-zinc-400 flex items-center gap-2">
+              <p className="text-[11px] sm:text-xs text-zinc-400 flex items-center gap-1.5 sm:gap-2 truncate">
                 <span className="text-emerald-400 font-bold">{item.vj}</span>
                 {currentEpisode && (
-                  <span>
-                    • Season {currentEpisode.seasonNumber || 1} • Episode {currentEpisode.episodeNumber}
+                  <span className="truncate">
+                    • S{currentEpisode.seasonNumber || 1}:E{currentEpisode.episodeNumber}
                     {currentEpisode.title ? `: ${currentEpisode.title}` : ''}
                   </span>
                 )}
@@ -738,14 +739,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
           </div>
 
           {/* Server Selector Button */}
-          <div className="relative">
+          <div className="relative flex-shrink-0">
             <button
               onClick={() => setShowServerMenu(!showServerMenu)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-md border border-white/10 transition-all"
+              className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-md border border-white/10 transition-all touch-manipulation"
             >
               <Server className="w-3.5 h-3.5 text-emerald-400" />
               <span className="hidden sm:inline">{currentServer.name}</span>
-              <span className="sm:hidden">Server</span>
+              <span className="sm:hidden text-[11px]">Server</span>
             </button>
 
             {/* Server Dropdown */}
@@ -789,17 +790,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
         </div>
 
         {/* Bottom bar: Timeline scrubber & transport controls */}
-        <div className="space-y-3">
+        <div className="space-y-2 sm:space-y-3">
           {/* Scrubber slider */}
-          <div className="relative flex items-center group">
+          <div className="relative flex items-center group py-2 touch-manipulation cursor-pointer">
             {/* Buffered progress track */}
             <div
-              className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-white/30 rounded-full pointer-events-none transition-all"
+              className="absolute left-0 top-1/2 -translate-y-1/2 h-1.5 sm:h-1 bg-white/30 rounded-full pointer-events-none transition-all"
               style={{ width: `${(buffered / (duration || 1)) * 100}%` }}
             />
             {/* Active playback progress track */}
             <div
-              className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-emerald-500 rounded-full pointer-events-none transition-all"
+              className="absolute left-0 top-1/2 -translate-y-1/2 h-1.5 sm:h-1 bg-emerald-500 rounded-full pointer-events-none transition-all"
               style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}
             />
             <input
@@ -808,45 +809,45 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ item, episode, initial
               max={duration || 100}
               value={currentTime}
               onChange={handleSeekChange}
-              className="w-full h-1 bg-transparent appearance-none cursor-pointer accent-emerald-500 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+              className="w-full h-1.5 sm:h-1 bg-transparent appearance-none cursor-pointer accent-emerald-500 z-10 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
             />
           </div>
 
           {/* Time & Action buttons */}
-          <div className="flex items-center justify-between text-xs font-medium text-zinc-300">
-            <div className="flex items-center gap-4">
-              <button onClick={togglePlay} className="hover:text-white transition-colors">
+          <div className="flex items-center justify-between text-xs font-medium text-zinc-300 gap-2">
+            <div className="flex items-center gap-2 sm:gap-4 overflow-hidden">
+              <button onClick={togglePlay} className="hover:text-white transition-colors p-1 touch-manipulation">
                 {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
               </button>
 
-              <button onClick={() => seek(-10)} className="hover:text-white transition-colors" title="-10 Seconds">
-                <RotateCcw className="w-5 h-5" />
+              <button onClick={() => seek(-10)} className="hover:text-white transition-colors p-1 touch-manipulation" title="-10 Seconds">
+                <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
 
-              <button onClick={() => seek(10)} className="hover:text-white transition-colors" title="+10 Seconds">
-                <RotateCw className="w-5 h-5" />
+              <button onClick={() => seek(10)} className="hover:text-white transition-colors p-1 touch-manipulation" title="+10 Seconds">
+                <RotateCw className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
 
               {nextEpisodeInfo && (
                 <button
                   onClick={handlePlayNextEpisode}
-                  className="hover:text-[#10B981] text-zinc-300 transition-colors p-1 rounded-lg hover:bg-white/10"
+                  className="hover:text-[#10B981] text-zinc-300 transition-colors p-1 rounded-lg hover:bg-white/10 touch-manipulation"
                   title={`Next Episode (S${nextEpisodeInfo.seasonNumber}:E${nextEpisodeInfo.episode.episodeNumber} - ${nextEpisodeInfo.episode.title || ''})`}
                 >
-                  <SkipForward className="w-5 h-5" />
+                  <SkipForward className="w-4 h-4 sm:w-5 sm:h-5" />
                 </button>
               )}
 
-              <button onClick={toggleMute} className="hover:text-white transition-colors">
-                {isMuted ? <VolumeX className="w-5 h-5 text-red-400" /> : <Volume2 className="w-5 h-5" />}
+              <button onClick={toggleMute} className="hover:text-white transition-colors p-1 touch-manipulation">
+                {isMuted ? <VolumeX className="w-4 h-4 sm:w-5 sm:h-5 text-red-400" /> : <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" />}
               </button>
 
-              <span className="font-mono text-zinc-400">
+              <span className="font-mono text-[10px] sm:text-xs text-zinc-400 whitespace-nowrap">
                 {formatTime(currentTime)} / {formatTime(duration)}
               </span>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
               {/* Episodes Drawer Toggle Button */}
               {item.isSeries && allEpisodes.length > 0 && (
                 <button
