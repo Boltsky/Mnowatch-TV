@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, X, Film, Sparkles } from 'lucide-react';
+import { Search, X, Film, Sparkles, Flame } from 'lucide-react';
 import { MediaItem } from '../../types';
 import { api, isTrailerOrIntroUrl } from '../../services/api';
 import { TvMediaCard } from '../common/TvMediaCard';
@@ -10,15 +10,40 @@ const isTrailerOnly = (item: MediaItem) => {
 };
 
 interface SearchScreenProps {
+  trendingMovies?: MediaItem[];
   onItemClick: (item: MediaItem) => void;
   onPlay: (item: MediaItem) => void;
 }
 
-export const SearchScreen: React.FC<SearchScreenProps> = ({ onItemClick }) => {
+export const SearchScreen: React.FC<SearchScreenProps> = ({ trendingMovies = [], onItemClick }) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [showTvKeyboard, setShowTvKeyboard] = useState(false);
+  const [recommendations, setRecommendations] = useState<MediaItem[]>(() =>
+    (trendingMovies || []).filter(i => !isTrailerOnly(i))
+  );
+
+  // Sync recommendations from trendingMovies prop or fallback fetch on mount
+  useEffect(() => {
+    if (trendingMovies && trendingMovies.length > 0) {
+      setRecommendations(trendingMovies.filter(i => !isTrailerOnly(i)));
+    } else {
+      let isMounted = true;
+      (async () => {
+        try {
+          const home = await api.getHome();
+          const trendingRail = home.rails.find(r => r.id === 'rail_trending' || r.title.toLowerCase().includes('trending'));
+          const items = trendingRail?.items || home.rails[0]?.items || [];
+          const clean = items.filter(i => !isTrailerOnly(i));
+          if (isMounted && clean.length > 0) {
+            setRecommendations(clean);
+          }
+        } catch {}
+      })();
+      return () => { isMounted = false; };
+    }
+  }, [trendingMovies]);
 
   useEffect(() => {
     if (!query.trim()) {
@@ -125,6 +150,38 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({ onItemClick }) => {
 
       {/* Results Section */}
       <div className="mt-8 w-full max-w-[2400px] mx-auto px-4 sm:px-8 md:px-10">
+        {/* Empty Query: Latest Trending Movies Recommendations */}
+        {!query && (
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-[#132845] pb-3 gap-1">
+              <h2 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                <Flame className="w-5 h-5 text-[#EF4444] animate-pulse" />
+                Trending Movie Recommendations
+              </h2>
+              <span className="text-xs text-[#94A3B8]">
+                Popular Ugandan translated releases & top rated picks
+              </span>
+            </div>
+
+            {recommendations.length > 0 ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 3xl:grid-cols-10 gap-3 sm:gap-4">
+                {recommendations.map((item) => (
+                  <TvMediaCard
+                    key={`trending_${item.id}`}
+                    item={item}
+                    onClick={() => onItemClick(item)}
+                    cardWidth="w-full"
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center py-12 text-[#94A3B8] text-xs sm:text-sm">
+                Loading latest recommendations...
+              </div>
+            )}
+          </div>
+        )}
+
         {loading && (
           <div className="flex items-center justify-center py-12 text-[#94A3B8] text-sm">
             Searching translated catalog...
