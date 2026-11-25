@@ -73,8 +73,26 @@ export const isTrailerOrIntroUrl = (url?: string | null, expectedTitle?: string)
   return false;
 };
 
-const RAW_ENV = (import.meta as any).env?.VITE_API_URL || 'https://munowatch-api.onrender.com/api/v1';
-const API_BASE = RAW_ENV.endsWith('/api/v1') ? RAW_ENV : `${RAW_ENV.replace(/\/+$/, '')}/api/v1`;
+const RAW_ENV = (import.meta as any).env?.VITE_API_URL || 'https://munowatch-api.vercel.app/api/v1';
+const PRIMARY_API = RAW_ENV.endsWith('/api/v1') ? RAW_ENV : `${RAW_ENV.replace(/\/+$/, '')}/api/v1`;
+const API_BASE = PRIMARY_API;
+
+const CANDIDATE_APIS = [
+  PRIMARY_API,
+  'https://munowatch-api.vercel.app/api/v1',
+  'https://munowatch-api.onrender.com/api/v1'
+].filter((url, idx, arr) => arr.indexOf(url) === idx);
+
+async function fetchFromApi(path: string, init?: RequestInit): Promise<Response | null> {
+  for (const base of CANDIDATE_APIS) {
+    try {
+      const url = `${base}${path.startsWith('/') ? path : '/' + path}`;
+      const res = await fetch(url, init);
+      if (res.ok) return res;
+    } catch {}
+  }
+  return null;
+}
 
 export const FALLBACK_VJS: VjItem[] = [
   { id: "vj_junior", name: "VJ Junior", icon: "🎬", count: 1158 },
@@ -261,8 +279,8 @@ export const FALLBACK_CATALOG: MediaItem[] = [
 export const api = {
   async getHome(): Promise<{ rails: CatalogRail[]; featured: MediaItem | null }> {
     try {
-      const res = await fetch(`${API_BASE}/catalog/home`, { signal: AbortSignal.timeout(4000) });
-      if (res.ok) {
+      const res = await fetchFromApi('/catalog/home', { signal: AbortSignal.timeout(8000) });
+      if (res && res.ok) {
         return await res.json();
       }
     } catch {
@@ -282,8 +300,8 @@ export const api = {
 
   async getVjs(): Promise<VjItem[]> {
     try {
-      const res = await fetch(`${API_BASE}/catalog/vjs`, { signal: AbortSignal.timeout(3000) });
-      if (res.ok) {
+      const res = await fetchFromApi('/catalog/vjs', { signal: AbortSignal.timeout(6000) });
+      if (res && res.ok) {
         const data = await res.json();
         return data.vjs || FALLBACK_VJS;
       }
@@ -302,8 +320,8 @@ export const api = {
       if (options.sort) params.append('sort', options.sort);
 
       const qs = params.toString() ? `?${params.toString()}` : '';
-      const res = await fetch(`${API_BASE}/catalog/movies${qs}`, { signal: AbortSignal.timeout(20000) });
-      if (res.ok) {
+      const res = await fetchFromApi(`/catalog/movies${qs}`, { signal: AbortSignal.timeout(20000) });
+      if (res && res.ok) {
         const data = await res.json();
         return {
           items: data.items || [],
@@ -331,8 +349,8 @@ export const api = {
       if (options.genre) params.append('genre', options.genre);
 
       const qs = params.toString() ? `?${params.toString()}` : '';
-      const res = await fetch(`${API_BASE}/catalog/series${qs}`, { signal: AbortSignal.timeout(20000) });
-      if (res.ok) {
+      const res = await fetchFromApi(`/catalog/series${qs}`, { signal: AbortSignal.timeout(20000) });
+      if (res && res.ok) {
         const data = await res.json();
         return {
           items: data.items || [],
@@ -378,8 +396,8 @@ export const api = {
       if (title) params.append('title', title);
       if (vj) params.append('vj', vj);
 
-      const res = await fetch(`${API_BASE}/stream/resolve?${params.toString()}`, { signal: AbortSignal.timeout(25000) });
-      if (res.ok) {
+      const res = await fetchFromApi(`/stream/resolve?${params.toString()}`, { signal: AbortSignal.timeout(25000) });
+      if (res && res.ok) {
         const data = await res.json();
         if (data.success && data.streamUrl && !isTrailerOrIntroUrl(data.streamUrl, title) && !isTrailerOrIntroUrl(data.directUrl, title)) {
           return {
@@ -406,7 +424,7 @@ export const api = {
     try {
       return await fetchAttempt();
     } catch {
-      // Automatic retry once with quick delay in case of Render cold-start or momentary latency
+      // Automatic retry once with quick delay
       try {
         await new Promise(r => setTimeout(r, 1200));
         return await fetchAttempt();
@@ -418,8 +436,8 @@ export const api = {
   async search(query: string): Promise<MediaItem[]> {
     if (!query.trim()) return [];
     try {
-      const res = await fetch(`${API_BASE}/catalog/search?q=${encodeURIComponent(query)}`, { signal: AbortSignal.timeout(20000) });
-      if (res.ok) {
+      const res = await fetchFromApi(`/catalog/search?q=${encodeURIComponent(query)}`, { signal: AbortSignal.timeout(20000) });
+      if (res && res.ok) {
         const data = await res.json();
         return data.items || [];
       }
@@ -430,8 +448,8 @@ export const api = {
 
   async getTitle(id: string): Promise<MediaItem | null> {
     try {
-      const res = await fetch(`${API_BASE}/catalog/title/${id}`, { signal: AbortSignal.timeout(10000) });
-      if (res.ok) {
+      const res = await fetchFromApi(`/catalog/title/${id}`, { signal: AbortSignal.timeout(10000) });
+      if (res && res.ok) {
         return await res.json();
       }
     } catch {}
@@ -441,8 +459,8 @@ export const api = {
   async getMovieDetails(id: string, title?: string): Promise<MediaItem | null> {
     try {
       const qs = title ? `?title=${encodeURIComponent(title)}` : '';
-      const res = await fetch(`${API_BASE}/catalog/details/${id}${qs}`, { signal: AbortSignal.timeout(20000) });
-      if (res.ok) {
+      const res = await fetchFromApi(`/catalog/details/${id}${qs}`, { signal: AbortSignal.timeout(20000) });
+      if (res && res.ok) {
         return await res.json();
       }
     } catch {}
