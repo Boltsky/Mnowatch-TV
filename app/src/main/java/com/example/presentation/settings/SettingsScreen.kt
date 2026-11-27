@@ -438,7 +438,7 @@ fun SettingsScreen(
 
                         DiagnosticRow(
                             title = "Update Channel",
-                            value = "GitHub Mainline Release (Boltsky/Mnowatch-TV)",
+                            value = "Boltsky Release Hub (boltsky-release-hub.vercel.app)",
                             isSuccess = true
                         )
 

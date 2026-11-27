@@ -68,8 +68,8 @@ class AppUpdateRepositoryImpl(
 
     override suspend fun checkForUpdate(force: Boolean): Result<AppUpdateInfo> = withContext(Dispatchers.IO) {
         try {
-            // 1. Primary: Edge-hosted Release Hub (https://awake-zephyr-d9x5.here.now)
-            val hubUrl = "https://awake-zephyr-d9x5.here.now/api/updates/munowatch-tv/latest.json"
+            // 1. Primary: Edge-hosted Release Hub (https://boltsky-release-hub.vercel.app)
+            val hubUrl = "https://boltsky-release-hub.vercel.app/api/updates/munowatch-tv/latest.json"
             val hubRequest = Request.Builder()
                 .url(hubUrl)
                 .header("User-Agent", "MunowatchTV-Updater")
@@ -80,7 +80,7 @@ class AppUpdateRepositoryImpl(
                 okHttpClient.newCall(hubRequest).execute().use { response ->
                     if (response.isSuccessful && response.body != null) {
                         val body = response.body!!.string()
-                        parseVersionJson(body, "https://awake-zephyr-d9x5.here.now")
+                        parseVersionJson(body, "https://boltsky-release-hub.vercel.app")
                     } else null
                 }
             } catch (_: Exception) {
@@ -152,7 +152,7 @@ class AppUpdateRepositoryImpl(
         }
     }
 
-    fun parseVersionJson(jsonStr: String, fallbackBaseUrl: String = "https://awake-zephyr-d9x5.here.now"): AppUpdateInfo {
+    fun parseVersionJson(jsonStr: String, fallbackBaseUrl: String = "https://boltsky-release-hub.vercel.app"): AppUpdateInfo {
         val json = JSONObject(jsonStr)
 
         // Support App Release Hub format (has "platforms" or "appId")
@@ -174,7 +174,7 @@ class AppUpdateRepositoryImpl(
             val platforms = json.optJSONObject("platforms")
             val androidObj = platforms?.optJSONObject("android")
             val rawDownloadUrl = androidObj?.optString("downloadUrl")
-                ?: json.optString("apkUrl", "https://awake-zephyr-d9x5.here.now/releases/munowatch-tv/Munowatch-TV-v1.2.apk")
+                ?: json.optString("apkUrl", "https://boltsky-release-hub.vercel.app/releases/munowatch-tv/Munowatch-TV-v1.2.apk")
 
             val apkUrl = if (rawDownloadUrl.startsWith("http://") || rawDownloadUrl.startsWith("https://")) {
                 rawDownloadUrl

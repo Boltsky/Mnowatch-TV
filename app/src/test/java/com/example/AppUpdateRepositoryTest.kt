@@ -103,12 +103,12 @@ class AppUpdateRepositoryTest {
             }
         """.trimIndent()
 
-        val info = repository.parseVersionJson(json, "https://awake-zephyr-d9x5.here.now")
+        val info = repository.parseVersionJson(json, "https://boltsky-release-hub.vercel.app")
         assertTrue(info.isUpdateAvailable)
         assertEquals(999, info.latestVersionCode)
         assertEquals("1.2.0", info.latestVersionName)
         assertEquals("Munowatch TV v1.2.0", info.title)
-        assertEquals("https://awake-zephyr-d9x5.here.now/releases/munowatch-tv/Munowatch-TV-v1.2.apk", info.apkUrl)
+        assertEquals("https://boltsky-release-hub.vercel.app/releases/munowatch-tv/Munowatch-TV-v1.2.apk", info.apkUrl)
         assertTrue(info.changelog.contains("Live synchronization"))
         assertFalse(info.isForceUpdate)
     }

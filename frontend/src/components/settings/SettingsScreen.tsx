@@ -136,7 +136,8 @@ export const SettingsScreen: React.FC = () => {
         </div>
         <p>• <strong>App Edition:</strong> Universal Web & Android TV Leanback (Mobile, Tablet, Desktop, TV)</p>
         <p>• <strong>Player Pipeline:</strong> HLS.js 1.5.18 + HTML5 Media Source Extensions</p>
-        <p>• <strong>CORS Bridge:</strong> munowatch-api.onrender.com (Node.js/Express)</p>
+        <p>• <strong>CORS Bridge:</strong> munowatch-api.vercel.app (Node.js/Express Edge Engine)</p>
+        <p>• <strong>Release Hub:</strong> <a href="https://boltsky-release-hub.vercel.app" target="_blank" rel="noreferrer" className="text-[#10B981] hover:underline">boltsky-release-hub.vercel.app</a> (In-App Auto-Updates &amp; APK Distributions)</p>
         <p>• <strong>Android TV Host:</strong> Decoupled in app/ module</p>
       </div>
     </div>

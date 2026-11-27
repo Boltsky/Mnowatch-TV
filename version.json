@@ -2,8 +2,9 @@
   "versionCode": 4,
   "versionName": "1.3",
   "title": "Munowatch TV v1.3",
-  "changelog": "• Automatic series next episode auto-play with countdown & instant D-pad play\n• Edge-hosted Release Hub & GitHub auto-update synchronization\n• In-app update verification with automatic version detection\n• Fast TV navigation and low-RAM memory optimizations",
-  "apkUrl": "https://raw.githubusercontent.com/Boltsky/Mnowatch-TV/main/apk/Munowatch-TV-v1.3.apk",
-  "releaseDate": "2026-11-22",
+  "changelog": "• Automatic series next episode auto-play with countdown & instant D-pad play\n• Boltsky Release Hub & GitHub auto-update synchronization\n• In-app update verification with automatic version detection\n• Fast TV navigation and low-RAM memory optimizations",
+  "apkUrl": "https://boltsky-release-hub.vercel.app/releases/munowatch-tv/Munowatch-TV-v1.2.apk",
+  "backupApkUrl": "https://raw.githubusercontent.com/Boltsky/Mnowatch-TV/main/apk/Munowatch-TV-v1.3.apk",
+  "releaseDate": "2026-11-27",
   "forceUpdate": false
 }
