@@ -7,12 +7,8 @@ import {
   Server, 
   Check, 
   Sparkles, 
-  BookOpen, 
   Bookmark, 
   BookmarkCheck, 
-  Headphones, 
-  Shield, 
-  Film, 
   Loader2, 
   AlertCircle, 
   Tv,
@@ -353,41 +349,35 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
   return (
     <div className="min-h-screen bg-[#010318] text-white pb-24 md:pb-16 animate-fadeIn relative overflow-x-hidden">
       {/* Sticky Cinematic Top Navigation Bar */}
-      <div className="sticky top-0 z-40 flex items-center justify-between px-4 sm:px-8 py-3.5 bg-[#010318]/90 backdrop-blur-md border-b border-[#132845]/70">
+      <div className="sticky top-0 z-40 flex items-center justify-between px-4 sm:px-8 py-3 bg-[#010318]/80 backdrop-blur-xl border-b border-white/[0.06]">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs sm:text-sm border border-white/10 transition-all hover:scale-105 active:scale-95"
+          className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/[0.08] hover:bg-white/[0.15] text-white font-semibold text-xs sm:text-sm border border-white/10 transition-all hover:scale-105 active:scale-95"
         >
           <ArrowLeft className="w-4 h-4 text-[#10B981]" />
           <span>Back</span>
         </button>
 
-        <div className="flex items-center gap-2">
-          <div className="px-2.5 py-1 rounded-lg bg-[#10B981]/15 border border-[#10B981]/40 text-[#10B981] font-extrabold text-[11px] uppercase tracking-wider">
-            MUNOWATCH TV
-          </div>
-          <span className="hidden sm:inline-block px-2.5 py-1 rounded-lg bg-white/5 text-[#94A3B8] text-xs font-medium border border-white/5">
-            1080p FHD
-          </span>
+        <div className="px-3 py-1 rounded-full bg-white/[0.05] border border-white/10 text-[#10B981] font-extrabold text-[11px] uppercase tracking-widest">
+          MUNOWATCH
         </div>
       </div>
 
-      {/* Atmospheric Ambient Hero Backdrop (Layered behind, not pushing content down) */}
-      <div className="absolute top-0 left-0 right-0 h-[680px] overflow-hidden pointer-events-none z-0">
+      {/* Atmospheric Ambient Hero Backdrop */}
+      <div className="absolute top-0 left-0 right-0 h-[640px] overflow-hidden pointer-events-none z-0">
         <img
           src={movie.backdropUrl || movie.posterUrl}
           alt={movie.title}
-          className="w-full h-full object-cover object-top filter brightness-[0.32] contrast-[1.15] scale-105"
+          className="w-full h-full object-cover object-top filter brightness-[0.28] contrast-[1.15] scale-105"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#010318] via-[#010318]/75 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#010318] via-[#010318]/80 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-[#010318]/95 via-[#010318]/65 to-transparent" />
-        <div className="absolute inset-0 bg-radial-gradient from-transparent via-[#010318]/40 to-[#010318]/90" />
       </div>
 
-      {/* Main Details Presentation: Balanced, Extended Top Webpage */}
-      <div className="w-full max-w-[2000px] mx-auto px-4 sm:px-8 md:px-12 pt-6 sm:pt-8 relative z-10 space-y-10">
-        <div className="flex flex-col md:flex-row gap-8 lg:gap-12 items-start">
-          {/* Extended High-Resolution Movie Poster - Clickable & Tap to Play */}
+      {/* Main Details Presentation */}
+      <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-8 md:px-12 pt-5 sm:pt-8 relative z-10 space-y-10">
+        <div className="flex flex-col md:flex-row gap-6 sm:gap-8 lg:gap-12 items-start">
+          {/* Clean, Unobstructed Poster with Translucent Center Play Button */}
           <div
             onClick={handlePrimaryPlay}
             onKeyDown={(e) => {
@@ -399,242 +389,235 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
             role="button"
             tabIndex={0}
             aria-label={`Play ${movie.title}`}
-            className="w-48 xs:w-56 sm:w-64 md:w-80 lg:w-[360px] xl:w-[410px] aspect-[2/3] rounded-2xl overflow-hidden shadow-2xl shadow-black/90 border-2 border-[#10B981]/50 flex-shrink-0 bg-[#0A192F] relative group mx-auto md:mx-0 transition-all duration-300 hover:scale-[1.01] hover:border-[#10B981] hover:shadow-[#10B981]/25 cursor-pointer active:scale-95 focus:outline-none focus:ring-4 focus:ring-[#10B981]/50"
+            className="w-44 xs:w-52 sm:w-60 md:w-72 lg:w-[340px] xl:w-[380px] aspect-[2/3] rounded-2xl overflow-hidden shadow-[0_24px_60px_rgba(0,0,0,0.85)] border border-white/15 flex-shrink-0 bg-[#0A192F] relative group mx-auto md:mx-0 transition-all duration-300 hover:scale-[1.015] hover:border-[#10B981]/60 cursor-pointer active:scale-95 focus:outline-none focus:ring-2 focus:ring-[#10B981]/60"
           >
-            <img src={movie.posterUrl} alt={movie.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+            <img
+              src={movie.posterUrl}
+              alt={movie.title}
+              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+            />
 
-            {/* Click-to-Play Center Overlay with Glowing Emerald Button */}
-            <div className="absolute inset-0 bg-black/35 group-hover:bg-black/50 transition-all flex flex-col items-center justify-center p-4">
-              <div className="w-14 h-14 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-full bg-[#10B981] hover:bg-[#34D399] text-black flex items-center justify-center shadow-2xl shadow-[#10B981]/70 transform group-hover:scale-110 active:scale-90 transition-all duration-300 border-2 border-white/80 ring-4 ring-[#10B981]/40">
-                <Play className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 fill-black text-black ml-1" />
+            {/* Subtle hover tint with translucent frosted-glass play button */}
+            <div className="absolute inset-0 bg-black/5 group-hover:bg-black/25 transition-colors flex items-center justify-center">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 md:w-[72px] md:h-[72px] rounded-full bg-black/40 backdrop-blur-md border border-white/35 text-white/90 flex items-center justify-center shadow-[0_8px_32px_rgba(0,0,0,0.55)] transform group-hover:scale-110 group-hover:bg-[#10B981]/80 group-hover:border-[#10B981] group-hover:text-black active:scale-90 transition-all duration-300">
+                <Play className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 fill-current ml-0.5" />
               </div>
-              <div className="mt-2.5 sm:mt-3 px-3 sm:px-4 py-1 sm:py-1.5 rounded-full bg-black/85 backdrop-blur-md border border-[#10B981]/80 text-white font-extrabold text-[11px] sm:text-xs tracking-wider shadow-lg flex items-center gap-1.5 group-hover:bg-[#10B981] group-hover:text-black transition-colors">
-                <Play className="w-3 h-3 fill-current" />
-                <span>{movie.isSeries ? 'PLAY S1:E1' : 'PLAY MOVIE'}</span>
-              </div>
-            </div>
-
-            {/* Bottom info strip with "Tap to Play" hint */}
-            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-3 pt-6 flex justify-between items-center pointer-events-none">
-              <span className="text-[11px] font-bold text-[#10B981]">Ugandan Translated</span>
-              <span className="text-[10px] text-white/90 font-bold bg-[#10B981]/30 border border-[#10B981]/60 px-2 py-0.5 rounded-md backdrop-blur-sm">
-                Tap to Play
-              </span>
             </div>
           </div>
 
-          {/* Metadata & Actions */}
-          <div className="flex-1 space-y-4 pt-2">
-            {/* Tag Badges Row matching Android TV DetailsScreen Badges */}
+          {/* Metadata, Quality Dock, Actions & Storyline */}
+          <div className="flex-1 w-full space-y-4 sm:space-y-5 pt-1">
+            {/* Compact Metadata Pills */}
             <div className="flex flex-wrap items-center gap-2">
-              <span className="px-3 py-1 rounded-lg bg-[#10B981] text-black font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-[#10B981]/25">
-                {movie.vj}
-              </span>
-              <span className="px-2.5 py-1 rounded-lg bg-white/10 text-yellow-400 font-bold text-xs flex items-center gap-1 border border-white/10">
+              {movie.vj && (
+                <span className="px-2.5 py-1 rounded-md bg-[#10B981] text-black font-black text-[11px] uppercase tracking-wider shadow-md shadow-[#10B981]/20">
+                  {movie.vj}
+                </span>
+              )}
+              <span className="px-2.5 py-1 rounded-md bg-white/[0.08] text-yellow-400 font-bold text-xs flex items-center gap-1 border border-white/10">
                 <Star className="w-3.5 h-3.5 fill-yellow-400" />
                 {movie.rating || '8.8'}
               </span>
               {movie.year && (
-                <span className="px-2.5 py-1 rounded-lg bg-white/5 text-[#94A3B8] text-xs font-medium border border-white/5">
+                <span className="px-2.5 py-1 rounded-md bg-white/[0.06] text-[#CBD5E1] text-xs font-semibold border border-white/[0.08]">
                   {movie.year}
                 </span>
               )}
               {movie.duration && (
-                <span className="px-2.5 py-1 rounded-lg bg-white/5 text-[#94A3B8] text-xs font-medium flex items-center gap-1 border border-white/5">
+                <span className="px-2.5 py-1 rounded-md bg-white/[0.06] text-[#CBD5E1] text-xs font-semibold flex items-center gap-1 border border-white/[0.08]">
                   <Clock className="w-3.5 h-3.5 text-[#94A3B8]" />
                   {movie.duration}
                 </span>
               )}
-              <span className="px-2.5 py-1 rounded-lg bg-[#10B981]/15 text-[#34D399] text-xs font-bold border border-[#10B981]/30">
-                1080p Full HD
+              <span className="px-2.5 py-1 rounded-md bg-[#10B981]/10 text-[#34D399] text-xs font-bold border border-[#10B981]/25">
+                Full HD
               </span>
             </div>
 
-            {/* Title */}
-            <h1 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white leading-tight">
-              {movie.title}
-            </h1>
-
-            {/* Genre */}
-            <p className="text-[#94A3B8] text-sm sm:text-base font-semibold">
-              {movie.genre}
-            </p>
-
-            {/* Mobile Immediate Above-The-Fold Action Row (Visible on first screen without scrolling) */}
-            <div className="md:hidden pt-1 pb-2 flex flex-col gap-2.5">
-              <button
-                onClick={handlePrimaryPlay}
-                className="w-full flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-[#10B981] active:bg-[#34D399] text-black font-black text-base shadow-xl shadow-[#10B981]/40 transition-transform active:scale-95"
-              >
-                <Play className="w-5 h-5 fill-black" />
-                <span>
-                  {movie.isSeries
-                    ? (seasons[0]?.episodes?.[0] ? `Play S${seasons[0].seasonNumber}:E${seasons[0].episodes[0].episodeNumber}` : 'Play Series')
-                    : 'Play Movie Now'}
-                </span>
-              </button>
-              <div className="flex items-center gap-2">
-                {onToggleWatchlist && (
-                  <button
-                    onClick={() => onToggleWatchlist(movie)}
-                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold border transition-all ${
-                      isInWatchlist
-                        ? 'bg-[#10B981]/15 text-[#10B981] border-[#10B981]'
-                        : 'bg-[#0A192F] text-[#F8FAFC] border-[#132845]'
-                    }`}
-                  >
-                    {isInWatchlist ? (
-                      <>
-                        <BookmarkCheck className="w-3.5 h-3.5 text-[#10B981]" />
-                        <span>In Watchlist</span>
-                      </>
-                    ) : (
-                      <>
-                        <Bookmark className="w-3.5 h-3.5 text-[#94A3B8]" />
-                        <span>Watchlist</span>
-                      </>
-                    )}
-                  </button>
-                )}
-                <button
-                  onClick={() => handleDirectDeviceSave({ item: movie, episode: movie.isSeries ? seasons[0]?.episodes?.[0] : undefined })}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold border transition-all ${
-                    isMovieDownloaded
-                      ? 'bg-[#10B981]/20 text-[#10B981] border-[#10B981]'
-                      : 'bg-[#0A192F] text-white border-[#132845]'
-                  }`}
-                >
-                  {isMovieDownloaded ? (
-                    <>
-                      <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981]" />
-                      <span>Downloaded</span>
-                    </>
-                  ) : (
-                    <>
-                      <Download className="w-3.5 h-3.5 text-[#10B981]" />
-                      <span>Download</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* MOVIE DESCRIPTION Surface Container matching Android TV SurfaceBox */}
-            <div className="pt-2 space-y-2">
-              <div className="flex items-center gap-2 text-[#10B981] font-bold text-xs tracking-wider uppercase">
-                <BookOpen className="w-4 h-4" />
-                <span>Movie Description</span>
-              </div>
-
-              <div className="p-4 sm:p-5 rounded-2xl bg-[#0A192F]/80 border border-[#132845] backdrop-blur-sm">
-                <p className="text-[#F8FAFC] text-sm sm:text-base leading-relaxed">
-                  {movie.description || (loadingDetails ? 'Retrieving genuine synopsis from Munowatch catalog...' : `Luganda translated blockbuster brought to you by ${movie.vj}.`)}
+            {/* Title & Genre */}
+            <div className="space-y-1">
+              <h1 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white leading-[1.1]">
+                {movie.title}
+              </h1>
+              {movie.genre && (
+                <p className="text-[#94A3B8] text-sm sm:text-base font-medium">
+                  {movie.genre.split('/').map(g => g.trim()).filter(Boolean).join(' • ')}
                 </p>
-              </div>
+              )}
             </div>
 
-            {/* INDIVIDUAL MOVIE SPECIFICATIONS STRIP matching Android TV Details */}
-            <div className="pt-1 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              <div className="p-3 rounded-xl bg-[#0A192F]/60 border border-[#132845] flex items-center gap-2.5">
-                <Headphones className="w-4 h-4 text-[#10B981] flex-shrink-0" />
-                <div className="overflow-hidden">
-                  <span className="text-[10px] uppercase font-bold text-[#94A3B8] block">Audio & Voiceover</span>
-                  <span className="text-xs font-bold text-white truncate block">Luganda ({movie.vj})</span>
-                </div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-[#0A192F]/60 border border-[#132845] flex items-center gap-2.5">
-                <Film className="w-4 h-4 text-[#34D399] flex-shrink-0" />
-                <div className="overflow-hidden">
-                  <span className="text-[10px] uppercase font-bold text-[#94A3B8] block">Format & Delivery</span>
-                  <span className="text-xs font-bold text-white truncate block">1080p Full HD • CORS Safe</span>
-                </div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-[#0A192F]/60 border border-[#132845] flex items-center gap-2.5">
-                <Shield className="w-4 h-4 text-[#10B981] flex-shrink-0" />
-                <div className="overflow-hidden">
-                  <span className="text-[10px] uppercase font-bold text-[#94A3B8] block">Subscription Access</span>
-                  <span className="text-xs font-bold text-[#10B981] truncate block">Munowatch VIP Unlocked</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Quality Tier Selector (1080p Full HD vs Data Saver) */}
-            {qualities && qualities.length > 1 ? (
-              <div className="pt-2 space-y-2">
-                <span className="text-xs uppercase tracking-wider font-extrabold text-[#94A3B8] flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-[#10B981]" />
-                  Choose Video Quality:
-                </span>
-                <div className="flex flex-wrap gap-2.5">
+            {/* Unified Streaming Control & Quality Dock (Mobile & Desktop) */}
+            <div className="pt-1 space-y-3.5">
+              {/* Quality Tier Selector / Server Switcher docked directly beside Play CTA */}
+              {qualities && qualities.length > 1 ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] uppercase tracking-wider font-bold text-[#94A3B8] mr-1 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-[#10B981]" />
+                    Quality:
+                  </span>
                   {qualities.map((q) => {
                     const isSelected = selectedQuality?.id === q.id;
                     return (
                       <button
                         key={q.id}
                         onClick={() => handleSelectQuality(q)}
-                        className={`px-4 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 border transition-all ${
+                        className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border transition-all active:scale-95 ${
                           isSelected
-                            ? 'bg-[#10B981] text-black border-[#10B981] shadow-lg shadow-[#10B981]/25 scale-105'
-                            : 'bg-[#0A192F] text-[#F8FAFC] border-[#1b3457] hover:border-[#10B981]'
+                            ? 'bg-[#10B981]/20 text-[#34D399] border-[#10B981] shadow-sm shadow-[#10B981]/20'
+                            : 'bg-white/[0.04] text-[#CBD5E1] border-white/10 hover:border-white/25 hover:bg-white/[0.08]'
                         }`}
                       >
-                        {isSelected ? (
-                          <Check className="w-3.5 h-3.5 text-black stroke-[3]" />
-                        ) : q.id === 'fhd' ? (
-                          <Sparkles className="w-3.5 h-3.5 text-[#10B981]" />
-                        ) : (
-                          <Radio className="w-3.5 h-3.5 text-[#94A3B8]" />
-                        )}
+                        {isSelected && <Check className="w-3 h-3 text-[#34D399] stroke-[3]" />}
                         <span>{q.label}</span>
-                        <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
-                          isSelected ? 'bg-black/20 text-black font-extrabold' : 'bg-white/10 text-[#10B981] font-semibold'
-                        }`}>
-                          {q.fileSizeFormatted}
-                        </span>
+                        {q.fileSizeFormatted && (
+                          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
+                            isSelected ? 'bg-[#10B981]/20 text-[#34D399]' : 'bg-white/10 text-[#94A3B8]'
+                          }`}>
+                            {q.fileSizeFormatted}
+                          </span>
+                        )}
                       </button>
                     );
                   })}
                 </div>
-              </div>
-            ) : movie.servers && movie.servers.length > 1 ? (
-              <div className="pt-2 space-y-2">
-                <span className="text-xs uppercase font-bold text-[#94A3B8] flex items-center gap-1.5">
-                  <Server className="w-3.5 h-3.5 text-[#10B981]" />
-                  Select Media Server:
-                </span>
-                <div className="flex flex-wrap gap-2">
+              ) : movie.servers && movie.servers.length > 1 ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] uppercase tracking-wider font-bold text-[#94A3B8] mr-1 flex items-center gap-1">
+                    <Server className="w-3 h-3 text-[#10B981]" />
+                    Server:
+                  </span>
                   {movie.servers.map((srv) => (
                     <button
                       key={srv.id}
                       onClick={() => setSelectedServer(srv)}
-                      className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all ${
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border transition-all active:scale-95 ${
                         selectedServer?.id === srv.id
-                          ? 'bg-[#10B981]/20 text-[#34D399] border-[#10B981] shadow-lg shadow-[#10B981]/20 scale-105'
-                          : 'bg-[#0A192F] text-[#94A3B8] border-[#132845] hover:border-[#94A3B8]'
+                          ? 'bg-[#10B981]/20 text-[#34D399] border-[#10B981] shadow-sm shadow-[#10B981]/20'
+                          : 'bg-white/[0.04] text-[#94A3B8] border-white/10 hover:border-white/25 hover:bg-white/[0.08]'
                       }`}
                     >
-                      {selectedServer?.id === srv.id && <Check className="w-3.5 h-3.5 text-[#10B981]" />}
+                      {selectedServer?.id === srv.id && <Check className="w-3 h-3 text-[#34D399] stroke-[3]" />}
                       <span>{srv.name}</span>
-                      <span className="text-[10px] text-[#94A3B8] font-normal">({srv.quality})</span>
+                      <span className="text-[10px] opacity-75">({srv.quality})</span>
                     </button>
                   ))}
                 </div>
+              ) : null}
+
+              {/* Single Authoritative Action Row */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
+                <button
+                  onClick={handlePrimaryPlay}
+                  className="flex items-center justify-center gap-2.5 px-7 py-3.5 rounded-xl bg-[#10B981] hover:bg-[#34D399] text-black font-black text-sm sm:text-base shadow-[0_8px_30px_rgba(16,185,129,0.35)] transition-all hover:scale-[1.02] active:scale-95"
+                >
+                  <Play className="w-5 h-5 fill-black" />
+                  <span>
+                    {movie.isSeries
+                      ? (seasons[0]?.episodes?.[0] ? `Play S${seasons[0].seasonNumber}:E${seasons[0].episodes[0].episodeNumber}` : 'Play Series')
+                      : 'Play Movie Now'}
+                  </span>
+                </button>
+
+                <div className="flex items-center gap-2.5">
+                  {onToggleWatchlist && (
+                    <button
+                      onClick={() => onToggleWatchlist(movie)}
+                      className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl text-xs sm:text-sm font-bold border backdrop-blur-md transition-all active:scale-95 ${
+                        isInWatchlist
+                          ? 'bg-[#10B981]/15 text-[#34D399] border-[#10B981]/60'
+                          : 'bg-white/[0.05] text-white border-white/10 hover:bg-white/[0.1] hover:border-white/25'
+                      }`}
+                    >
+                      {isInWatchlist ? (
+                        <>
+                          <BookmarkCheck className="w-4 h-4 text-[#10B981]" />
+                          <span>In Watchlist</span>
+                        </>
+                      ) : (
+                        <>
+                          <Bookmark className="w-4 h-4 text-[#94A3B8]" />
+                          <span>Watchlist</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+
+                  {currentMovieDownload ? (
+                    <div className="flex-1 sm:flex-initial flex items-center justify-between gap-2.5 px-4 py-2.5 rounded-xl bg-[#0d1f3b] border border-[#10B981] shadow-lg shadow-[#10B981]/20">
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded-full border-2 border-[#10B981] border-t-transparent animate-spin flex-shrink-0" />
+                        <div className="flex flex-col">
+                          <span className="text-xs font-black text-white">
+                            {currentMovieDownload.progress}%
+                          </span>
+                          <span className="text-[10px] text-[#94A3B8] font-mono">
+                            {offlineStorage.formatBytes(currentMovieDownload.loadedBytes)}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => offlineStorage.cancelDownload(currentMovieDownload.id)}
+                        className="p-1 text-[#94A3B8] hover:text-red-400 rounded hover:bg-white/5 transition-all"
+                        title="Cancel download"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => handleDirectDeviceSave({ item: movie, episode: movie.isSeries ? seasons[0]?.episodes?.[0] : undefined })}
+                      className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl text-xs sm:text-sm font-bold border backdrop-blur-md transition-all active:scale-95 ${
+                        isMovieDownloaded
+                          ? 'bg-[#10B981]/15 text-[#34D399] border-[#10B981]/60'
+                          : 'bg-white/[0.05] text-white border-white/10 hover:bg-white/[0.1] hover:border-[#10B981]/50'
+                      }`}
+                      title="Download Video to Local Storage"
+                    >
+                      {isMovieDownloaded ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
+                          <span>Downloaded</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4 text-[#10B981]" />
+                          <span>Download</span>
+                          {estimatedFileSize && (
+                            <span className="hidden lg:inline text-[11px] text-[#94A3B8] font-normal">
+                              ({estimatedFileSize})
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
-            ) : null}
+            </div>
+
+            {/* Clean Editorial Storyline Card */}
+            <div className="pt-2 space-y-2">
+              <h2 className="text-xs font-bold uppercase tracking-widest text-[#94A3B8]">
+                Storyline
+              </h2>
+              <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.03] border border-white/[0.08] backdrop-blur-md">
+                <p className="text-[#E2E8F0] text-sm sm:text-base leading-relaxed">
+                  {movie.description || (loadingDetails ? 'Retrieving synopsis from catalog...' : `Translated release brought to you by ${movie.vj}.`)}
+                </p>
+              </div>
+            </div>
 
             {/* Unavailable Stream Notice Banner */}
             {(!movie.streamUrl || isTrailerOrIntroUrl(movie.streamUrl, movie.title) || movie.isStreamAvailable === false) && !movie.id.startsWith('tk_') && (
               <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 flex-shrink-0 text-amber-400" />
-                <span>Full Ugandan translated stream for this title is currently unavailable or undergoing verification. Promotional trailers are strictly suppressed.</span>
+                <span>Full stream for this title is currently unavailable or undergoing verification.</span>
               </div>
             )}
 
             {/* Live In-Place Download Progress Card */}
             {currentMovieDownload && (
-              <div className="pt-3 pb-1">
+              <div className="pt-1">
                 <div className="p-3.5 rounded-xl bg-gradient-to-r from-[#0d1f3b] to-[#0A192F] border border-[#10B981]/60 shadow-xl space-y-2">
                   <div className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
@@ -661,102 +644,6 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
                 </div>
               </div>
             )}
-
-            {/* Primary Actions: Start Watching & Watchlist */}
-            <div className="pt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-              {movie.isSeries ? (
-                <button
-                  onClick={handlePrimaryPlay}
-                  className="flex items-center justify-center gap-3 px-8 py-3.5 sm:py-4 rounded-xl bg-[#10B981] hover:bg-[#34D399] text-black font-extrabold text-sm sm:text-base shadow-xl shadow-[#10B981]/30 transition-all hover:scale-105 active:scale-95"
-                >
-                  <Play className="w-5 h-5 fill-black" />
-                  <span>
-                    {seasons[0]?.episodes?.[0]
-                      ? `Watch S${seasons[0].seasonNumber}:E${seasons[0].episodes[0].episodeNumber}`
-                      : 'Start Series'}
-                  </span>
-                </button>
-              ) : (
-                <button
-                  onClick={handlePrimaryPlay}
-                  className="flex items-center justify-center gap-3 px-8 py-3.5 sm:py-4 rounded-xl bg-[#10B981] hover:bg-[#34D399] text-black font-extrabold text-sm sm:text-base shadow-xl shadow-[#10B981]/30 transition-all hover:scale-105 active:scale-95"
-                >
-                  <Play className="w-5 h-5 fill-black" />
-                  <span>Start Watching</span>
-                </button>
-              )}
-
-              {onToggleWatchlist && (
-                <button
-                  onClick={() => onToggleWatchlist(movie)}
-                  className={`flex items-center justify-center gap-2.5 px-5 py-3.5 sm:py-4 rounded-xl text-sm font-bold border transition-all ${
-                    isInWatchlist
-                      ? 'bg-[#10B981]/15 text-[#10B981] border-[#10B981]'
-                      : 'bg-[#0A192F] text-[#F8FAFC] border-[#132845] hover:border-[#94A3B8]'
-                  }`}
-                >
-                  {isInWatchlist ? (
-                    <>
-                      <BookmarkCheck className="w-4 h-4 text-[#10B981]" />
-                      <span>In Watchlist</span>
-                    </>
-                  ) : (
-                    <>
-                      <Bookmark className="w-4 h-4 text-[#94A3B8]" />
-                      <span>Add to Watchlist</span>
-                    </>
-                  )}
-                </button>
-              )}
-
-              {/* Live In-Progress Download State or Download/Downloaded Button */}
-              {currentMovieDownload ? (
-                <div className="flex items-center gap-3 px-5 py-3 sm:py-3.5 rounded-xl bg-[#0d1f3b] border border-[#10B981] shadow-lg shadow-[#10B981]/20">
-                  <div className="w-4 h-4 rounded-full border-2 border-[#10B981] border-t-transparent animate-spin flex-shrink-0" />
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-1.5 text-xs font-black text-white">
-                      <span>Downloading</span>
-                      <span className="font-mono text-[#10B981]">{currentMovieDownload.progress}%</span>
-                    </div>
-                    <span className="text-[10px] text-[#94A3B8] font-mono">
-                      {offlineStorage.formatBytes(currentMovieDownload.loadedBytes)}
-                      {currentMovieDownload.totalBytes > 0 && ` / ${offlineStorage.formatBytes(currentMovieDownload.totalBytes)}`}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => offlineStorage.cancelDownload(currentMovieDownload.id)}
-                    className="ml-2 p-1 text-[#94A3B8] hover:text-red-400 rounded hover:bg-white/5 transition-all"
-                    title="Cancel download"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => handleDirectDeviceSave({ item: movie, episode: movie.isSeries ? seasons[0]?.episodes?.[0] : undefined })}
-                  className={`flex items-center justify-center gap-2.5 px-6 py-3.5 sm:py-4 rounded-xl text-sm font-bold border transition-all hover:scale-105 active:scale-95 ${
-                    isMovieDownloaded
-                      ? 'bg-[#10B981]/20 text-[#10B981] border-[#10B981] shadow-lg shadow-[#10B981]/15'
-                      : 'bg-[#0A192F] text-white border-[#132845] hover:border-[#10B981]'
-                  }`}
-                  title="Download Video to Local Storage"
-                >
-                  {isMovieDownloaded ? (
-                    <>
-                      <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
-                      <span>Downloaded</span>
-                      {estimatedFileSize && <span className="text-[11px] text-[#10B981]/80 font-normal">({estimatedFileSize})</span>}
-                    </>
-                  ) : (
-                    <>
-                      <Download className="w-4 h-4 text-[#10B981]" />
-                      <span>Download Video to Local Storage</span>
-                      {estimatedFileSize && <span className="text-[11px] text-[#94A3B8] font-normal">({estimatedFileSize})</span>}
-                    </>
-                  )}
-                </button>
-              )}
-            </div>
           </div>
         </div>
 

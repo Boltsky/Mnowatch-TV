@@ -43,9 +43,9 @@ export const TvMediaCard: React.FC<TvMediaCardProps> = ({ item, onClick, cardWid
           </span>
         </div>
 
-        {/* Mobile touch play indicator */}
-        <div className="absolute bottom-2 right-2 sm:hidden z-10 w-6 h-6 rounded-full bg-[#10B981] text-black flex items-center justify-center shadow-lg shadow-black/80">
-          <Play className="w-3 h-3 fill-black ml-0.5" />
+        {/* Mobile translucent touch play indicator */}
+        <div className="absolute bottom-2 right-2 sm:hidden z-10 w-7 h-7 rounded-full bg-black/45 backdrop-blur-md border border-white/30 text-white/90 flex items-center justify-center shadow-lg">
+          <Play className="w-3 h-3 fill-current ml-0.5" />
         </div>
 
         {/* Play overlay indicator on hover */}
