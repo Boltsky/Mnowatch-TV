@@ -330,6 +330,19 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
 
   const currentSeason = seasons.find(s => s.seasonNumber === selectedSeason) || seasons[0];
 
+  const handlePrimaryPlay = () => {
+    const firstEp = seasons[0]?.episodes?.[0];
+    const targetServer = (selectedServer && !selectedServer.streamUrl.includes('preview.php') ? selectedServer : null) ||
+      movie.servers?.find(s => s.tier === (selectedQuality?.id || 'fhd') && s.isProxy) ||
+      movie.servers?.find(s => s.isProxy) ||
+      movie.servers?.[0];
+    if (movie.isSeries) {
+      onPlay(movie, firstEp, targetServer);
+    } else {
+      onPlay(movie, undefined, targetServer);
+    }
+  };
+
   const handleCardClick = (target: MediaItem) => {
     if (onSelectMovie) {
       onSelectMovie(target);
@@ -374,11 +387,39 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
       {/* Main Details Presentation: Balanced, Extended Top Webpage */}
       <div className="w-full max-w-[2000px] mx-auto px-4 sm:px-8 md:px-12 pt-6 sm:pt-8 relative z-10 space-y-10">
         <div className="flex flex-col md:flex-row gap-8 lg:gap-12 items-start">
-          {/* Extended High-Resolution Movie Poster */}
-          <div className="w-52 xs:w-60 sm:w-72 md:w-80 lg:w-[360px] xl:w-[410px] aspect-[2/3] rounded-2xl overflow-hidden shadow-2xl shadow-black/90 border-2 border-[#10B981]/50 flex-shrink-0 bg-[#0A192F] relative group mx-auto md:mx-0 transition-all duration-300 hover:scale-[1.01] hover:border-[#10B981] hover:shadow-[#10B981]/25">
-            <img src={movie.posterUrl} alt={movie.title} className="w-full h-full object-cover" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
-              <span className="text-xs font-bold text-[#10B981]">Ugandan Translated</span>
+          {/* Extended High-Resolution Movie Poster - Clickable & Tap to Play */}
+          <div
+            onClick={handlePrimaryPlay}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handlePrimaryPlay();
+              }
+            }}
+            role="button"
+            tabIndex={0}
+            aria-label={`Play ${movie.title}`}
+            className="w-48 xs:w-56 sm:w-64 md:w-80 lg:w-[360px] xl:w-[410px] aspect-[2/3] rounded-2xl overflow-hidden shadow-2xl shadow-black/90 border-2 border-[#10B981]/50 flex-shrink-0 bg-[#0A192F] relative group mx-auto md:mx-0 transition-all duration-300 hover:scale-[1.01] hover:border-[#10B981] hover:shadow-[#10B981]/25 cursor-pointer active:scale-95 focus:outline-none focus:ring-4 focus:ring-[#10B981]/50"
+          >
+            <img src={movie.posterUrl} alt={movie.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+
+            {/* Click-to-Play Center Overlay with Glowing Emerald Button */}
+            <div className="absolute inset-0 bg-black/35 group-hover:bg-black/50 transition-all flex flex-col items-center justify-center p-4">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-full bg-[#10B981] hover:bg-[#34D399] text-black flex items-center justify-center shadow-2xl shadow-[#10B981]/70 transform group-hover:scale-110 active:scale-90 transition-all duration-300 border-2 border-white/80 ring-4 ring-[#10B981]/40">
+                <Play className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 fill-black text-black ml-1" />
+              </div>
+              <div className="mt-2.5 sm:mt-3 px-3 sm:px-4 py-1 sm:py-1.5 rounded-full bg-black/85 backdrop-blur-md border border-[#10B981]/80 text-white font-extrabold text-[11px] sm:text-xs tracking-wider shadow-lg flex items-center gap-1.5 group-hover:bg-[#10B981] group-hover:text-black transition-colors">
+                <Play className="w-3 h-3 fill-current" />
+                <span>{movie.isSeries ? 'PLAY S1:E1' : 'PLAY MOVIE'}</span>
+              </div>
+            </div>
+
+            {/* Bottom info strip with "Tap to Play" hint */}
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-3 pt-6 flex justify-between items-center pointer-events-none">
+              <span className="text-[11px] font-bold text-[#10B981]">Ugandan Translated</span>
+              <span className="text-[10px] text-white/90 font-bold bg-[#10B981]/30 border border-[#10B981]/60 px-2 py-0.5 rounded-md backdrop-blur-sm">
+                Tap to Play
+              </span>
             </div>
           </div>
 
@@ -418,6 +459,65 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
             <p className="text-[#94A3B8] text-sm sm:text-base font-semibold">
               {movie.genre}
             </p>
+
+            {/* Mobile Immediate Above-The-Fold Action Row (Visible on first screen without scrolling) */}
+            <div className="md:hidden pt-1 pb-2 flex flex-col gap-2.5">
+              <button
+                onClick={handlePrimaryPlay}
+                className="w-full flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-[#10B981] active:bg-[#34D399] text-black font-black text-base shadow-xl shadow-[#10B981]/40 transition-transform active:scale-95"
+              >
+                <Play className="w-5 h-5 fill-black" />
+                <span>
+                  {movie.isSeries
+                    ? (seasons[0]?.episodes?.[0] ? `Play S${seasons[0].seasonNumber}:E${seasons[0].episodes[0].episodeNumber}` : 'Play Series')
+                    : 'Play Movie Now'}
+                </span>
+              </button>
+              <div className="flex items-center gap-2">
+                {onToggleWatchlist && (
+                  <button
+                    onClick={() => onToggleWatchlist(movie)}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold border transition-all ${
+                      isInWatchlist
+                        ? 'bg-[#10B981]/15 text-[#10B981] border-[#10B981]'
+                        : 'bg-[#0A192F] text-[#F8FAFC] border-[#132845]'
+                    }`}
+                  >
+                    {isInWatchlist ? (
+                      <>
+                        <BookmarkCheck className="w-3.5 h-3.5 text-[#10B981]" />
+                        <span>In Watchlist</span>
+                      </>
+                    ) : (
+                      <>
+                        <Bookmark className="w-3.5 h-3.5 text-[#94A3B8]" />
+                        <span>Watchlist</span>
+                      </>
+                    )}
+                  </button>
+                )}
+                <button
+                  onClick={() => handleDirectDeviceSave({ item: movie, episode: movie.isSeries ? seasons[0]?.episodes?.[0] : undefined })}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold border transition-all ${
+                    isMovieDownloaded
+                      ? 'bg-[#10B981]/20 text-[#10B981] border-[#10B981]'
+                      : 'bg-[#0A192F] text-white border-[#132845]'
+                  }`}
+                >
+                  {isMovieDownloaded ? (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981]" />
+                      <span>Downloaded</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-3.5 h-3.5 text-[#10B981]" />
+                      <span>Download</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
 
             {/* MOVIE DESCRIPTION Surface Container matching Android TV SurfaceBox */}
             <div className="pt-2 space-y-2">
@@ -566,14 +666,7 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
             <div className="pt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
               {movie.isSeries ? (
                 <button
-                  onClick={() => {
-                    const firstEp = seasons[0]?.episodes?.[0];
-                    const targetServer = (selectedServer && !selectedServer.streamUrl.includes('preview.php') ? selectedServer : null) ||
-                      movie.servers?.find(s => s.tier === (selectedQuality?.id || 'fhd') && s.isProxy) ||
-                      movie.servers?.find(s => s.isProxy) ||
-                      movie.servers?.[0];
-                    onPlay(movie, firstEp, targetServer);
-                  }}
+                  onClick={handlePrimaryPlay}
                   className="flex items-center justify-center gap-3 px-8 py-3.5 sm:py-4 rounded-xl bg-[#10B981] hover:bg-[#34D399] text-black font-extrabold text-sm sm:text-base shadow-xl shadow-[#10B981]/30 transition-all hover:scale-105 active:scale-95"
                 >
                   <Play className="w-5 h-5 fill-black" />
@@ -585,13 +678,7 @@ export const ContentDetails: React.FC<ContentDetailsProps> = ({
                 </button>
               ) : (
                 <button
-                  onClick={() => {
-                    const targetServer = (selectedServer && !selectedServer.streamUrl.includes('preview.php') ? selectedServer : null) ||
-                      movie.servers?.find(s => s.tier === (selectedQuality?.id || 'fhd') && s.isProxy) ||
-                      movie.servers?.find(s => s.isProxy) ||
-                      movie.servers?.[0];
-                    onPlay(movie, undefined, targetServer);
-                  }}
+                  onClick={handlePrimaryPlay}
                   className="flex items-center justify-center gap-3 px-8 py-3.5 sm:py-4 rounded-xl bg-[#10B981] hover:bg-[#34D399] text-black font-extrabold text-sm sm:text-base shadow-xl shadow-[#10B981]/30 transition-all hover:scale-105 active:scale-95"
                 >
                   <Play className="w-5 h-5 fill-black" />

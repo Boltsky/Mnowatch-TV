@@ -1,5 +1,5 @@
 import React from 'react';
-import { Star } from 'lucide-react';
+import { Play, Star } from 'lucide-react';
 import { MediaItem } from '../../types';
 
 interface TvMediaCardProps {
@@ -41,6 +41,11 @@ export const TvMediaCard: React.FC<TvMediaCardProps> = ({ item, onClick, cardWid
             <Star className="w-2.5 h-2.5 fill-[#FBBF24]" />
             {item.rating || '8.5'}
           </span>
+        </div>
+
+        {/* Mobile touch play indicator */}
+        <div className="absolute bottom-2 right-2 sm:hidden z-10 w-6 h-6 rounded-full bg-[#10B981] text-black flex items-center justify-center shadow-lg shadow-black/80">
+          <Play className="w-3 h-3 fill-black ml-0.5" />
         </div>
 
         {/* Play overlay indicator on hover */}
